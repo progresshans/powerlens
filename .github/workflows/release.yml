@@ -1,0 +1,268 @@
+name: Publish Release
+
+on:
+  push:
+    branches:
+      - develop
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v, for example 0.9.1 or 0.9.2-alpha.1"
+        required: true
+        type: string
+      channel:
+        description: "Sparkle update channel to publish"
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - alpha
+      appcast_branch:
+        description: "Branch whose docs/ appcast file should be updated"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, Notarize, Release, and Publish Appcast
+    runs-on: macos-latest
+
+    env:
+      POWERLENS_SIGN_IDENTITY: ${{ secrets.POWERLENS_SIGN_IDENTITY }}
+      POWERLENS_SPARKLE_PUBLIC_ED_KEY: ${{ secrets.POWERLENS_SPARKLE_PUBLIC_ED_KEY }}
+      POWERLENS_SPARKLE_PRIVATE_ED_KEY: ${{ secrets.POWERLENS_SPARKLE_PRIVATE_ED_KEY }}
+      POWERLENS_SPARKLE_FEED_URL: https://progresshans.github.io/powerlens/appcast.xml
+      POWERLENS_SPARKLE_ALPHA_FEED_URL: https://progresshans.github.io/powerlens/appcast-alpha.xml
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          DISPATCH_CHANNEL: ${{ inputs.channel }}
+          DISPATCH_APPCAST_BRANCH: ${{ inputs.appcast_branch }}
+          ALPHA_BASE_VERSION: ${{ vars.POWERLENS_ALPHA_BASE_VERSION }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
+            appcast_branch="${DISPATCH_APPCAST_BRANCH:-main}"
+            if [[ "$version" == *"-alpha"* ]]; then
+              channel="alpha"
+            else
+              channel="stable"
+            fi
+          elif [[ "${GITHUB_REF_NAME}" == "develop" && -z "${DISPATCH_VERSION:-}" ]]; then
+            base_version="${ALPHA_BASE_VERSION:-0.9.2}"
+            version="${base_version}-alpha.${GITHUB_RUN_NUMBER}"
+            tag="v${version}"
+            channel="alpha"
+            appcast_branch="main"
+          else
+            version="${DISPATCH_VERSION:?workflow_dispatch requires a version}"
+            tag="v${version}"
+            channel="${DISPATCH_CHANNEL:-stable}"
+            appcast_branch="${DISPATCH_APPCAST_BRANCH:-main}"
+          fi
+
+          case "$channel" in
+            stable)
+              appcast_path="docs/appcast.xml"
+              prerelease="false"
+              latest="true"
+              ;;
+            alpha)
+              appcast_path="docs/appcast-alpha.xml"
+              prerelease="true"
+              latest="false"
+              ;;
+            *)
+              echo "unsupported channel: $channel" >&2
+              exit 2
+              ;;
+          esac
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "appcast_path=$appcast_path" >> "$GITHUB_OUTPUT"
+          echo "appcast_branch=$appcast_branch" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "download_url_prefix=https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/" >> "$GITHUB_OUTPUT"
+
+          echo "PowerLens $version ($channel) -> $tag"
+
+      - name: Validate release secrets
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.POWERLENS_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.POWERLENS_DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.POWERLENS_KEYCHAIN_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.POWERLENS_NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.POWERLENS_NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.POWERLENS_NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          required=(
+            CERTIFICATE_P12_BASE64
+            CERTIFICATE_PASSWORD
+            KEYCHAIN_PASSWORD
+            NOTARY_APPLE_ID
+            NOTARY_TEAM_ID
+            NOTARY_PASSWORD
+            POWERLENS_SIGN_IDENTITY
+            POWERLENS_SPARKLE_PUBLIC_ED_KEY
+            POWERLENS_SPARKLE_PRIVATE_ED_KEY
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "missing required GitHub secret: $name" >&2
+              exit 2
+            fi
+          done
+
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.POWERLENS_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.POWERLENS_DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.POWERLENS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain_path="$RUNNER_TEMP/powerlens-signing.keychain-db"
+          certificate_path="$RUNNER_TEMP/powerlens-developer-id.p12"
+
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" \
+            -k "$keychain_path" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/productsign
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain_path"
+
+      - name: Store notarization credentials
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.POWERLENS_NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.POWERLENS_NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.POWERLENS_NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials powerlens-notary \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD"
+
+      - name: Build signed notarized release
+        env:
+          POWERLENS_VERSION: ${{ steps.meta.outputs.version }}
+          POWERLENS_BUILD: ${{ github.run_number }}
+          POWERLENS_NOTARY_PROFILE: powerlens-notary
+          POWERLENS_SPARKLE_GENERATE_APPCAST: "1"
+          POWERLENS_SPARKLE_APPCAST_DIR: ${{ github.workspace }}/release/appcast-work
+          POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH: ${{ github.workspace }}/${{ steps.meta.outputs.appcast_path }}
+          POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
+          POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
+        run: ./script/package_release.sh
+
+      - name: Verify distribution bundle
+        env:
+          STRICT: "1"
+        run: ./script/verify_distribution.sh release/stage/PowerLens.app
+
+      - name: Preserve generated appcast
+        run: |
+          mkdir -p "$RUNNER_TEMP/powerlens-appcast"
+          cp "${{ steps.meta.outputs.appcast_path }}" "$RUNNER_TEMP/powerlens-appcast/appcast.xml"
+
+      - name: Create release notes
+        run: |
+          cat > "$RUNNER_TEMP/powerlens-release-notes.md" <<EOF
+          PowerLens ${{ steps.meta.outputs.version }}
+
+          Channel: ${{ steps.meta.outputs.channel }}
+
+          This release was built, signed, notarized, and packaged by GitHub Actions.
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          LATEST: ${{ steps.meta.outputs.latest }}
+        run: |
+          set -euo pipefail
+          args=(
+            "$TAG"
+            "release/PowerLens-$VERSION.dmg"
+            "release/PowerLens-$VERSION.app.zip"
+            "release/PowerLens-$VERSION-checksums.txt"
+            --title "PowerLens $VERSION"
+            --notes-file "$RUNNER_TEMP/powerlens-release-notes.md"
+            --target "$GITHUB_SHA"
+          )
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          if [[ "$LATEST" == "false" ]]; then
+            args+=(--latest=false)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "release/PowerLens-$VERSION.dmg" \
+              "release/PowerLens-$VERSION.app.zip" \
+              "release/PowerLens-$VERSION-checksums.txt" \
+              --clobber
+          else
+            gh release create "${args[@]}"
+          fi
+
+      - name: Commit appcast
+        env:
+          APPCAST_BRANCH: ${{ steps.meta.outputs.appcast_branch }}
+          APPCAST_PATH: ${{ steps.meta.outputs.appcast_path }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$APPCAST_BRANCH"
+          git checkout "$APPCAST_BRANCH"
+          mkdir -p "$(dirname "$APPCAST_PATH")"
+          cp "$RUNNER_TEMP/powerlens-appcast/appcast.xml" "$APPCAST_PATH"
+          git add "$APPCAST_PATH"
+          if git diff --cached --quiet; then
+            echo "appcast unchanged"
+            exit 0
+          fi
+          git commit -m "chore: publish $CHANNEL appcast for $VERSION"
+          git push origin "HEAD:$APPCAST_BRANCH"
