@@ -47,6 +47,11 @@
 "updates.check" = "Check for Updates…";
 "updates.check.button" = "Check Now";
 "updates.check.description" = "Check GitHub Releases using PowerLens' update feed.";
+"updates.channel" = "Update Channel";
+"updates.channel.stable" = "Stable";
+"updates.channel.alpha" = "Alpha";
+"updates.channel.stable.detail" = "Use signed public releases intended for everyday use.";
+"updates.channel.alpha.detail" = "Use prerelease builds from the alpha feed. These may change more often.";
 "updates.automatic" = "Automatically check for updates";
 "updates.automatic.description" = "PowerLens can periodically check the update feed in the background.";
 "updates.notConfigured" = "Available in signed release builds with an update feed.";

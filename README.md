@@ -89,9 +89,9 @@ PowerLens watches for common power situations:
 </p>
 
 PowerLens includes app-language settings, telemetry-engine selection, menu bar
-display styles, Dock visibility control, and update checking. The telemetry
-engine can run in automatic, compatible, or live precision mode depending on the
-Mac and the data available.
+display styles, Dock visibility control, update checking, and Stable/Alpha
+update-channel selection. The telemetry engine can run in automatic,
+compatible, or live precision mode depending on the Mac and the data available.
 
 ### Local History
 

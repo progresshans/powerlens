@@ -21,6 +21,7 @@ DEFAULT_BUILD="$(powerlens_default_build_number)"
 VERSION="${POWERLENS_VERSION:-$DEFAULT_VERSION}"
 BUILD_NUMBER="${POWERLENS_BUILD:-$DEFAULT_BUILD}"
 SPARKLE_FEED_URL="${POWERLENS_SPARKLE_FEED_URL:-https://progresshans.github.io/powerlens/appcast.xml}"
+SPARKLE_ALPHA_FEED_URL="${POWERLENS_SPARKLE_ALPHA_FEED_URL:-https://progresshans.github.io/powerlens/appcast-alpha.xml}"
 SPARKLE_PUBLIC_ED_KEY="${POWERLENS_SPARKLE_PUBLIC_ED_KEY:-}"
 
 kill_running_app() {
@@ -52,7 +53,7 @@ build_bundle() {
   powerlens_copy_resource_bundle "$build_dir" "$APP_RESOURCES"
   cp "$SOURCE_INFO_PLIST" "$INFO_PLIST"
 
-  powerlens_apply_common_info_plist "$INFO_PLIST" "$VERSION" "$BUILD_NUMBER" "$SPARKLE_FEED_URL" "$SPARKLE_PUBLIC_ED_KEY"
+  powerlens_apply_common_info_plist "$INFO_PLIST" "$VERSION" "$BUILD_NUMBER" "$SPARKLE_FEED_URL" "$SPARKLE_ALPHA_FEED_URL" "$SPARKLE_PUBLIC_ED_KEY"
   powerlens_copy_app_icon "$INFO_PLIST" "$APP_RESOURCES"
 }
 

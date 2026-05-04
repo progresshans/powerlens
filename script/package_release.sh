@@ -32,6 +32,7 @@ NOTARY_PROFILE="${POWERLENS_NOTARY_PROFILE:-}"
 SKIP_NOTARIZATION="${POWERLENS_SKIP_NOTARIZATION:-0}"
 CLEAN_BUILD="${POWERLENS_CLEAN_BUILD:-1}"
 SPARKLE_FEED_URL="${POWERLENS_SPARKLE_FEED_URL:-https://progresshans.github.io/powerlens/appcast.xml}"
+SPARKLE_ALPHA_FEED_URL="${POWERLENS_SPARKLE_ALPHA_FEED_URL:-https://progresshans.github.io/powerlens/appcast-alpha.xml}"
 SPARKLE_PUBLIC_ED_KEY="${POWERLENS_SPARKLE_PUBLIC_ED_KEY:-}"
 SPARKLE_GENERATE_APPCAST="${POWERLENS_SPARKLE_GENERATE_APPCAST:-0}"
 SPARKLE_APPCAST_DIR="${POWERLENS_SPARKLE_APPCAST_DIR:-}"
@@ -39,6 +40,8 @@ SPARKLE_APPCAST_OUTPUT_PATH="${POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH:-}"
 SPARKLE_DOWNLOAD_URL_PREFIX="${POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX:-}"
 SPARKLE_RELEASE_NOTES_URL_PREFIX="${POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX:-}"
 SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
+SPARKLE_PRIVATE_ED_KEY="${POWERLENS_SPARKLE_PRIVATE_ED_KEY:-}"
+SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
 
 prepare_release_dir() {
   rm -rf "$STAGE_DIR" "$DMG_STAGE_DIR" "$APP_ZIP" "$DMG_PATH" "$CHECKSUMS_PATH"
@@ -65,7 +68,7 @@ build_app_bundle() {
   powerlens_copy_resource_bundle "$build_dir" "$APP_RESOURCES"
 
   cp "$SOURCE_INFO_PLIST" "$INFO_PLIST"
-  powerlens_apply_common_info_plist "$INFO_PLIST" "$VERSION" "$BUILD_NUMBER" "$SPARKLE_FEED_URL" "$SPARKLE_PUBLIC_ED_KEY" "1"
+  powerlens_apply_common_info_plist "$INFO_PLIST" "$VERSION" "$BUILD_NUMBER" "$SPARKLE_FEED_URL" "$SPARKLE_ALPHA_FEED_URL" "$SPARKLE_PUBLIC_ED_KEY" "1"
   if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
     echo "sparkle: SUPublicEDKey omitted; in-app updates are disabled for this build"
   fi
@@ -121,6 +124,12 @@ generate_appcast_if_configured() {
   cp "$APP_ZIP" "$SPARKLE_APPCAST_DIR/"
 
   local args=("$SPARKLE_GENERATE_APPCAST_TOOL" --account "$SPARKLE_KEY_ACCOUNT")
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    args+=(--ed-key-file -)
+  elif [[ -n "$SPARKLE_ED_KEY_FILE" ]]; then
+    powerlens_require_file "$SPARKLE_ED_KEY_FILE"
+    args+=(--ed-key-file "$SPARKLE_ED_KEY_FILE")
+  fi
   if [[ -n "$SPARKLE_DOWNLOAD_URL_PREFIX" ]]; then
     args+=(--download-url-prefix "$SPARKLE_DOWNLOAD_URL_PREFIX")
   fi
@@ -130,7 +139,11 @@ generate_appcast_if_configured() {
 
   args+=("$SPARKLE_APPCAST_DIR")
   echo "sparkle: generating appcast in $SPARKLE_APPCAST_DIR"
-  "${args[@]}"
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "${args[@]}"
+  else
+    "${args[@]}"
+  fi
 
   if [[ -n "$SPARKLE_APPCAST_OUTPUT_PATH" ]]; then
     local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"

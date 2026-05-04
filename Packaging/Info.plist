@@ -36,6 +36,8 @@
     <false/>
     <key>SUFeedURL</key>
     <string>https://progresshans.github.io/powerlens/appcast.xml</string>
+    <key>SUAlphaFeedURL</key>
+    <string>https://progresshans.github.io/powerlens/appcast-alpha.xml</string>
     <key>SUScheduledCheckInterval</key>
     <integer>86400</integer>
 </dict>

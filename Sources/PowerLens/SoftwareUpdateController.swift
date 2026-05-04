@@ -2,17 +2,17 @@ import AppKit
 import Sparkle
 
 @MainActor
-final class SoftwareUpdateController: ObservableObject {
-    private let updaterController: SPUStandardUpdaterController
+final class SoftwareUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate {
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: false,
+        updaterDelegate: self,
+        userDriverDelegate: nil
+    )
     private var didStartUpdater = false
     private var updaterStartErrorDescription: String?
 
-    init() {
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: false,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
+    override init() {
+        super.init()
     }
 
     var isConfigured: Bool {
@@ -93,6 +93,20 @@ final class SoftwareUpdateController: ObservableObject {
         updaterController.checkForUpdates(nil)
     }
 
+    func updateChannelPreferenceChanged() {
+        guard isConfigured, didStartUpdater else {
+            objectWillChange.send()
+            return
+        }
+
+        updaterController.updater.resetUpdateCycle()
+        objectWillChange.send()
+    }
+
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        UpdateChannelPreference.currentFeedURLString
+    }
+
     private func showUnconfiguredAlert() {
         let alert = NSAlert()
         alert.messageText = L10n.text("updates.unconfigured.title")
@@ -122,8 +136,7 @@ final class SoftwareUpdateController: ObservableObject {
     }
 
     private static var hasConfiguredSparkleMetadata: Bool {
-        guard let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-              !feedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        guard UpdateChannelPreference.feedURLString(for: .stable) != nil,
               let publicKey = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String,
               !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
