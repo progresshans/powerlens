@@ -4,6 +4,16 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [0.9.1] - Unreleased
+
+### Added
+
+- Sparkle-based software update checks from the app menu and Settings.
+
+### Changed
+
+- Shared local and release bundle-staging logic between packaging scripts.
+
 ## [0.9.0] - 2026-05-02
 
 ### Added

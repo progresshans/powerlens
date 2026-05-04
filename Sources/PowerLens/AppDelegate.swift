@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = PowerLensStore()
+    let softwareUpdateController = SoftwareUpdateController()
 
     private let dashboardSceneController = DashboardSceneController()
     private let presentationController = ApplicationPresentationController()
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = statusItemController
         _ = popoverPresenter
         observeChanges()
+        softwareUpdateController.startIfConfigured()
         updateStatusItem(using: store.latest)
         updateRefreshCadence()
 
@@ -74,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         prepareForWindowPresentation()
         openSettingsWindowAction?()
         focusManagedWindow(identifier: PowerLensWindowIdentifier.settings)
+    }
+
+    func checkForUpdates() {
+        softwareUpdateController.checkForUpdates()
     }
 
     private func observeChanges() {

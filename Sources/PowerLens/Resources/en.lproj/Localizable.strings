@@ -44,10 +44,22 @@
 "settings.telemetry.status" = "Telemetry Status";
 "settings.currentMode" = "Current Mode";
 
+"updates.check" = "Check for Updates…";
+"updates.check.button" = "Check Now";
+"updates.check.description" = "Check GitHub Releases using PowerLens' update feed.";
+"updates.automatic" = "Automatically check for updates";
+"updates.automatic.description" = "PowerLens can periodically check the update feed in the background.";
+"updates.notConfigured" = "Available in signed release builds with an update feed.";
+"updates.unconfigured.title" = "Updates Are Not Configured";
+"updates.unconfigured.message" = "This build does not include a Sparkle feed URL and public update key yet.";
+"updates.startFailed.title" = "Updates Could Not Start";
+"updates.startFailed.message" = "PowerLens could not start the update checker. Check the Sparkle feed URL and public update key in this build.";
+
 "common.unknown" = "Unknown";
 "common.none" = "--";
 "common.on" = "On";
 "common.off" = "Off";
+"common.ok" = "OK";
 "common.quit" = "Quit";
 
 "powerSource.ac" = "AC";
