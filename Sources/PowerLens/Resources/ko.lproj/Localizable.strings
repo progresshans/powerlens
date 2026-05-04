@@ -1,0 +1,202 @@
+"language.title" = "언어";
+"language.system" = "시스템";
+"language.english" = "English";
+"language.korean" = "한국어";
+"language.description" = "PowerLens 안에서만 적용됩니다. 보통 한 번 정하면 거의 바꾸지 않습니다.";
+
+"dockIcon.title" = "Dock 아이콘";
+"dockIcon.toggle" = "Dock에 PowerLens 표시";
+"dockIcon.mode.accessory" = "메뉴바 유틸리티처럼 동작합니다.";
+"dockIcon.mode.regular" = "Dock과 앱 메뉴를 함께 사용하는 일반 앱처럼 동작합니다.";
+"dockIcon.description.hidden" = "메뉴바 중심으로 가볍게 동작합니다. 필요할 때 Dock에 표시할 수 있습니다.";
+"dockIcon.description.visible" = "Dock 아이콘과 앱 메뉴를 함께 표시합니다. 변경은 즉시 반영됩니다.";
+"menuBarStyle.title" = "메뉴바 표시";
+"menuBarStyle.powerLens.title" = "전력 상세";
+"menuBarStyle.powerLens.detail" = "번개 아이콘, 배터리 잔량, 현재 전력을 함께 표시합니다.";
+"menuBarStyle.powerText.title" = "텍스트만";
+"menuBarStyle.powerText.detail" = "배터리 잔량과 현재 전력만 가장 단순하게 표시합니다.";
+"menuBarStyle.nativeBattery.title" = "배터리 아이콘";
+"menuBarStyle.nativeBattery.detail" = "퍼센트와 실시간 배터리 아이콘을 함께 표시합니다.";
+"menuBarStyle.nativeBatteryOnly.title" = "배터리 아이콘만";
+"menuBarStyle.nativeBatteryOnly.detail" = "메뉴바 공간을 가장 적게 쓰는 실시간 배터리 아이콘만 표시합니다.";
+
+"telemetry.label.preference" = "텔레메트리 엔진";
+"telemetry.label.active" = "현재 활성 경로";
+"telemetry.engine.auto" = "자동";
+"telemetry.engine.compatible" = "호환";
+"telemetry.engine.livePrecision" = "정밀 실시간";
+"telemetry.description.auto" = "가능하면 정밀 실시간 경로를 쓰고, 필요하면 호환 경로로 전환합니다.";
+"telemetry.description.compatible" = "가장 안전하고 폭넓게 동작하는 macOS 전원 정보 경로입니다.";
+"telemetry.description.livePrecision" = "더 민감한 실시간 수치를 위해 저수준 텔레메트리를 우선 사용합니다.";
+"telemetry.status.auto" = "자동 모드가 현재 %@ 경로를 사용 중입니다.";
+"telemetry.status.manual" = "현재 %@ 경로가 활성화되어 있습니다.";
+"telemetry.status.fallback" = "지금은 %@ 경로를 사용할 수 없어 %@ 경로로 동작 중입니다.";
+"telemetry.live" = "라이브";
+"telemetry.live.waiting" = "새로고침 대기 중";
+"telemetry.live.detail" = "%@ · %@";
+
+"settings.pane.general" = "일반";
+"settings.pane.general.description" = "PowerLens의 기본 표시 방식을 정합니다.";
+"settings.pane.telemetry" = "텔레메트리";
+"settings.pane.telemetry.description" = "전력 데이터를 읽는 경로와 현재 상태를 확인합니다.";
+"settings.pane.behavior" = "앱 동작";
+"settings.pane.behavior.description" = "메뉴바와 Dock에서 보이는 방식을 조정합니다.";
+"settings.telemetry.status" = "텔레메트리 상태";
+"settings.currentMode" = "현재 모드";
+
+"common.unknown" = "알 수 없음";
+"common.none" = "--";
+"common.on" = "켬";
+"common.off" = "끔";
+"common.quit" = "종료";
+
+"powerSource.ac" = "전원";
+"powerSource.battery" = "배터리";
+"powerSource.offline" = "오프라인";
+"powerSource.unknown" = "알 수 없음";
+
+"thermal.nominal" = "정상";
+"thermal.fair" = "보통";
+"thermal.serious" = "높음";
+"thermal.critical" = "위험";
+"thermal.unknown" = "알 수 없음";
+
+"health.normal" = "정상";
+"health.aged" = "노후";
+"health.checkBattery" = "배터리 점검 필요";
+"health.serviceRecommended" = "서비스 권장";
+
+"chargerAdequacy.disconnected" = "배터리 사용 중";
+"chargerAdequacy.ample" = "충분한 여유";
+"chargerAdequacy.adequate" = "충분한 어댑터";
+"chargerAdequacy.constrained" = "전력 여유 부족";
+"chargerAdequacy.insufficient" = "느린 충전기 감지";
+"chargerAdequacy.unknown" = "어댑터 상태 미확인";
+
+"status.runningOnBattery" = "배터리로 사용 중";
+"status.chargingFromExternalPower" = "외부 전원으로 충전 중";
+"status.adapterBatteryAssist" = "어댑터 연결 중이지만 배터리가 함께 보조 중";
+"status.chargedHolding" = "충전 완료 후 유지 중";
+"status.holdingCurrentLevel" = "현재 배터리 수준 유지 중";
+"status.externalPowerConnected" = "외부 전원 연결됨";
+
+"status.subheadline.deficit" = "시스템 부하가 유입 전력보다 약 %@ 더 높습니다.";
+"status.subheadline.powerLimited" = "현재 맥이 전력 부족 상태로 보입니다.";
+"status.subheadline.holdingCurrentLevel" = "어댑터가 시스템 부하를 맡고 있고 배터리는 거의 움직이지 않습니다.";
+"status.subheadline.inputVsLoad" = "유입 %@ / 시스템 부하 %@.";
+"status.subheadline.tightHeadroom" = "현재 충전에 사용할 수 있는 여유 전력이 거의 없습니다.";
+"status.subheadline.ratedHeadroom" = "어댑터 정격 기준 여유 전력이 약 %@ 있습니다.";
+"status.subheadline.currentChargerHealthy" = "현재 충전기는 상태가 좋아 보입니다.";
+"status.subheadline.currentChargerSufficient" = "현재 충전기는 이 작업 부하에 충분해 보입니다.";
+"status.subheadline.batteryOnly" = "현재 맥은 배터리 전력만 사용하고 있습니다.";
+"status.subheadline.qualityUnknown" = "전력 흐름은 읽히지만 어댑터 품질은 아직 확정하기 어렵습니다.";
+
+"diag.slowCharger.title" = "느린 충전기 감지";
+"diag.slowCharger.message" = "유입 전력이 시스템 부하보다 약 %@ 낮습니다. 전원 연결 상태에서도 배터리가 줄어들 수 있습니다.";
+"diag.negotiatedLow.title" = "협상된 전력이 낮아 보입니다";
+"diag.negotiatedLow.message" = "어댑터 정격은 %@인데, 현재 맥이 받고 있는 전력은 약 %@입니다. 도크, 케이블, 디스플레이 경로가 병목일 수 있습니다.";
+"diag.temperatureHigh.title" = "배터리 온도 상승";
+"diag.temperatureHigh.message" = "배터리 온도가 %@입니다. 열 조건 때문에 충전 속도나 여유 전력이 줄어들 수 있습니다.";
+"diag.healthWear.title" = "배터리 마모가 보입니다";
+"diag.healthWear.message" = "완전 충전 용량이 %@ 수준까지 내려왔습니다. 고온 상태와 장시간 고충전을 주의해서 보시는 게 좋습니다.";
+"diag.lowPowerMode.title" = "저전력 모드 활성화";
+"diag.lowPowerMode.message" = "macOS가 배터리 수명을 위해 성능을 조정하고 있습니다.";
+"diag.healthy.title" = "전력 흐름이 안정적입니다";
+"diag.healthy.message" = "현재는 뚜렷한 충전 병목이나 배터리 건강 경고가 보이지 않습니다.";
+
+"ui.refreshNow" = "지금 새로고침";
+"ui.openDashboard" = "대시보드 열기";
+"ui.updatedAt" = "업데이트 %@";
+"ui.readingPowerData" = "전력 데이터를 읽는 중…";
+"ui.readingBatteryTelemetry" = "배터리 텔레메트리를 읽는 중…";
+"ui.dashboardTitle" = "PowerLens";
+"ui.window.dashboard" = "PowerLens 대시보드";
+"ui.window.settings" = "PowerLens 설정";
+
+"ui.metric.battery" = "배터리";
+"ui.metric.input" = "유입 전력";
+"ui.metric.load" = "시스템 부하";
+"ui.metric.portablePower" = "배터리 전원";
+"ui.metric.powerIn" = "입력 전력";
+"ui.metric.ratedPowerDetail" = "정격 %@ 기준";
+"ui.metric.adapterNotConnected" = "어댑터가 연결되지 않음";
+"ui.metric.systemLoad" = "시스템 부하";
+"ui.metric.noForegroundApp" = "활성 전면 앱 없음";
+"ui.metric.batteryTemp" = "배터리 온도";
+"ui.metric.thermalStateDetail" = "열 상태 %@";
+"ui.metric.health" = "건강도";
+"ui.metric.cycles" = "사이클";
+"ui.metric.designTarget" = "설계 목표 %d";
+"ui.metric.cycleTargetUnknown" = "사이클 목표 미확인";
+
+"ui.section.settings" = "설정";
+"ui.section.diagnostics" = "진단";
+"ui.section.history" = "히스토리";
+"ui.section.details" = "상세";
+"ui.section.flow" = "전력 흐름";
+"ui.section.batterySnapshot" = "배터리 상태";
+"ui.section.powerSnapshot" = "전력 세부";
+
+"ui.sidebar.dashboard" = "대시보드";
+"ui.sidebar.power" = "전력 흐름";
+"ui.sidebar.battery" = "배터리";
+"ui.sidebar.diagnostics" = "진단";
+"ui.sidebar.history" = "히스토리";
+
+"ui.flow.batteryAssist" = "배터리 보조";
+"ui.flow.charging" = "배터리 충전";
+"ui.flow.chargeHeadroom" = "충전 여유";
+"ui.flow.cover" = "커버";
+"ui.flow.assist" = "보조";
+"ui.flow.charge" = "충전";
+"ui.flow.holding" = "유지";
+"ui.flow.directPower" = "시스템 커버";
+"ui.flow.batteryOnly" = "배터리 사용";
+"ui.flow.batteryAssistDetail" = "어댑터 연결 중에도 배터리가 순간 부하를 함께 보조합니다.";
+"ui.flow.chargingDetail" = "어댑터가 시스템 부하를 맡고 남은 전력이 배터리로 갑니다.";
+"ui.flow.directPowerDetail" = "어댑터가 현재 시스템 부하를 직접 커버하고 있습니다.";
+"ui.flow.batteryOnlyDetail" = "시스템 부하를 배터리 전력만으로 커버하고 있습니다.";
+"ui.flow.balanced" = "현재 유입 전력과 시스템 부하가 거의 균형입니다.";
+"ui.highEnergyApp.label" = "높은 전력 사용량:";
+"ui.highEnergyApp.unknown" = "확인되지 않음";
+
+"ui.history.empty" = "앱이 실행되는 동안 히스토리가 쌓입니다. 몇 분 정도 켜두면 여기에서 차트를 볼 수 있습니다.";
+"ui.history.batteryCharge" = "배터리 잔량";
+"ui.history.last24Hours" = "최근 24시간";
+"ui.history.powerFlow" = "전력 흐름";
+"ui.history.inputVsLoad" = "유입 전력 vs 시스템 부하";
+"ui.history.axis.time" = "시간";
+"ui.history.axis.battery" = "배터리";
+"ui.history.axis.powerIn" = "입력 전력";
+"ui.history.axis.systemLoad" = "시스템 부하";
+
+"ui.detail.batteryPack" = "배터리 팩";
+"ui.detail.designCapacity" = "설계 용량";
+"ui.detail.fullChargeCapacity" = "완충 용량";
+"ui.detail.macOSCapacity" = "macOS 용량";
+"ui.detail.serial" = "일련 번호";
+"ui.detail.batteryFlow" = "배터리 흐름";
+"ui.detail.voltage" = "전압";
+"ui.detail.current" = "전류";
+"ui.detail.batteryPower" = "배터리 전력";
+"format.batteryCurrent.charging" = "충전 %@";
+"format.batteryCurrent.discharging" = "방전 %@";
+"format.batteryPower.charging" = "충전 %@";
+"format.batteryPower.discharging" = "방전 %@";
+"ui.detail.timeToEmpty" = "방전까지 남은 시간";
+"ui.detail.adapter" = "어댑터";
+"ui.detail.description" = "설명";
+"ui.detail.maxPower" = "최대 전력";
+"ui.detail.inputVoltage" = "입력 전압";
+"ui.detail.inputCurrent" = "입력 전류";
+"ui.detail.system" = "시스템";
+"ui.detail.powerSource" = "전원 소스";
+"ui.detail.lowPowerMode" = "저전력 모드";
+"ui.detail.lastUpdate" = "마지막 업데이트";
+
+"format.minutesOnly" = "%d분";
+"format.hoursMinutes" = "%d시간 %d분";
+"format.justNow" = "방금 전";
+"format.secondsAgo" = "%d초 전";
+"format.minutesAgo" = "%d분 전";
+"format.hoursAgo" = "%d시간 전";

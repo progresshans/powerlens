@@ -1,0 +1,202 @@
+"language.title" = "Language";
+"language.system" = "System";
+"language.english" = "English";
+"language.korean" = "한국어";
+"language.description" = "Only affects PowerLens. You will usually set this once.";
+
+"dockIcon.title" = "Dock Icon";
+"dockIcon.toggle" = "Show PowerLens in the Dock";
+"dockIcon.mode.accessory" = "PowerLens behaves like a menu bar utility.";
+"dockIcon.mode.regular" = "PowerLens behaves like a regular app with a Dock icon and app menu.";
+"dockIcon.description.hidden" = "PowerLens stays menu-bar-first. Turn this on to show it in the Dock.";
+"dockIcon.description.visible" = "PowerLens shows a Dock icon and standard app menu. Changes apply immediately.";
+"menuBarStyle.title" = "Menu Bar Display";
+"menuBarStyle.powerLens.title" = "Power Details";
+"menuBarStyle.powerLens.detail" = "Shows the bolt icon, battery percentage, and current power value together.";
+"menuBarStyle.powerText.title" = "Text Only";
+"menuBarStyle.powerText.detail" = "Shows only battery percentage and the current power value.";
+"menuBarStyle.nativeBattery.title" = "Battery Icon";
+"menuBarStyle.nativeBattery.detail" = "Shows percentage with a live battery icon.";
+"menuBarStyle.nativeBatteryOnly.title" = "Battery Icon Only";
+"menuBarStyle.nativeBatteryOnly.detail" = "Uses the least menu bar space with only the live battery icon.";
+
+"telemetry.label.preference" = "Telemetry Engine";
+"telemetry.label.active" = "Active Path";
+"telemetry.engine.auto" = "Auto";
+"telemetry.engine.compatible" = "Compatible";
+"telemetry.engine.livePrecision" = "Live Precision";
+"telemetry.description.auto" = "Use live precision when available, then fall back automatically.";
+"telemetry.description.compatible" = "Use the safest broadly compatible macOS power path.";
+"telemetry.description.livePrecision" = "Prefer low-level telemetry for more responsive live readings.";
+"telemetry.status.auto" = "Auto is currently using %@.";
+"telemetry.status.manual" = "%@ is active.";
+"telemetry.status.fallback" = "%@ is unavailable right now, so %@ is active.";
+"telemetry.live" = "Live";
+"telemetry.live.waiting" = "Waiting for refresh";
+"telemetry.live.detail" = "%@ · %@";
+
+"settings.pane.general" = "General";
+"settings.pane.general.description" = "Control PowerLens display defaults.";
+"settings.pane.telemetry" = "Telemetry";
+"settings.pane.telemetry.description" = "Choose how PowerLens reads power data.";
+"settings.pane.behavior" = "App Behavior";
+"settings.pane.behavior.description" = "Adjust how PowerLens appears in the menu bar and Dock.";
+"settings.telemetry.status" = "Telemetry Status";
+"settings.currentMode" = "Current Mode";
+
+"common.unknown" = "Unknown";
+"common.none" = "--";
+"common.on" = "On";
+"common.off" = "Off";
+"common.quit" = "Quit";
+
+"powerSource.ac" = "AC";
+"powerSource.battery" = "Battery";
+"powerSource.offline" = "Offline";
+"powerSource.unknown" = "Unknown";
+
+"thermal.nominal" = "Nominal";
+"thermal.fair" = "Fair";
+"thermal.serious" = "Serious";
+"thermal.critical" = "Critical";
+"thermal.unknown" = "Unknown";
+
+"health.normal" = "Normal";
+"health.aged" = "Aged";
+"health.checkBattery" = "Check Battery";
+"health.serviceRecommended" = "Service Recommended";
+
+"chargerAdequacy.disconnected" = "Battery Power";
+"chargerAdequacy.ample" = "Healthy Headroom";
+"chargerAdequacy.adequate" = "Adequate Adapter";
+"chargerAdequacy.constrained" = "Tight Power Budget";
+"chargerAdequacy.insufficient" = "Slow Charger Detected";
+"chargerAdequacy.unknown" = "Adapter Status Unknown";
+
+"status.runningOnBattery" = "Running on Battery";
+"status.chargingFromExternalPower" = "Charging from External Power";
+"status.adapterBatteryAssist" = "Adapter Connected, Battery Still Assisting";
+"status.chargedHolding" = "Charged and Holding";
+"status.holdingCurrentLevel" = "Holding Current Battery Level";
+"status.externalPowerConnected" = "External Power Connected";
+
+"status.subheadline.deficit" = "System load is about %@ higher than incoming power.";
+"status.subheadline.powerLimited" = "The Mac appears to be power-limited.";
+"status.subheadline.holdingCurrentLevel" = "The adapter is covering system load while the battery stays nearly still.";
+"status.subheadline.inputVsLoad" = "Input %@ vs load %@.";
+"status.subheadline.tightHeadroom" = "There is very little charging headroom right now.";
+"status.subheadline.ratedHeadroom" = "Adapter has about %@ of rated headroom.";
+"status.subheadline.currentChargerHealthy" = "The current charger looks healthy.";
+"status.subheadline.currentChargerSufficient" = "The current charger looks sufficient for this workload.";
+"status.subheadline.batteryOnly" = "The Mac is drawing power only from the battery.";
+"status.subheadline.qualityUnknown" = "Power flow is readable, but adapter quality is not fully known yet.";
+
+"diag.slowCharger.title" = "Slow Charger Detected";
+"diag.slowCharger.message" = "Incoming power is lower than system draw by about %@. Your Mac may still drain on wall power.";
+"diag.negotiatedLow.title" = "Negotiated Power Looks Low";
+"diag.negotiatedLow.message" = "The adapter is rated for %@, but the Mac is only receiving about %@. A dock, cable, or display path may be limiting throughput.";
+"diag.temperatureHigh.title" = "Battery Temperature Elevated";
+"diag.temperatureHigh.message" = "Battery temperature is %@. Thermal conditions can slow charging or reduce headroom.";
+"diag.healthWear.title" = "Battery Wear Is Noticeable";
+"diag.healthWear.message" = "Full charge capacity is down to %@. Consider watching heat and long high-charge sessions.";
+"diag.lowPowerMode.title" = "Low Power Mode Is On";
+"diag.lowPowerMode.message" = "macOS is actively trading performance for battery life.";
+"diag.healthy.title" = "Power Flow Looks Healthy";
+"diag.healthy.message" = "No obvious charger bottleneck or battery-health warning is visible right now.";
+
+"ui.refreshNow" = "Refresh Now";
+"ui.openDashboard" = "Open Dashboard";
+"ui.updatedAt" = "Updated %@";
+"ui.readingPowerData" = "Reading power data…";
+"ui.readingBatteryTelemetry" = "Reading battery telemetry…";
+"ui.dashboardTitle" = "PowerLens";
+"ui.window.dashboard" = "PowerLens Dashboard";
+"ui.window.settings" = "PowerLens Settings";
+
+"ui.metric.battery" = "Battery";
+"ui.metric.input" = "Input";
+"ui.metric.load" = "Load";
+"ui.metric.portablePower" = "Portable power";
+"ui.metric.powerIn" = "Power In";
+"ui.metric.ratedPowerDetail" = "of %@ rated";
+"ui.metric.adapterNotConnected" = "Adapter not connected";
+"ui.metric.systemLoad" = "System Load";
+"ui.metric.noForegroundApp" = "No active foreground app";
+"ui.metric.batteryTemp" = "Battery Temp";
+"ui.metric.thermalStateDetail" = "Thermal state %@";
+"ui.metric.health" = "Health";
+"ui.metric.cycles" = "Cycles";
+"ui.metric.designTarget" = "design target %d";
+"ui.metric.cycleTargetUnknown" = "Cycle target unknown";
+
+"ui.section.settings" = "Settings";
+"ui.section.diagnostics" = "Diagnostics";
+"ui.section.history" = "History";
+"ui.section.details" = "Details";
+"ui.section.flow" = "Power Flow";
+"ui.section.batterySnapshot" = "Battery Snapshot";
+"ui.section.powerSnapshot" = "Power Details";
+
+"ui.sidebar.dashboard" = "Dashboard";
+"ui.sidebar.power" = "Power Flow";
+"ui.sidebar.battery" = "Battery";
+"ui.sidebar.diagnostics" = "Diagnostics";
+"ui.sidebar.history" = "History";
+
+"ui.flow.batteryAssist" = "Battery Assist";
+"ui.flow.charging" = "Battery Charge";
+"ui.flow.chargeHeadroom" = "Charge Headroom";
+"ui.flow.cover" = "cover";
+"ui.flow.assist" = "assist";
+"ui.flow.charge" = "charge";
+"ui.flow.holding" = "Holding";
+"ui.flow.directPower" = "System Covered";
+"ui.flow.batteryOnly" = "Battery Power";
+"ui.flow.batteryAssistDetail" = "The battery can assist transient load even while an adapter is connected.";
+"ui.flow.chargingDetail" = "The adapter is covering system load and sending remaining power into the battery.";
+"ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
+"ui.flow.batteryOnlyDetail" = "System load is being covered only by battery power.";
+"ui.flow.balanced" = "Input power and system load are nearly balanced right now.";
+"ui.highEnergyApp.label" = "High Energy Usage:";
+"ui.highEnergyApp.unknown" = "Unknown App";
+
+"ui.history.empty" = "History builds up as the app runs. Leave PowerLens open for a few minutes to see charts here.";
+"ui.history.batteryCharge" = "Battery Charge";
+"ui.history.last24Hours" = "Last 24 hours";
+"ui.history.powerFlow" = "Power Flow";
+"ui.history.inputVsLoad" = "Input vs load";
+"ui.history.axis.time" = "Time";
+"ui.history.axis.battery" = "Battery";
+"ui.history.axis.powerIn" = "Power In";
+"ui.history.axis.systemLoad" = "System Load";
+
+"ui.detail.batteryPack" = "Battery Pack";
+"ui.detail.designCapacity" = "Design Capacity";
+"ui.detail.fullChargeCapacity" = "Full Charge Capacity";
+"ui.detail.macOSCapacity" = "macOS Capacity";
+"ui.detail.serial" = "Serial";
+"ui.detail.batteryFlow" = "Battery Flow";
+"ui.detail.voltage" = "Voltage";
+"ui.detail.current" = "Current";
+"ui.detail.batteryPower" = "Battery Power";
+"format.batteryCurrent.charging" = "Charging %@";
+"format.batteryCurrent.discharging" = "Discharging %@";
+"format.batteryPower.charging" = "Charging %@";
+"format.batteryPower.discharging" = "Discharging %@";
+"ui.detail.timeToEmpty" = "Time to Empty";
+"ui.detail.adapter" = "Adapter";
+"ui.detail.description" = "Description";
+"ui.detail.maxPower" = "Max Power";
+"ui.detail.inputVoltage" = "Input Voltage";
+"ui.detail.inputCurrent" = "Input Current";
+"ui.detail.system" = "System";
+"ui.detail.powerSource" = "Power Source";
+"ui.detail.lowPowerMode" = "Low Power Mode";
+"ui.detail.lastUpdate" = "Last Update";
+
+"format.minutesOnly" = "%d m";
+"format.hoursMinutes" = "%d h %d m";
+"format.justNow" = "Just now";
+"format.secondsAgo" = "%d sec ago";
+"format.minutesAgo" = "%d min ago";
+"format.hoursAgo" = "%d hr ago";
