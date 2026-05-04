@@ -68,7 +68,28 @@ private key stays in Keychain or another local secret store.
 
 To generate an appcast while packaging, set the optional appcast variables from
 `.env.example`, then run the release script. The script copies the signed app
-ZIP into the appcast directory and invokes Sparkle's `generate_appcast` tool.
+ZIP into a temporary appcast directory and invokes Sparkle's `generate_appcast`
+tool. Set `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` to
+copy the generated feed into the GitHub Pages source directory without
+committing the ZIP archive.
+
+The repository is prepared for GitHub Pages from the `docs/` directory. When
+Pages is enabled for that folder, the production appcast URL is:
+
+```text
+https://progresshans.github.io/powerlens/appcast.xml
+```
+
+For a local end-to-end update smoke test, run:
+
+```bash
+./script/test_sparkle_update.sh
+```
+
+The test script builds a synthetic older app, builds a newer update archive,
+generates a local appcast, serves it from `127.0.0.1`, and opens the older app.
+It is meant to verify the Sparkle UI and update path before publishing a real
+GitHub Release.
 
 ## Release Checklist
 

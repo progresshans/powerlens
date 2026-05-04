@@ -35,6 +35,7 @@ SPARKLE_FEED_URL="${POWERLENS_SPARKLE_FEED_URL:-https://progresshans.github.io/p
 SPARKLE_PUBLIC_ED_KEY="${POWERLENS_SPARKLE_PUBLIC_ED_KEY:-}"
 SPARKLE_GENERATE_APPCAST="${POWERLENS_SPARKLE_GENERATE_APPCAST:-0}"
 SPARKLE_APPCAST_DIR="${POWERLENS_SPARKLE_APPCAST_DIR:-}"
+SPARKLE_APPCAST_OUTPUT_PATH="${POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH:-}"
 SPARKLE_DOWNLOAD_URL_PREFIX="${POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX:-}"
 SPARKLE_RELEASE_NOTES_URL_PREFIX="${POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX:-}"
 SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
@@ -130,6 +131,14 @@ generate_appcast_if_configured() {
   args+=("$SPARKLE_APPCAST_DIR")
   echo "sparkle: generating appcast in $SPARKLE_APPCAST_DIR"
   "${args[@]}"
+
+  if [[ -n "$SPARKLE_APPCAST_OUTPUT_PATH" ]]; then
+    local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"
+    powerlens_require_file "$generated_appcast"
+    mkdir -p "$(dirname "$SPARKLE_APPCAST_OUTPUT_PATH")"
+    cp "$generated_appcast" "$SPARKLE_APPCAST_OUTPUT_PATH"
+    echo "sparkle: copied appcast to $SPARKLE_APPCAST_OUTPUT_PATH"
+  fi
 }
 
 zip_app_for_notarization() {
