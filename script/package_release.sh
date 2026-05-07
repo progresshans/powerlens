@@ -44,6 +44,46 @@ SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
 SPARKLE_PRIVATE_ED_KEY="${POWERLENS_SPARKLE_PRIVATE_ED_KEY:-}"
 SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
 
+validate_sparkle_public_key() {
+  if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    return
+  fi
+
+  python3 - "$SPARKLE_PUBLIC_ED_KEY" <<'PY'
+import base64
+import sys
+
+key = sys.argv[1].strip()
+
+try:
+    decoded = base64.b64decode(key, validate=True)
+except Exception as error:
+    raise SystemExit(f"sparkle: SUPublicEDKey is not valid base64: {error}")
+
+if len(decoded) != 32:
+    raise SystemExit(f"sparkle: SUPublicEDKey must decode to 32 bytes, got {len(decoded)} bytes")
+PY
+}
+
+validate_generated_appcast_signature() {
+  local appcast="$1"
+
+  if [[ -z "$SPARKLE_PRIVATE_ED_KEY" && -z "$SPARKLE_ED_KEY_FILE" ]]; then
+    if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+      echo "sparkle: appcast signing key is required when SUPublicEDKey is embedded in the app" >&2
+      exit 2
+    fi
+
+    echo "sparkle: appcast signing key omitted; generated appcast will not support secure updates" >&2
+    return
+  fi
+
+  if ! grep -q 'sparkle:edSignature=' "$appcast"; then
+    echo "sparkle: generated appcast is missing sparkle:edSignature; check the Sparkle private EdDSA key" >&2
+    exit 2
+  fi
+}
+
 prepare_release_dir() {
   rm -rf "$STAGE_DIR" "$DMG_STAGE_DIR" "$APP_ZIP" "$DMG_PATH" "$CHECKSUMS_PATH"
   mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS" "$DMG_STAGE_DIR"
@@ -51,6 +91,8 @@ prepare_release_dir() {
 
 build_app_bundle() {
   cd "$ROOT_DIR"
+
+  validate_sparkle_public_key
 
   if [[ "$CLEAN_BUILD" == "1" ]]; then
     swift package clean
@@ -146,9 +188,11 @@ generate_appcast_if_configured() {
     "${args[@]}"
   fi
 
+  local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"
+  powerlens_require_file "$generated_appcast"
+  validate_generated_appcast_signature "$generated_appcast"
+
   if [[ -n "$SPARKLE_APPCAST_OUTPUT_PATH" ]]; then
-    local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"
-    powerlens_require_file "$generated_appcast"
     mkdir -p "$(dirname "$SPARKLE_APPCAST_OUTPUT_PATH")"
     cp "$generated_appcast" "$SPARKLE_APPCAST_OUTPUT_PATH"
     echo "sparkle: copied appcast to $SPARKLE_APPCAST_OUTPUT_PATH"

@@ -72,14 +72,18 @@ Generate a Sparkle EdDSA key once on a maintainer machine:
 .build/artifacts/sparkle/Sparkle/bin/generate_keys --account powerlens
 ```
 
-Put only the printed public key in `POWERLENS_SPARKLE_PUBLIC_ED_KEY`. The
-private key stays in Keychain or another local secret store.
+Put only the printed public key in `POWERLENS_SPARKLE_PUBLIC_ED_KEY`, including
+any trailing `=` padding. The key must be valid base64 that decodes to 32 bytes.
+The private key stays in Keychain or another local secret store.
 
 To generate an appcast while packaging, set the optional appcast variables from
-`.env.example`, then run the release script. The script copies the signed app
-ZIP into a temporary appcast directory and invokes Sparkle's `generate_appcast`
-tool. Set `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` for
-stable releases or `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml"`
+`.env.example`, then run the release script. When `SUPublicEDKey` is embedded in
+the app, the script also requires a matching Sparkle private EdDSA key and fails
+if the generated appcast does not contain `sparkle:edSignature`. The script
+copies the signed app ZIP into a temporary appcast directory and invokes
+Sparkle's `generate_appcast` tool. Set
+`POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` for stable
+releases or `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml"`
 for alpha releases to copy the generated feed into the local `docs/` directory
 without committing the ZIP archive.
 
@@ -153,7 +157,8 @@ The release workflow requires these GitHub Secrets:
 - `POWERLENS_NOTARY_PASSWORD`
   - Apple app-specific password for notarization
 - `POWERLENS_SPARKLE_PUBLIC_ED_KEY`
-  - Sparkle public EdDSA key embedded in the app
+  - Sparkle public EdDSA key embedded in the app; keep the trailing `=` padding
+    from `generate_keys`
 - `POWERLENS_SPARKLE_PRIVATE_ED_KEY`
   - exported Sparkle private EdDSA key used only to sign appcasts
 
