@@ -157,6 +157,38 @@ jobs:
             fi
           done
 
+          validate_base64_secret() {
+            local name="$1"
+            local expected_byte_lengths="$2"
+
+            POWERLENS_SECRET_NAME="$name" \
+              POWERLENS_SECRET_VALUE="${!name}" \
+              POWERLENS_EXPECTED_BYTE_LENGTHS="$expected_byte_lengths" \
+              python3 - <<'PY'
+          import base64
+          import os
+
+          name = os.environ["POWERLENS_SECRET_NAME"]
+          value = os.environ["POWERLENS_SECRET_VALUE"].strip()
+          expected_byte_lengths = {
+              int(length)
+              for length in os.environ["POWERLENS_EXPECTED_BYTE_LENGTHS"].replace(",", " ").split()
+          }
+
+          try:
+              decoded = base64.b64decode(value, validate=True)
+          except Exception as error:
+              raise SystemExit(f"invalid {name}: {error}")
+
+          if len(decoded) not in expected_byte_lengths:
+              expected = " or ".join(str(length) for length in sorted(expected_byte_lengths))
+              raise SystemExit(f"{name} must decode to {expected} bytes, got {len(decoded)} bytes")
+          PY
+          }
+
+          validate_base64_secret POWERLENS_SPARKLE_PUBLIC_ED_KEY 32
+          validate_base64_secret POWERLENS_SPARKLE_PRIVATE_ED_KEY "32 96"
+
       - name: Import Developer ID certificate
         env:
           CERTIFICATE_P12_BASE64: ${{ secrets.POWERLENS_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
@@ -220,14 +252,12 @@ jobs:
           cp "${{ steps.meta.outputs.appcast_path }}" "$RUNNER_TEMP/powerlens-appcast/appcast.xml"
 
       - name: Create release notes
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          cat > "$RUNNER_TEMP/powerlens-release-notes.md" <<EOF
-          PowerLens ${{ steps.meta.outputs.version }}
+          set -euo pipefail
 
-          Channel: ${{ steps.meta.outputs.channel }}
-
-          This release was built, signed, notarized, and packaged by GitHub Actions.
-          EOF
+          printf 'Release %s\n' "$VERSION" > "$RUNNER_TEMP/powerlens-release-notes.md"
 
       - name: Publish GitHub Release
         env:
