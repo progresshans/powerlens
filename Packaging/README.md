@@ -74,7 +74,9 @@ Generate a Sparkle EdDSA key once on a maintainer machine:
 
 Put only the printed public key in `POWERLENS_SPARKLE_PUBLIC_ED_KEY`, including
 any trailing `=` padding. The key must be valid base64 that decodes to 32 bytes.
-The private key stays in Keychain or another local secret store.
+Leading or trailing whitespace is trimmed by the packaging script, but the key
+should still be stored as a single line. The private key stays in Keychain or
+another local secret store.
 
 To generate an appcast while packaging, set the optional appcast variables from
 `.env.example`, then run the release script. When `SUPublicEDKey` is embedded in
@@ -169,7 +171,8 @@ The private Sparkle key can be exported on a maintainer Mac with:
 ```
 
 Store the file contents in the `POWERLENS_SPARKLE_PRIVATE_ED_KEY` secret, then
-delete the exported local file.
+delete the exported local file. The exported key should be a single-line base64
+value that decodes to 32 bytes.
 
 ## Release Checklist
 

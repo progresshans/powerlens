@@ -44,29 +44,96 @@ SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
 SPARKLE_PRIVATE_ED_KEY="${POWERLENS_SPARKLE_PRIVATE_ED_KEY:-}"
 SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
 
-validate_sparkle_public_key() {
-  if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-    return
-  fi
+normalize_base64_key() {
+  local key_name="$1"
+  local key_value="$2"
+  local expected_bytes="$3"
 
-  python3 - "$SPARKLE_PUBLIC_ED_KEY" <<'PY'
+  POWERLENS_KEY_NAME="$key_name" \
+    POWERLENS_KEY_VALUE="$key_value" \
+    POWERLENS_EXPECTED_BYTES="$expected_bytes" \
+    python3 - <<'PY'
 import base64
+import os
 import sys
 
-key = sys.argv[1].strip()
+key_name = os.environ["POWERLENS_KEY_NAME"]
+key = os.environ["POWERLENS_KEY_VALUE"].strip()
+expected_bytes = int(os.environ["POWERLENS_EXPECTED_BYTES"])
 
 try:
     decoded = base64.b64decode(key, validate=True)
 except Exception as error:
-    raise SystemExit(f"sparkle: SUPublicEDKey is not valid base64: {error}")
+    raise SystemExit(f"sparkle: {key_name} is not valid base64: {error}")
 
-if len(decoded) != 32:
-    raise SystemExit(f"sparkle: SUPublicEDKey must decode to 32 bytes, got {len(decoded)} bytes")
+if len(decoded) != expected_bytes:
+    raise SystemExit(f"sparkle: {key_name} must decode to {expected_bytes} bytes, got {len(decoded)} bytes")
+
+print(key, end="")
 PY
+}
+
+normalize_sparkle_keys() {
+  if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    SPARKLE_PUBLIC_ED_KEY="$(normalize_base64_key "SUPublicEDKey" "$SPARKLE_PUBLIC_ED_KEY" 32)"
+  fi
+
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    SPARKLE_PRIVATE_ED_KEY="$(normalize_base64_key "Sparkle private EdDSA key" "$SPARKLE_PRIVATE_ED_KEY" 32)"
+  fi
+}
+
+derive_sparkle_public_key() {
+  local private_key="$1"
+
+  POWERLENS_SPARKLE_PRIVATE_ED_KEY="$private_key" swift - <<'SWIFT'
+import CryptoKit
+import Foundation
+
+let keyString = ProcessInfo.processInfo.environment["POWERLENS_SPARKLE_PRIVATE_ED_KEY"]?
+    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+guard let seed = Data(base64Encoded: keyString) else {
+    fputs("sparkle: private EdDSA key is not valid base64\n", stderr)
+    exit(2)
+}
+
+do {
+    let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
+    print(privateKey.publicKey.rawRepresentation.base64EncodedString(), terminator: "")
+} catch {
+    fputs("sparkle: private EdDSA key cannot derive a public key\n", stderr)
+    exit(2)
+}
+SWIFT
+}
+
+validate_sparkle_key_pair() {
+  if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    return
+  fi
+
+  local private_key=""
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    private_key="$SPARKLE_PRIVATE_ED_KEY"
+  elif [[ -n "$SPARKLE_ED_KEY_FILE" ]]; then
+    powerlens_require_file "$SPARKLE_ED_KEY_FILE"
+    private_key="$(< "$SPARKLE_ED_KEY_FILE")"
+  else
+    return
+  fi
+
+  local derived_public_key
+  derived_public_key="$(derive_sparkle_public_key "$private_key")"
+  if [[ "$derived_public_key" != "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    echo "sparkle: public and private EdDSA keys do not match" >&2
+    exit 2
+  fi
 }
 
 validate_generated_appcast_signature() {
   local appcast="$1"
+  local expected_archive="$2"
 
   if [[ -z "$SPARKLE_PRIVATE_ED_KEY" && -z "$SPARKLE_ED_KEY_FILE" ]]; then
     if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
@@ -78,10 +145,30 @@ validate_generated_appcast_signature() {
     return
   fi
 
-  if ! grep -q 'sparkle:edSignature=' "$appcast"; then
-    echo "sparkle: generated appcast is missing sparkle:edSignature; check the Sparkle private EdDSA key" >&2
-    exit 2
-  fi
+  python3 - "$appcast" "$expected_archive" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+appcast_path = sys.argv[1]
+expected_archive = sys.argv[2]
+signature_key = "{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"
+
+tree = ET.parse(appcast_path)
+matches = []
+
+for enclosure in tree.findall(".//enclosure"):
+    url = enclosure.attrib.get("url", "")
+    if url == expected_archive or url.endswith("/" + expected_archive) or url.endswith(expected_archive):
+        matches.append(enclosure)
+
+if not matches:
+    raise SystemExit(f"sparkle: generated appcast has no enclosure for {expected_archive}")
+
+if any(not enclosure.attrib.get(signature_key) for enclosure in matches):
+    raise SystemExit(
+        f"sparkle: generated appcast enclosure for {expected_archive} is missing sparkle:edSignature"
+    )
+PY
 }
 
 prepare_release_dir() {
@@ -91,8 +178,6 @@ prepare_release_dir() {
 
 build_app_bundle() {
   cd "$ROOT_DIR"
-
-  validate_sparkle_public_key
 
   if [[ "$CLEAN_BUILD" == "1" ]]; then
     swift package clean
@@ -190,7 +275,7 @@ generate_appcast_if_configured() {
 
   local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"
   powerlens_require_file "$generated_appcast"
-  validate_generated_appcast_signature "$generated_appcast"
+  validate_generated_appcast_signature "$generated_appcast" "$(basename "$APP_ZIP")"
 
   if [[ -n "$SPARKLE_APPCAST_OUTPUT_PATH" ]]; then
     mkdir -p "$(dirname "$SPARKLE_APPCAST_OUTPUT_PATH")"
@@ -281,6 +366,8 @@ print_summary() {
 
 powerlens_require_file "$SOURCE_INFO_PLIST"
 powerlens_require_file "$ENTITLEMENTS"
+normalize_sparkle_keys
+validate_sparkle_key_pair
 prepare_release_dir
 build_app_bundle
 sign_app_if_configured
