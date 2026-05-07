@@ -18,7 +18,7 @@ concurrency:
 jobs:
   test:
     name: Build, Test, and Package Smoke Check
-    runs-on: macos-latest
+    runs-on: macos-26
 
     steps:
       - name: Check out repository

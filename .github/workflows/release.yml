@@ -31,7 +31,7 @@ concurrency:
 jobs:
   publish:
     name: Build, Notarize, Release, and Publish Appcast
-    runs-on: macos-latest
+    runs-on: macos-26
     environment: release
     permissions:
       contents: write
