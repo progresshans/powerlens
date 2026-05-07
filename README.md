@@ -9,7 +9,7 @@
     <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue"></a>
     <img alt="macOS target: 13+" src="https://img.shields.io/badge/macOS%20target-13%2B-black">
     <img alt="Tested on macOS 26" src="https://img.shields.io/badge/tested-macOS%2026-lightgrey">
-    <img alt="Swift 6.3" src="https://img.shields.io/badge/Swift-6.3-orange">
+    <img alt="Swift 6.2" src="https://img.shields.io/badge/Swift-6.2-orange">
   </p>
 </div>
 
@@ -89,9 +89,9 @@ PowerLens watches for common power situations:
 </p>
 
 PowerLens includes app-language settings, telemetry-engine selection, menu bar
-display styles, and Dock visibility control. The telemetry engine can run in
-automatic, compatible, or live precision mode depending on the Mac and the data
-available.
+display styles, Dock visibility control, update checking, and Stable/Alpha
+update-channel selection. The telemetry engine can run in automatic,
+compatible, or live precision mode depending on the Mac and the data available.
 
 ### Local History
 
@@ -117,6 +117,9 @@ comparisons without sending your data anywhere.
 4. Launch PowerLens from `Applications`.
 
 Release builds are distributed as Developer ID signed and notarized macOS apps.
+PowerLens can check for updates from the app menu or Settings when a release
+build includes the configured Sparkle update feed. The update feed is published
+through GitHub Pages by the release workflow.
 
 ### Verify The Download
 

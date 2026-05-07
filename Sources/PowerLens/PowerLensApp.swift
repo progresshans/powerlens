@@ -29,6 +29,13 @@ struct PowerLensApp: App {
             )
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button(L10n.text("updates.check")) {
+                    appDelegate.checkForUpdates()
+                }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+            }
+
             CommandGroup(replacing: .appSettings) {
                 Button(L10n.text("ui.section.settings")) {
                     appDelegate.openSettingsWindow()
@@ -38,7 +45,10 @@ struct PowerLensApp: App {
         }
 
         Window(L10n.text("ui.window.settings"), id: PowerLensSceneID.settings) {
-            SettingsSceneRootView(store: appDelegate.store)
+            SettingsSceneRootView(
+                store: appDelegate.store,
+                softwareUpdateController: appDelegate.softwareUpdateController
+            )
         }
     }
 }

@@ -1,4 +1,4 @@
-// swift-tools-version: 6.3
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -7,9 +7,15 @@ let package = Package(
     platforms: [
         .macOS(.v13),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.1"),
+    ],
     targets: [
         .executableTarget(
             name: "PowerLens",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             resources: [
                 .process("Resources"),
             ]
