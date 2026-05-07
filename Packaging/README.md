@@ -80,10 +80,12 @@ another local secret store.
 
 To generate an appcast while packaging, set the optional appcast variables from
 `.env.example`, then run the release script. When `SUPublicEDKey` is embedded in
-the app, the script also requires a matching Sparkle private EdDSA key and fails
-if the generated appcast does not contain `sparkle:edSignature`. The script
-copies the signed app ZIP into a temporary appcast directory and invokes
-Sparkle's `generate_appcast` tool. Set
+the app, the script fails if the generated appcast does not contain
+`sparkle:edSignature` for the current archive. Local maintainers can let
+Sparkle sign through Keychain with `--account powerlens`; CI passes an exported
+private EdDSA key through `POWERLENS_SPARKLE_PRIVATE_ED_KEY`. The script copies
+the signed app ZIP into a temporary appcast directory and invokes Sparkle's
+`generate_appcast` tool. Set
 `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` for stable
 releases or `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml"`
 for alpha releases to copy the generated feed into the local `docs/` directory

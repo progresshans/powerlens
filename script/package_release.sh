@@ -55,7 +55,6 @@ normalize_base64_key() {
     python3 - <<'PY'
 import base64
 import os
-import sys
 
 key_name = os.environ["POWERLENS_KEY_NAME"]
 key = os.environ["POWERLENS_KEY_VALUE"].strip()
@@ -134,23 +133,18 @@ validate_sparkle_key_pair() {
 validate_generated_appcast_signature() {
   local appcast="$1"
   local expected_archive="$2"
-
-  if [[ -z "$SPARKLE_PRIVATE_ED_KEY" && -z "$SPARKLE_ED_KEY_FILE" ]]; then
-    if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-      echo "sparkle: appcast signing key is required when SUPublicEDKey is embedded in the app" >&2
-      exit 2
-    fi
-
-    echo "sparkle: appcast signing key omitted; generated appcast will not support secure updates" >&2
-    return
+  local requires_signature=0
+  if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    requires_signature=1
   fi
 
-  python3 - "$appcast" "$expected_archive" <<'PY'
+  python3 - "$appcast" "$expected_archive" "$requires_signature" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 
 appcast_path = sys.argv[1]
 expected_archive = sys.argv[2]
+requires_signature = sys.argv[3] == "1"
 signature_key = "{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"
 
 tree = ET.parse(appcast_path)
@@ -164,9 +158,17 @@ for enclosure in tree.findall(".//enclosure"):
 if not matches:
     raise SystemExit(f"sparkle: generated appcast has no enclosure for {expected_archive}")
 
-if any(not enclosure.attrib.get(signature_key) for enclosure in matches):
+has_missing_signature = any(not enclosure.attrib.get(signature_key) for enclosure in matches)
+if has_missing_signature and requires_signature:
     raise SystemExit(
-        f"sparkle: generated appcast enclosure for {expected_archive} is missing sparkle:edSignature"
+        f"sparkle: generated appcast enclosure for {expected_archive} is missing "
+        "sparkle:edSignature; check the Sparkle private key or Keychain account"
+    )
+
+if has_missing_signature:
+    print(
+        "sparkle: appcast signature omitted; generated appcast will not support secure updates",
+        file=sys.stderr,
     )
 PY
 }
