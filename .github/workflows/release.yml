@@ -220,14 +220,12 @@ jobs:
           cp "${{ steps.meta.outputs.appcast_path }}" "$RUNNER_TEMP/powerlens-appcast/appcast.xml"
 
       - name: Create release notes
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          cat > "$RUNNER_TEMP/powerlens-release-notes.md" <<EOF
-          PowerLens ${{ steps.meta.outputs.version }}
+          set -euo pipefail
 
-          Channel: ${{ steps.meta.outputs.channel }}
-
-          This release was built, signed, notarized, and packaged by GitHub Actions.
-          EOF
+          printf 'Release %s\n' "$VERSION" > "$RUNNER_TEMP/powerlens-release-notes.md"
 
       - name: Publish GitHub Release
         env:
