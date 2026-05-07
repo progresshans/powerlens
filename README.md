@@ -89,9 +89,9 @@ PowerLens watches for common power situations:
 </p>
 
 PowerLens includes app-language settings, telemetry-engine selection, menu bar
-display styles, and Dock visibility control. The telemetry engine can run in
-automatic, compatible, or live precision mode depending on the Mac and the data
-available.
+display styles, Dock visibility control, update checking, and Stable/Alpha
+update-channel selection. The telemetry engine can run in automatic,
+compatible, or live precision mode depending on the Mac and the data available.
 
 ### Local History
 
@@ -117,6 +117,9 @@ comparisons without sending your data anywhere.
 4. Launch PowerLens from `Applications`.
 
 Release builds are distributed as Developer ID signed and notarized macOS apps.
+PowerLens can check for updates from the app menu or Settings when a release
+build includes the configured Sparkle update feed. The update feed is published
+through GitHub Pages by the release workflow.
 
 ### Verify The Download
 

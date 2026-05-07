@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build, Test, and Package Smoke Check
+    runs-on: macos-26
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Validate scripts
+        run: |
+          bash -n \
+            script/lib/powerlens_packaging.sh \
+            script/build_and_run.sh \
+            script/package_release.sh \
+            script/test_sparkle_update.sh \
+            script/verify_distribution.sh
+
+      - name: Validate metadata
+        run: |
+          plutil -lint \
+            Packaging/Info.plist \
+            Sources/PowerLens/Resources/en.lproj/Localizable.strings \
+            Sources/PowerLens/Resources/ko.lproj/Localizable.strings
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          for path in ("docs/appcast.xml", "docs/appcast-alpha.xml"):
+              ET.parse(path)
+              print(f"{path}: OK")
+          PY
+
+      - name: Package ad-hoc release smoke build
+        env:
+          POWERLENS_VERSION: 0.0.0-ci
+          POWERLENS_BUILD: ${{ github.run_number }}
+          POWERLENS_SKIP_NOTARIZATION: "1"
+          POWERLENS_CLEAN_BUILD: "0"
+        run: ./script/package_release.sh
+
+      - name: Verify packaged bundle metadata
+        run: |
+          ./script/verify_distribution.sh release/stage/PowerLens.app
+          test -f release/PowerLens-0.0.0-ci.app.zip
+          test -f release/PowerLens-0.0.0-ci.dmg
+          test -f release/PowerLens-0.0.0-ci-checksums.txt
