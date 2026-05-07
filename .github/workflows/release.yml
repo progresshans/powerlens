@@ -182,6 +182,7 @@ jobs:
             -s \
             -k "$KEYCHAIN_PASSWORD" \
             "$keychain_path"
+          echo "POWERLENS_NOTARY_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
 
       - name: Store notarization credentials
         env:
@@ -189,7 +190,9 @@ jobs:
           NOTARY_TEAM_ID: ${{ secrets.POWERLENS_NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.POWERLENS_NOTARY_PASSWORD }}
         run: |
+          set -euo pipefail
           xcrun notarytool store-credentials powerlens-notary \
+            --keychain "$POWERLENS_NOTARY_KEYCHAIN" \
             --apple-id "$NOTARY_APPLE_ID" \
             --team-id "$NOTARY_TEAM_ID" \
             --password "$NOTARY_PASSWORD"

@@ -112,7 +112,7 @@ GitHub Release.
 PowerLens has two workflow layers:
 
 - `.github/workflows/ci.yml`
-  - runs on pull requests and pushes to `main`, `develop`, and `feature/**`
+  - runs on pull requests and pushes to `main` and `develop`
   - runs `swift test`
   - validates scripts, metadata, and appcast XML
   - performs an ad-hoc package smoke build without notarization

@@ -29,6 +29,7 @@ DMG_PATH="$RELEASE_DIR/$RELEASE_BASENAME.dmg"
 CHECKSUMS_PATH="$RELEASE_DIR/$RELEASE_BASENAME-checksums.txt"
 SIGN_IDENTITY="${POWERLENS_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${POWERLENS_NOTARY_PROFILE:-}"
+NOTARY_KEYCHAIN="${POWERLENS_NOTARY_KEYCHAIN:-}"
 SKIP_NOTARIZATION="${POWERLENS_SKIP_NOTARIZATION:-0}"
 CLEAN_BUILD="${POWERLENS_CLEAN_BUILD:-1}"
 SPARKLE_FEED_URL="${POWERLENS_SPARKLE_FEED_URL:-https://progresshans.github.io/powerlens/appcast.xml}"
@@ -158,6 +159,17 @@ zip_app_for_notarization() {
   ditto --noqtn --noextattr -c -k --keepParent "$APP_BUNDLE" "$APP_ZIP"
 }
 
+submit_for_notarization() {
+  local artifact="$1"
+  local args=(submit "$artifact" --keychain-profile "$NOTARY_PROFILE" --wait)
+
+  if [[ -n "$NOTARY_KEYCHAIN" ]]; then
+    args+=(--keychain "$NOTARY_KEYCHAIN")
+  fi
+
+  xcrun notarytool "${args[@]}"
+}
+
 notarize_app_if_configured() {
   if [[ -z "$SIGN_IDENTITY" || -z "$NOTARY_PROFILE" || "$SKIP_NOTARIZATION" == "1" ]]; then
     echo "notarization: skipped (set POWERLENS_SIGN_IDENTITY and POWERLENS_NOTARY_PROFILE to enable)"
@@ -165,7 +177,7 @@ notarize_app_if_configured() {
   fi
 
   echo "notarization: submitting app zip"
-  xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  submit_for_notarization "$APP_ZIP"
   xcrun stapler staple "$APP_BUNDLE"
   xcrun stapler validate "$APP_BUNDLE"
 }
@@ -202,7 +214,7 @@ notarize_dmg_if_configured() {
   fi
 
   echo "notarization: submitting dmg"
-  xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+  submit_for_notarization "$DMG_PATH"
   xcrun stapler staple "$DMG_PATH"
   xcrun stapler validate "$DMG_PATH"
 }
