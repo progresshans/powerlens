@@ -20,14 +20,9 @@ on:
         options:
           - stable
           - alpha
-      appcast_branch:
-        description: "Branch whose docs/ appcast file should be updated"
-        required: true
-        default: main
-        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-release-${{ github.ref }}
@@ -37,6 +32,9 @@ jobs:
   publish:
     name: Build, Notarize, Release, and Publish Appcast
     runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: write
 
     env:
       POWERLENS_SIGN_IDENTITY: ${{ secrets.POWERLENS_SIGN_IDENTITY }}
@@ -56,31 +54,52 @@ jobs:
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
-          DISPATCH_APPCAST_BRANCH: ${{ inputs.appcast_branch }}
           ALPHA_BASE_VERSION: ${{ vars.POWERLENS_ALPHA_BASE_VERSION }}
         run: |
           set -euo pipefail
 
+          next_patch_alpha_base_version() {
+            local latest_stable_tag
+            latest_stable_tag="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+
+            if [[ -z "$latest_stable_tag" ]]; then
+              echo "0.1.0"
+              return
+            fi
+
+            local stable_version="${latest_stable_tag#v}"
+            local major minor patch
+            IFS=. read -r major minor patch <<< "$stable_version"
+            echo "$major.$minor.$((patch + 1))"
+          }
+
+          validate_alpha_base_version() {
+            local candidate="$1"
+            if [[ ! "$candidate" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "invalid alpha base version: $candidate" >&2
+              echo "expected a stable semantic version such as 0.9.2, 0.10.0, or 1.0.0" >&2
+              exit 2
+            fi
+          }
+
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
             tag="$GITHUB_REF_NAME"
-            appcast_branch="${DISPATCH_APPCAST_BRANCH:-main}"
             if [[ "$version" == *"-alpha"* ]]; then
               channel="alpha"
             else
               channel="stable"
             fi
           elif [[ "${GITHUB_REF_NAME}" == "develop" && -z "${DISPATCH_VERSION:-}" ]]; then
-            base_version="${ALPHA_BASE_VERSION:-0.9.2}"
+            base_version="${ALPHA_BASE_VERSION:-$(next_patch_alpha_base_version)}"
+            validate_alpha_base_version "$base_version"
             version="${base_version}-alpha.${GITHUB_RUN_NUMBER}"
             tag="v${version}"
             channel="alpha"
-            appcast_branch="main"
           else
             version="${DISPATCH_VERSION:?workflow_dispatch requires a version}"
             tag="v${version}"
             channel="${DISPATCH_CHANNEL:-stable}"
-            appcast_branch="${DISPATCH_APPCAST_BRANCH:-main}"
           fi
 
           case "$channel" in
@@ -104,7 +123,6 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "appcast_path=$appcast_path" >> "$GITHUB_OUTPUT"
-          echo "appcast_branch=$appcast_branch" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
           echo "download_url_prefix=https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/" >> "$GITHUB_OUTPUT"
@@ -236,6 +254,20 @@ jobs:
           fi
 
           if gh release view "$TAG" >/dev/null 2>&1; then
+            edit_args=(
+              "$TAG"
+              --title "PowerLens $VERSION"
+              --notes-file "$RUNNER_TEMP/powerlens-release-notes.md"
+              --target "$GITHUB_SHA"
+            )
+
+            if [[ "$PRERELEASE" == "true" ]]; then
+              edit_args+=(--prerelease --latest=false)
+            else
+              edit_args+=(--prerelease=false --latest)
+            fi
+
+            gh release edit "${edit_args[@]}"
             gh release upload "$TAG" \
               "release/PowerLens-$VERSION.dmg" \
               "release/PowerLens-$VERSION.app.zip" \
@@ -245,24 +277,67 @@ jobs:
             gh release create "${args[@]}"
           fi
 
-      - name: Commit appcast
+      - name: Prepare GitHub Pages artifact
         env:
-          APPCAST_BRANCH: ${{ steps.meta.outputs.appcast_branch }}
           APPCAST_PATH: ${{ steps.meta.outputs.appcast_path }}
-          CHANNEL: ${{ steps.meta.outputs.channel }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          STABLE_FEED_URL: ${{ env.POWERLENS_SPARKLE_FEED_URL }}
+          ALPHA_FEED_URL: ${{ env.POWERLENS_SPARKLE_ALPHA_FEED_URL }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$APPCAST_BRANCH"
-          git checkout "$APPCAST_BRANCH"
-          mkdir -p "$(dirname "$APPCAST_PATH")"
-          cp "$RUNNER_TEMP/powerlens-appcast/appcast.xml" "$APPCAST_PATH"
-          git add "$APPCAST_PATH"
-          if git diff --cached --quiet; then
-            echo "appcast unchanged"
-            exit 0
-          fi
-          git commit -m "chore: publish $CHANNEL appcast for $VERSION"
-          git push origin "HEAD:$APPCAST_BRANCH"
+
+          pages_dir="$RUNNER_TEMP/powerlens-pages"
+          rm -rf "$pages_dir"
+          mkdir -p "$pages_dir"
+          cp -R docs/. "$pages_dir/"
+
+          fetch_existing_feed() {
+            local url="$1"
+            local destination="$2"
+            local tmp="$destination.tmp"
+
+            if curl -fsSL "$url" -o "$tmp"; then
+              python3 - "$tmp" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          ET.parse(sys.argv[1])
+          PY
+              mv "$tmp" "$destination"
+              echo "preserved existing feed from $url"
+            else
+              rm -f "$tmp"
+              echo "no existing feed at $url; using repository placeholder for $destination"
+            fi
+          }
+
+          fetch_existing_feed "$STABLE_FEED_URL" "$pages_dir/appcast.xml"
+          fetch_existing_feed "$ALPHA_FEED_URL" "$pages_dir/appcast-alpha.xml"
+
+          relative_appcast="${APPCAST_PATH#docs/}"
+          mkdir -p "$pages_dir/$(dirname "$relative_appcast")"
+          cp "$RUNNER_TEMP/powerlens-appcast/appcast.xml" "$pages_dir/$relative_appcast"
+          python3 - "$pages_dir/$relative_appcast" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          ET.parse(sys.argv[1])
+          PY
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/powerlens-pages
+
+  deploy-pages:
+    name: Deploy Sparkle Appcast
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

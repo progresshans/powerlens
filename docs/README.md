@@ -1,10 +1,11 @@
 # PowerLens GitHub Pages
 
-This directory is intended to be the GitHub Pages source for the PowerLens
-repository.
+This directory is the static GitHub Pages content for PowerLens update feeds.
+The release workflow uploads this directory as a GitHub Pages artifact after
+regenerating the target Sparkle appcast.
 
-When Pages is enabled for the `docs/` directory on the default branch,
-`docs/appcast.xml` is served at:
+When GitHub Pages is configured to deploy from GitHub Actions,
+`appcast.xml` is served at:
 
 ```text
 https://progresshans.github.io/powerlens/appcast.xml
@@ -21,11 +22,11 @@ https://progresshans.github.io/powerlens/appcast-alpha.xml
 
 `docs/appcast.xml` and `docs/appcast-alpha.xml` start as valid empty feeds so
 update checks do not hit a 404 before the first Sparkle-visible release is
-published. For actual releases, generate the target feed from the exact signed
-ZIP that will be uploaded to GitHub Releases.
+published. For actual releases, the `Publish Release` GitHub Actions workflow
+generates the target feed from the exact signed ZIP uploaded to GitHub Releases.
 
-Use a temporary work directory for Sparkle's generated files, then copy only the
-stable feed into `docs/appcast.xml`:
+For a manual local package, use a temporary work directory for Sparkle's
+generated files, then copy only the stable feed into `docs/appcast.xml`:
 
 ```bash
 set -a
@@ -64,6 +65,5 @@ In GitHub:
 
 1. Open the repository settings.
 2. Go to `Pages`.
-3. Set the source to `Deploy from a branch`.
-4. Select the default branch and `/docs` folder.
-5. Save and wait for Pages to publish.
+3. Set the source to `GitHub Actions`.
+4. Save and let the release workflow deploy the Pages artifact.

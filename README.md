@@ -119,7 +119,7 @@ comparisons without sending your data anywhere.
 Release builds are distributed as Developer ID signed and notarized macOS apps.
 PowerLens can check for updates from the app menu or Settings when a release
 build includes the configured Sparkle update feed. The update feed is published
-through GitHub Pages from `docs/appcast.xml`.
+through GitHub Pages by the release workflow.
 
 ### Verify The Download
 

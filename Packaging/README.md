@@ -80,11 +80,11 @@ To generate an appcast while packaging, set the optional appcast variables from
 ZIP into a temporary appcast directory and invokes Sparkle's `generate_appcast`
 tool. Set `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` for
 stable releases or `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml"`
-for alpha releases to copy the generated feed into the GitHub Pages source
-directory without committing the ZIP archive.
+for alpha releases to copy the generated feed into the local `docs/` directory
+without committing the ZIP archive.
 
-The repository is prepared for GitHub Pages from the `docs/` directory. When
-Pages is enabled for that folder, the production appcast URL is:
+The repository is prepared for GitHub Pages deployed by GitHub Actions. The
+production appcast URL is:
 
 ```text
 https://progresshans.github.io/powerlens/appcast.xml
@@ -121,12 +121,19 @@ PowerLens has two workflow layers:
   - builds, signs, notarizes, and packages the app
   - creates or updates a GitHub Release
   - regenerates the stable or alpha Sparkle appcast
+  - deploys the appcast site through GitHub Pages Actions
 
 Stable releases should normally be published by pushing a version tag such as
 `v0.9.1`, or by manually dispatching the release workflow. Develop branch pushes
-publish alpha prereleases using the base version from the optional repository
-variable `POWERLENS_ALPHA_BASE_VERSION` and the GitHub Actions run number, for
-example `0.9.2-alpha.123`.
+publish alpha prereleases with the GitHub Actions run number, for example
+`0.9.2-alpha.123`. By default, the alpha base version is inferred from the
+latest stable tag by bumping the patch version. Set the optional repository
+variable `POWERLENS_ALPHA_BASE_VERSION` only when the next alpha line should
+target a minor or major version such as `0.10.0` or `1.0.0`.
+
+Set the repository's GitHub Pages source to `GitHub Actions`. The release
+workflow publishes the `docs/` site as a Pages artifact after preserving the
+currently published feed for the other update channel.
 
 The release workflow requires these GitHub Secrets:
 
