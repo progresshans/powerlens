@@ -9,6 +9,10 @@ dashboard.
 PowerLens does not send analytics, telemetry, crash reports, or usage events to
 a server.
 
+If you manually choose **Check for Updates** or enable automatic update checks,
+PowerLens may contact the configured Sparkle appcast URL and GitHub release
+asset URLs to look for a newer version. These requests are only for app updates.
+
 Release notarization is handled by Apple during packaging, outside the running
 app. The app itself does not need an account or a PowerLens cloud service.
 

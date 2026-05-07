@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="PowerLens"
-BUNDLE_ID="com.progresshans.powerlens"
-MIN_SYSTEM_VERSION="13.0"
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGING_DIR="$ROOT_DIR/Packaging"
+source "$ROOT_DIR/script/lib/powerlens_packaging.sh"
+
+APP_NAME="$POWERLENS_APP_NAME"
 RELEASE_DIR="$ROOT_DIR/release"
 STAGE_DIR="$RELEASE_DIR/stage"
 DMG_STAGE_DIR="$RELEASE_DIR/dmg-stage"
@@ -14,14 +12,15 @@ APP_BUNDLE="$STAGE_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-SOURCE_INFO_PLIST="$PACKAGING_DIR/Info.plist"
-SOURCE_ICON="$PACKAGING_DIR/AppIcon.icns"
-ENTITLEMENTS="$PACKAGING_DIR/PowerLens.entitlements"
+SOURCE_INFO_PLIST="$POWERLENS_SOURCE_INFO_PLIST"
+ENTITLEMENTS="$POWERLENS_ENTITLEMENTS"
+SPARKLE_GENERATE_APPCAST_TOOL="$POWERLENS_SPARKLE_GENERATE_APPCAST_TOOL"
 
-DEFAULT_VERSION="0.9.0"
-DEFAULT_BUILD="$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || echo 1)"
+DEFAULT_VERSION="0.9.1"
+DEFAULT_BUILD="$(powerlens_default_build_number)"
 VERSION="${POWERLENS_VERSION:-$DEFAULT_VERSION}"
 BUILD_NUMBER="${POWERLENS_BUILD:-$DEFAULT_BUILD}"
 RELEASE_BASENAME="$APP_NAME-$VERSION"
@@ -30,39 +29,165 @@ DMG_PATH="$RELEASE_DIR/$RELEASE_BASENAME.dmg"
 CHECKSUMS_PATH="$RELEASE_DIR/$RELEASE_BASENAME-checksums.txt"
 SIGN_IDENTITY="${POWERLENS_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${POWERLENS_NOTARY_PROFILE:-}"
+NOTARY_KEYCHAIN="${POWERLENS_NOTARY_KEYCHAIN:-}"
 SKIP_NOTARIZATION="${POWERLENS_SKIP_NOTARIZATION:-0}"
 CLEAN_BUILD="${POWERLENS_CLEAN_BUILD:-1}"
+SPARKLE_FEED_URL="${POWERLENS_SPARKLE_FEED_URL:-https://progresshans.github.io/powerlens/appcast.xml}"
+SPARKLE_ALPHA_FEED_URL="${POWERLENS_SPARKLE_ALPHA_FEED_URL:-https://progresshans.github.io/powerlens/appcast-alpha.xml}"
+SPARKLE_PUBLIC_ED_KEY="${POWERLENS_SPARKLE_PUBLIC_ED_KEY:-}"
+SPARKLE_GENERATE_APPCAST="${POWERLENS_SPARKLE_GENERATE_APPCAST:-0}"
+SPARKLE_APPCAST_DIR="${POWERLENS_SPARKLE_APPCAST_DIR:-}"
+SPARKLE_APPCAST_OUTPUT_PATH="${POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH:-}"
+SPARKLE_DOWNLOAD_URL_PREFIX="${POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX:-}"
+SPARKLE_RELEASE_NOTES_URL_PREFIX="${POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX:-}"
+SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
+SPARKLE_PRIVATE_ED_KEY="${POWERLENS_SPARKLE_PRIVATE_ED_KEY:-}"
+SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
 
-require_file() {
-  local path="$1"
-  if [[ ! -f "$path" ]]; then
-    echo "missing required file: $path" >&2
+normalize_base64_key() {
+  local key_name="$1"
+  local key_value="$2"
+  local expected_byte_lengths="$3"
+
+  POWERLENS_KEY_NAME="$key_name" \
+    POWERLENS_KEY_VALUE="$key_value" \
+    POWERLENS_EXPECTED_BYTE_LENGTHS="$expected_byte_lengths" \
+    python3 - <<'PY'
+import base64
+import os
+
+key_name = os.environ["POWERLENS_KEY_NAME"]
+key = os.environ["POWERLENS_KEY_VALUE"].strip()
+expected_byte_lengths = {
+    int(length)
+    for length in os.environ["POWERLENS_EXPECTED_BYTE_LENGTHS"].replace(",", " ").split()
+}
+
+try:
+    decoded = base64.b64decode(key, validate=True)
+except Exception as error:
+    raise SystemExit(f"sparkle: {key_name} is not valid base64: {error}")
+
+if len(decoded) not in expected_byte_lengths:
+    expected = " or ".join(str(length) for length in sorted(expected_byte_lengths))
+    raise SystemExit(f"sparkle: {key_name} must decode to {expected} bytes, got {len(decoded)} bytes")
+
+print(key, end="")
+PY
+}
+
+normalize_sparkle_keys() {
+  if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    SPARKLE_PUBLIC_ED_KEY="$(normalize_base64_key "SUPublicEDKey" "$SPARKLE_PUBLIC_ED_KEY" 32)"
+  fi
+
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    SPARKLE_PRIVATE_ED_KEY="$(normalize_base64_key "Sparkle private EdDSA key" "$SPARKLE_PRIVATE_ED_KEY" "32 96")"
+  fi
+}
+
+derive_sparkle_public_key() {
+  local private_key="$1"
+
+  POWERLENS_SPARKLE_PRIVATE_ED_KEY="$private_key" swift - <<'SWIFT'
+import CryptoKit
+import Foundation
+
+let keyString = ProcessInfo.processInfo.environment["POWERLENS_SPARKLE_PRIVATE_ED_KEY"]?
+    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+guard let seed = Data(base64Encoded: keyString) else {
+    fputs("sparkle: private EdDSA key is not valid base64\n", stderr)
+    exit(2)
+}
+
+do {
+    switch seed.count {
+    case 32:
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
+        print(privateKey.publicKey.rawRepresentation.base64EncodedString(), terminator: "")
+    case 96:
+        print(seed.suffix(32).base64EncodedString(), terminator: "")
+    default:
+        fputs("sparkle: private EdDSA key must decode to 32 or 96 bytes\n", stderr)
+        exit(2)
+    }
+} catch {
+    fputs("sparkle: private EdDSA key cannot derive a public key\n", stderr)
+    exit(2)
+}
+SWIFT
+}
+
+validate_sparkle_key_pair() {
+  if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    return
+  fi
+
+  local private_key=""
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    private_key="$SPARKLE_PRIVATE_ED_KEY"
+  elif [[ -n "$SPARKLE_ED_KEY_FILE" ]]; then
+    powerlens_require_file "$SPARKLE_ED_KEY_FILE"
+    private_key="$(< "$SPARKLE_ED_KEY_FILE")"
+  else
+    return
+  fi
+
+  local derived_public_key
+  derived_public_key="$(derive_sparkle_public_key "$private_key")"
+  if [[ "$derived_public_key" != "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    echo "sparkle: public and private EdDSA keys do not match" >&2
     exit 2
   fi
 }
 
-set_plist_value() {
-  local key="$1"
-  local value="$2"
-
-  if /usr/libexec/PlistBuddy -c "Print :$key" "$INFO_PLIST" >/dev/null 2>&1; then
-    /usr/libexec/PlistBuddy -c "Set :$key $value" "$INFO_PLIST"
-  else
-    /usr/libexec/PlistBuddy -c "Add :$key string $value" "$INFO_PLIST"
+validate_generated_appcast_signature() {
+  local appcast="$1"
+  local expected_archive="$2"
+  local requires_signature=0
+  if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    requires_signature=1
   fi
-}
 
-strip_extended_attributes() {
-  local path="$1"
+  python3 - "$appcast" "$expected_archive" "$requires_signature" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
 
-  if command -v xattr >/dev/null 2>&1 && [[ -e "$path" ]]; then
-    xattr -cr "$path" 2>/dev/null || true
-  fi
+appcast_path = sys.argv[1]
+expected_archive = sys.argv[2]
+requires_signature = sys.argv[3] == "1"
+signature_key = "{http://www.andymatuschak.org/xml-namespaces/sparkle}edSignature"
+
+tree = ET.parse(appcast_path)
+matches = []
+
+for enclosure in tree.findall(".//enclosure"):
+    url = enclosure.attrib.get("url", "")
+    if url == expected_archive or url.endswith("/" + expected_archive) or url.endswith(expected_archive):
+        matches.append(enclosure)
+
+if not matches:
+    raise SystemExit(f"sparkle: generated appcast has no enclosure for {expected_archive}")
+
+has_missing_signature = any(not enclosure.attrib.get(signature_key) for enclosure in matches)
+if has_missing_signature and requires_signature:
+    raise SystemExit(
+        f"sparkle: generated appcast enclosure for {expected_archive} is missing "
+        "sparkle:edSignature; check the Sparkle private key or Keychain account"
+    )
+
+if has_missing_signature:
+    print(
+        "sparkle: appcast signature omitted; generated appcast will not support secure updates",
+        file=sys.stderr,
+    )
+PY
 }
 
 prepare_release_dir() {
   rm -rf "$STAGE_DIR" "$DMG_STAGE_DIR" "$APP_ZIP" "$DMG_PATH" "$CHECKSUMS_PATH"
-  mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$DMG_STAGE_DIR"
+  mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS" "$DMG_STAGE_DIR"
 }
 
 build_app_bundle() {
@@ -76,42 +201,44 @@ build_app_bundle() {
 
   local build_dir
   local build_binary
-  local resource_bundle
   build_dir="$(swift build -c release --show-bin-path)"
   build_binary="$build_dir/$APP_NAME"
-  resource_bundle="$build_dir/${APP_NAME}_${APP_NAME}.bundle"
 
   cp "$build_binary" "$APP_BINARY"
   chmod +x "$APP_BINARY"
-
-  if [[ -d "$resource_bundle" ]]; then
-    ditto --noqtn --noextattr "$resource_bundle" "$APP_RESOURCES/$(basename "$resource_bundle")"
-  fi
+  powerlens_copy_sparkle_framework "$APP_FRAMEWORKS" "$APP_BINARY"
+  powerlens_copy_resource_bundle "$build_dir" "$APP_RESOURCES"
 
   cp "$SOURCE_INFO_PLIST" "$INFO_PLIST"
-  set_plist_value "CFBundleExecutable" "$APP_NAME"
-  set_plist_value "CFBundleIdentifier" "$BUNDLE_ID"
-  set_plist_value "CFBundleName" "$APP_NAME"
-  set_plist_value "CFBundleDisplayName" "$APP_NAME"
-  set_plist_value "CFBundleShortVersionString" "$VERSION"
-  set_plist_value "CFBundleVersion" "$BUILD_NUMBER"
-  set_plist_value "LSMinimumSystemVersion" "$MIN_SYSTEM_VERSION"
-
-  if [[ -f "$SOURCE_ICON" ]]; then
-    cp "$SOURCE_ICON" "$APP_RESOURCES/AppIcon.icns"
-    set_plist_value "CFBundleIconFile" "AppIcon"
+  powerlens_apply_common_info_plist "$INFO_PLIST" "$VERSION" "$BUILD_NUMBER" "$SPARKLE_FEED_URL" "$SPARKLE_ALPHA_FEED_URL" "$SPARKLE_PUBLIC_ED_KEY" "1"
+  if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    echo "sparkle: SUPublicEDKey omitted; in-app updates are disabled for this build"
   fi
 
-  strip_extended_attributes "$APP_BUNDLE"
+  powerlens_copy_app_icon "$INFO_PLIST" "$APP_RESOURCES"
+
+  powerlens_strip_extended_attributes "$APP_BUNDLE"
 }
 
 sign_app_if_configured() {
   if [[ -z "$SIGN_IDENTITY" ]]; then
-    echo "codesign: skipped (set POWERLENS_SIGN_IDENTITY to sign release artifacts)"
+    echo "codesign: signing app with ad-hoc identity (set POWERLENS_SIGN_IDENTITY for distribution)"
+    codesign --force --deep --sign - "$APP_BUNDLE"
+    codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
     return
   fi
 
   echo "codesign: signing $APP_BUNDLE"
+
+  if [[ -d "$APP_FRAMEWORKS/Sparkle.framework" ]]; then
+    codesign \
+      --force \
+      --options runtime \
+      --timestamp \
+      --sign "$SIGN_IDENTITY" \
+      "$APP_FRAMEWORKS/Sparkle.framework"
+  fi
+
   codesign \
     --force \
     --deep \
@@ -124,8 +251,66 @@ sign_app_if_configured() {
   codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 }
 
+generate_appcast_if_configured() {
+  if [[ "$SPARKLE_GENERATE_APPCAST" != "1" ]]; then
+    return
+  fi
+
+  if [[ -z "$SPARKLE_APPCAST_DIR" ]]; then
+    echo "sparkle: POWERLENS_SPARKLE_APPCAST_DIR is required when POWERLENS_SPARKLE_GENERATE_APPCAST=1" >&2
+    exit 2
+  fi
+
+  powerlens_require_file "$SPARKLE_GENERATE_APPCAST_TOOL"
+  mkdir -p "$SPARKLE_APPCAST_DIR"
+  cp "$APP_ZIP" "$SPARKLE_APPCAST_DIR/"
+
+  local args=("$SPARKLE_GENERATE_APPCAST_TOOL" --account "$SPARKLE_KEY_ACCOUNT")
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    args+=(--ed-key-file -)
+  elif [[ -n "$SPARKLE_ED_KEY_FILE" ]]; then
+    powerlens_require_file "$SPARKLE_ED_KEY_FILE"
+    args+=(--ed-key-file "$SPARKLE_ED_KEY_FILE")
+  fi
+  if [[ -n "$SPARKLE_DOWNLOAD_URL_PREFIX" ]]; then
+    args+=(--download-url-prefix "$SPARKLE_DOWNLOAD_URL_PREFIX")
+  fi
+  if [[ -n "$SPARKLE_RELEASE_NOTES_URL_PREFIX" ]]; then
+    args+=(--release-notes-url-prefix "$SPARKLE_RELEASE_NOTES_URL_PREFIX")
+  fi
+
+  args+=("$SPARKLE_APPCAST_DIR")
+  echo "sparkle: generating appcast in $SPARKLE_APPCAST_DIR"
+  if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
+    printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "${args[@]}"
+  else
+    "${args[@]}"
+  fi
+
+  local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"
+  powerlens_require_file "$generated_appcast"
+  validate_generated_appcast_signature "$generated_appcast" "$(basename "$APP_ZIP")"
+
+  if [[ -n "$SPARKLE_APPCAST_OUTPUT_PATH" ]]; then
+    mkdir -p "$(dirname "$SPARKLE_APPCAST_OUTPUT_PATH")"
+    cp "$generated_appcast" "$SPARKLE_APPCAST_OUTPUT_PATH"
+    echo "sparkle: copied appcast to $SPARKLE_APPCAST_OUTPUT_PATH"
+  fi
+}
+
 zip_app_for_notarization() {
   ditto --noqtn --noextattr -c -k --keepParent "$APP_BUNDLE" "$APP_ZIP"
+}
+
+submit_for_notarization() {
+  local artifact="$1"
+  local args=(submit "$artifact" --keychain-profile "$NOTARY_PROFILE" --wait)
+
+  if [[ -n "$NOTARY_KEYCHAIN" ]]; then
+    args+=(--keychain "$NOTARY_KEYCHAIN")
+  fi
+
+  xcrun notarytool "${args[@]}"
 }
 
 notarize_app_if_configured() {
@@ -135,7 +320,7 @@ notarize_app_if_configured() {
   fi
 
   echo "notarization: submitting app zip"
-  xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  submit_for_notarization "$APP_ZIP"
   xcrun stapler staple "$APP_BUNDLE"
   xcrun stapler validate "$APP_BUNDLE"
 }
@@ -143,7 +328,7 @@ notarize_app_if_configured() {
 create_dmg() {
   ditto --noqtn --noextattr "$APP_BUNDLE" "$DMG_STAGE_DIR/$APP_NAME.app"
   ln -s /Applications "$DMG_STAGE_DIR/Applications"
-  strip_extended_attributes "$DMG_STAGE_DIR"
+  powerlens_strip_extended_attributes "$DMG_STAGE_DIR"
 
   hdiutil create \
     -volname "$APP_NAME" \
@@ -151,7 +336,7 @@ create_dmg() {
     -ov \
     -format UDZO \
     "$DMG_PATH" >/dev/null
-  strip_extended_attributes "$DMG_PATH"
+  powerlens_strip_extended_attributes "$DMG_PATH"
 }
 
 sign_dmg_if_configured() {
@@ -172,7 +357,7 @@ notarize_dmg_if_configured() {
   fi
 
   echo "notarization: submitting dmg"
-  xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+  submit_for_notarization "$DMG_PATH"
   xcrun stapler staple "$DMG_PATH"
   xcrun stapler validate "$DMG_PATH"
 }
@@ -193,8 +378,10 @@ print_summary() {
   echo "- $CHECKSUMS_PATH"
 }
 
-require_file "$SOURCE_INFO_PLIST"
-require_file "$ENTITLEMENTS"
+powerlens_require_file "$SOURCE_INFO_PLIST"
+powerlens_require_file "$ENTITLEMENTS"
+normalize_sparkle_keys
+validate_sparkle_key_pair
 prepare_release_dir
 build_app_bundle
 sign_app_if_configured
@@ -204,5 +391,6 @@ zip_app_for_notarization
 create_dmg
 sign_dmg_if_configured
 notarize_dmg_if_configured
+generate_appcast_if_configured
 write_checksums
 print_summary

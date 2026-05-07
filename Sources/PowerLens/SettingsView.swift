@@ -2,10 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: PowerLensStore
+    @ObservedObject var softwareUpdateController: SoftwareUpdateController
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(TelemetryEnginePreference.storageKey) private var telemetryEnginePreference = TelemetryEnginePreference.auto.rawValue
     @AppStorage(DockIconPreference.storageKey) private var showDockIcon = DockIconPreference.defaultValue
     @AppStorage(MenuBarDisplayStylePreference.storageKey) private var menuBarDisplayStyle = MenuBarDisplayStylePreference.defaultValue
+    @AppStorage(UpdateChannelPreference.storageKey) private var updateChannel = UpdateChannelPreference.defaultValue
     @SceneStorage("settings.selectedPane") private var selectedPaneRaw = SettingsPane.general.rawValue
 
     private var selectedPane: SettingsPane {
@@ -29,6 +31,9 @@ struct SettingsView: View {
         .frame(minWidth: 760, minHeight: 480)
         .onChange(of: telemetryEnginePreference) { _ in
             store.refreshNow()
+        }
+        .onChange(of: updateChannel) { _ in
+            softwareUpdateController.updateChannelPreferenceChanged()
         }
     }
 
@@ -156,6 +161,58 @@ struct SettingsView: View {
                 Toggle(L10n.text("dockIcon.toggle"), isOn: $showDockIcon)
                     .labelsHidden()
                     .toggleStyle(.switch)
+            }
+
+            SettingsDivider()
+
+            PreferenceRow(
+                title: L10n.text("updates.channel"),
+                detail: (UpdateChannelPreference(rawValue: updateChannel) ?? .stable).detail
+            ) {
+                Picker(L10n.text("updates.channel"), selection: $updateChannel) {
+                    ForEach(UpdateChannelPreference.allCases) { channel in
+                        Text(channel.title).tag(channel.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+                .disabled(!softwareUpdateController.isConfigured)
+            }
+
+            SettingsDivider()
+
+            PreferenceRow(
+                title: L10n.text("updates.check"),
+                detail: softwareUpdateController.isConfigured
+                    ? L10n.text("updates.check.description")
+                    : L10n.text("updates.notConfigured")
+            ) {
+                Button(L10n.text("updates.check.button")) {
+                    softwareUpdateController.checkForUpdates()
+                }
+                .disabled(!softwareUpdateController.canCheckForUpdates)
+                .controlSize(.regular)
+            }
+
+            SettingsDivider()
+
+            PreferenceRow(
+                title: L10n.text("updates.automatic"),
+                detail: softwareUpdateController.isConfigured
+                    ? L10n.text("updates.automatic.description")
+                    : L10n.text("updates.notConfigured")
+            ) {
+                Toggle(
+                    L10n.text("updates.automatic"),
+                    isOn: Binding(
+                        get: { softwareUpdateController.automaticallyChecksForUpdates },
+                        set: { softwareUpdateController.automaticallyChecksForUpdates = $0 }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!softwareUpdateController.isConfigured)
             }
 
             SettingsDivider()
