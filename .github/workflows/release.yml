@@ -159,31 +159,35 @@ jobs:
 
           validate_base64_secret() {
             local name="$1"
-            local expected_bytes="$2"
+            local expected_byte_lengths="$2"
 
             POWERLENS_SECRET_NAME="$name" \
               POWERLENS_SECRET_VALUE="${!name}" \
-              POWERLENS_EXPECTED_BYTES="$expected_bytes" \
+              POWERLENS_EXPECTED_BYTE_LENGTHS="$expected_byte_lengths" \
               python3 - <<'PY'
           import base64
           import os
 
           name = os.environ["POWERLENS_SECRET_NAME"]
           value = os.environ["POWERLENS_SECRET_VALUE"].strip()
-          expected_bytes = int(os.environ["POWERLENS_EXPECTED_BYTES"])
+          expected_byte_lengths = {
+              int(length)
+              for length in os.environ["POWERLENS_EXPECTED_BYTE_LENGTHS"].replace(",", " ").split()
+          }
 
           try:
               decoded = base64.b64decode(value, validate=True)
           except Exception as error:
               raise SystemExit(f"invalid {name}: {error}")
 
-          if len(decoded) != expected_bytes:
-              raise SystemExit(f"{name} must decode to {expected_bytes} bytes, got {len(decoded)} bytes")
+          if len(decoded) not in expected_byte_lengths:
+              expected = " or ".join(str(length) for length in sorted(expected_byte_lengths))
+              raise SystemExit(f"{name} must decode to {expected} bytes, got {len(decoded)} bytes")
           PY
           }
 
           validate_base64_secret POWERLENS_SPARKLE_PUBLIC_ED_KEY 32
-          validate_base64_secret POWERLENS_SPARKLE_PRIVATE_ED_KEY 32
+          validate_base64_secret POWERLENS_SPARKLE_PRIVATE_ED_KEY "32 96"
 
       - name: Import Developer ID certificate
         env:

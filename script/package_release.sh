@@ -47,26 +47,30 @@ SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
 normalize_base64_key() {
   local key_name="$1"
   local key_value="$2"
-  local expected_bytes="$3"
+  local expected_byte_lengths="$3"
 
   POWERLENS_KEY_NAME="$key_name" \
     POWERLENS_KEY_VALUE="$key_value" \
-    POWERLENS_EXPECTED_BYTES="$expected_bytes" \
+    POWERLENS_EXPECTED_BYTE_LENGTHS="$expected_byte_lengths" \
     python3 - <<'PY'
 import base64
 import os
 
 key_name = os.environ["POWERLENS_KEY_NAME"]
 key = os.environ["POWERLENS_KEY_VALUE"].strip()
-expected_bytes = int(os.environ["POWERLENS_EXPECTED_BYTES"])
+expected_byte_lengths = {
+    int(length)
+    for length in os.environ["POWERLENS_EXPECTED_BYTE_LENGTHS"].replace(",", " ").split()
+}
 
 try:
     decoded = base64.b64decode(key, validate=True)
 except Exception as error:
     raise SystemExit(f"sparkle: {key_name} is not valid base64: {error}")
 
-if len(decoded) != expected_bytes:
-    raise SystemExit(f"sparkle: {key_name} must decode to {expected_bytes} bytes, got {len(decoded)} bytes")
+if len(decoded) not in expected_byte_lengths:
+    expected = " or ".join(str(length) for length in sorted(expected_byte_lengths))
+    raise SystemExit(f"sparkle: {key_name} must decode to {expected} bytes, got {len(decoded)} bytes")
 
 print(key, end="")
 PY
@@ -78,7 +82,7 @@ normalize_sparkle_keys() {
   fi
 
   if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
-    SPARKLE_PRIVATE_ED_KEY="$(normalize_base64_key "Sparkle private EdDSA key" "$SPARKLE_PRIVATE_ED_KEY" 32)"
+    SPARKLE_PRIVATE_ED_KEY="$(normalize_base64_key "Sparkle private EdDSA key" "$SPARKLE_PRIVATE_ED_KEY" "32 96")"
   fi
 }
 
@@ -98,8 +102,16 @@ guard let seed = Data(base64Encoded: keyString) else {
 }
 
 do {
-    let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
-    print(privateKey.publicKey.rawRepresentation.base64EncodedString(), terminator: "")
+    switch seed.count {
+    case 32:
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: seed)
+        print(privateKey.publicKey.rawRepresentation.base64EncodedString(), terminator: "")
+    case 96:
+        print(seed.suffix(32).base64EncodedString(), terminator: "")
+    default:
+        fputs("sparkle: private EdDSA key must decode to 32 or 96 bytes\n", stderr)
+        exit(2)
+    }
 } catch {
     fputs("sparkle: private EdDSA key cannot derive a public key\n", stderr)
     exit(2)

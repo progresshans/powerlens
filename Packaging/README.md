@@ -174,7 +174,8 @@ The private Sparkle key can be exported on a maintainer Mac with:
 
 Store the file contents in the `POWERLENS_SPARKLE_PRIVATE_ED_KEY` secret, then
 delete the exported local file. The exported key should be a single-line base64
-value that decodes to 32 bytes.
+value. Current Sparkle keys decode to 32 bytes; older Sparkle exports can decode
+to 96 bytes and are still accepted by the release tooling.
 
 ## Release Checklist
 
