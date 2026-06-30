@@ -111,6 +111,46 @@ struct HistoryStoreTests {
     }
 
     @Test
+    func summaryIncludesRolledUpData() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "summary-rollup")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let day0 = Date(timeIntervalSince1970: 1_700_000_000)
+        await store.append(makeSnapshot(timestamp: day0, systemLoadW: 10, externalConnected: false, isCharging: false))
+        await store.append(makeSnapshot(timestamp: day0.addingTimeInterval(60), systemLoadW: 20, externalConnected: false, isCharging: false))
+        await store.append(makeSnapshot(timestamp: day0.addingTimeInterval(120), systemLoadW: 30, externalConnected: true, isCharging: true))
+        let recent = day0.addingTimeInterval(40 * 24 * 3_600)
+        await store.append(makeSnapshot(timestamp: recent, systemLoadW: 40, externalConnected: true, isCharging: false))
+
+        await store.purge(olderThan: day0.addingTimeInterval(10 * 24 * 3_600), rollupBucketSeconds: 86_400)
+        #expect(try tableCount("telemetry_samples", dbURL: dbURL) == 1)
+        #expect(try tableCount("history_rollups", dbURL: dbURL) == 1)
+
+        let summary = await store.summary(for: DateInterval(start: Date(timeIntervalSince1970: 0), end: recent.addingTimeInterval(60)))
+        #expect(summary.sampleCount == 4)
+        #expect(summary.chargeSessions == 1)
+        #expect(abs(summary.timeOnBattery - 120) < 0.001)
+        #expect(abs((summary.avgSystemLoadW ?? 0) - 25) < 0.001)
+        #expect(abs((summary.maxSystemLoadW ?? 0) - 40) < 0.001)
+    }
+
+    @Test
+    func purgeWithResolutionOffDiscardsExistingRollups() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "rollup-off")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let day0 = Date(timeIntervalSince1970: 1_700_000_000)
+        await store.append(makeSnapshot(timestamp: day0))
+        await store.append(makeSnapshot(timestamp: day0.addingTimeInterval(60)))
+
+        await store.purge(olderThan: day0.addingTimeInterval(10 * 24 * 3_600), rollupBucketSeconds: 86_400)
+        #expect(try tableCount("history_rollups", dbURL: dbURL) == 1)
+
+        await store.purge(olderThan: day0.addingTimeInterval(20 * 24 * 3_600), rollupBucketSeconds: nil)
+        #expect(try tableCount("history_rollups", dbURL: dbURL) == 0)
+    }
+
+    @Test
     func aggregatedSeriesGroupsSamplesIntoBuckets() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "aggregate")
         let store = HistoryStore(databaseURL: dbURL)

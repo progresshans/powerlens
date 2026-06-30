@@ -109,6 +109,9 @@ enum HistorySchema {
             battery_power_avg_mw INTEGER,
             battery_temperature_avg_c_x100 INTEGER,
             battery_temperature_max_c_x100 INTEGER,
+            on_battery_seconds INTEGER,
+            on_external_seconds INTEGER,
+            charge_sessions INTEGER,
             PRIMARY KEY (bucket_start, bucket_seconds)
         );
         """,
@@ -116,5 +119,11 @@ enum HistorySchema {
         CREATE INDEX IF NOT EXISTS history_rollups_bucket_idx
         ON history_rollups(bucket_start);
         """,
+        // Forward-compatibility: add the charge-state aggregate columns to rollup
+        // tables created by an earlier prerelease. These error harmlessly (and are
+        // ignored) when the columns already exist from the CREATE above.
+        "ALTER TABLE history_rollups ADD COLUMN on_battery_seconds INTEGER;",
+        "ALTER TABLE history_rollups ADD COLUMN on_external_seconds INTEGER;",
+        "ALTER TABLE history_rollups ADD COLUMN charge_sessions INTEGER;",
     ]
 }

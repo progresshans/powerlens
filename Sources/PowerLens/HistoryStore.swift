@@ -148,9 +148,16 @@ actor HistoryStore: HistoryStoring {
                 SQLiteStatement.execute("ROLLBACK;", using: db)
             }
         } else {
-            // Long-term resolution is off: discard old samples without downsampling.
+            // Long-term resolution is off: discard old samples without downsampling,
+            // including any rollups retained from a previous resolution setting.
             try? SQLiteStatement.executePrepared(
                 "DELETE FROM telemetry_samples WHERE ts < ?",
+                using: db
+            ) { statement in
+                sqlite3_bind_int64(statement, 1, cutoff)
+            }
+            try? SQLiteStatement.executePrepared(
+                "DELETE FROM history_rollups WHERE bucket_start < ?",
                 using: db
             ) { statement in
                 sqlite3_bind_int64(statement, 1, cutoff)
@@ -164,6 +171,9 @@ actor HistoryStore: HistoryStoring {
     }
 
     private func rollUpSamples(before cutoff: Int64, bucketSeconds: Int, using db: OpaquePointer) throws {
+        // Charge sessions are detected with a LAG window (rising charging edge);
+        // on-battery / on-external time is approximated as the sample count times
+        // the nominal one-minute sampling interval.
         let sql = """
         INSERT INTO history_rollups (
             bucket_start,
@@ -177,10 +187,13 @@ actor HistoryStore: HistoryStoring {
             system_load_max_mw,
             battery_power_avg_mw,
             battery_temperature_avg_c_x100,
-            battery_temperature_max_c_x100
+            battery_temperature_max_c_x100,
+            on_battery_seconds,
+            on_external_seconds,
+            charge_sessions
         )
         SELECT
-            (ts / ?) * ?,
+            bucket,
             ?,
             COUNT(*),
             CAST(ROUND(AVG(battery_level_x10)) AS INTEGER),
@@ -191,10 +204,24 @@ actor HistoryStore: HistoryStoring {
             MAX(system_load_mw),
             CAST(ROUND(AVG(battery_power_mw)) AS INTEGER),
             CAST(ROUND(AVG(battery_temperature_c_x100)) AS INTEGER),
-            MAX(battery_temperature_c_x100)
-        FROM telemetry_samples
-        WHERE ts < ?
-        GROUP BY (ts / ?)
+            MAX(battery_temperature_c_x100),
+            SUM(CASE WHEN external_connected = 0 THEN 60 ELSE 0 END),
+            SUM(CASE WHEN external_connected = 1 THEN 60 ELSE 0 END),
+            SUM(rising)
+        FROM (
+            SELECT
+                (ts / ?) * ? AS bucket,
+                external_connected,
+                battery_level_x10,
+                adapter_input_power_mw,
+                system_load_mw,
+                battery_power_mw,
+                battery_temperature_c_x100,
+                CASE WHEN is_charging = 1 AND COALESCE(LAG(is_charging) OVER (ORDER BY ts), 0) = 0 THEN 1 ELSE 0 END AS rising
+            FROM telemetry_samples
+            WHERE ts < ?
+        )
+        GROUP BY bucket
         """
 
         try SQLiteStatement.executePrepared(sql, using: db) { statement in
@@ -203,7 +230,6 @@ actor HistoryStore: HistoryStoring {
             sqlite3_bind_int64(statement, 2, bucket)
             sqlite3_bind_int64(statement, 3, bucket)
             sqlite3_bind_int64(statement, 4, cutoff)
-            sqlite3_bind_int64(statement, 5, bucket)
         }
     }
 
@@ -491,6 +517,79 @@ actor HistoryStore: HistoryStoring {
             previousExternal = external
             previousCharging = charging
         }
+
+        // Fold in downsampled rollups so a long range's summary covers the full
+        // record, not just the full-detail window. Raw samples and rollups never
+        // overlap in time, so summing is safe.
+        let rollupSQL = """
+        SELECT
+            COALESCE(SUM(sample_count), 0),
+            SUM(system_load_avg_mw * sample_count),
+            SUM(CASE WHEN system_load_avg_mw IS NOT NULL THEN sample_count ELSE 0 END),
+            MAX(system_load_max_mw),
+            SUM(adapter_input_power_avg_mw * sample_count),
+            SUM(CASE WHEN adapter_input_power_avg_mw IS NOT NULL THEN sample_count ELSE 0 END),
+            SUM(battery_temperature_avg_c_x100 * sample_count),
+            SUM(CASE WHEN battery_temperature_avg_c_x100 IS NOT NULL THEN sample_count ELSE 0 END),
+            MAX(battery_temperature_max_c_x100),
+            MIN(battery_level_min_x10),
+            MAX(battery_level_max_x10),
+            COALESCE(SUM(on_battery_seconds), 0),
+            COALESCE(SUM(on_external_seconds), 0),
+            COALESCE(SUM(charge_sessions), 0)
+        FROM history_rollups
+        WHERE bucket_start >= ? AND bucket_start < ?
+        """
+
+        var rollupStatement: OpaquePointer?
+        if sqlite3_prepare_v2(db, rollupSQL, -1, &rollupStatement, nil) == SQLITE_OK {
+            sqlite3_bind_int64(rollupStatement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+            sqlite3_bind_int64(rollupStatement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+
+            if sqlite3_step(rollupStatement) == SQLITE_ROW {
+                let rollupCount = Int(sqlite3_column_int64(rollupStatement, 0))
+                if rollupCount > 0 {
+                    sampleCount += rollupCount
+
+                    if let loadSumMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 1) {
+                        loadSum += loadSumMilliwatts / 1000
+                    }
+                    loadSamples += Int(sqlite3_column_int64(rollupStatement, 2))
+                    if let loadMaxMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 3) {
+                        let value = loadMaxMilliwatts / 1000
+                        loadMax = Swift.max(loadMax ?? value, value)
+                    }
+
+                    if let inputSumMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 4) {
+                        inputSum += inputSumMilliwatts / 1000
+                    }
+                    inputSamples += Int(sqlite3_column_int64(rollupStatement, 5))
+
+                    if let tempSumHundredths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 6) {
+                        tempSum += tempSumHundredths / 100
+                    }
+                    tempSamples += Int(sqlite3_column_int64(rollupStatement, 7))
+                    if let tempMaxHundredths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 8) {
+                        let value = tempMaxHundredths / 100
+                        tempMax = Swift.max(tempMax ?? value, value)
+                    }
+
+                    if let levelMinTenths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 9) {
+                        let value = levelMinTenths / 10
+                        levelMin = Swift.min(levelMin ?? value, value)
+                    }
+                    if let levelMaxTenths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 10) {
+                        let value = levelMaxTenths / 10
+                        levelMax = Swift.max(levelMax ?? value, value)
+                    }
+
+                    timeOnBattery += Double(sqlite3_column_int64(rollupStatement, 11))
+                    timeOnExternal += Double(sqlite3_column_int64(rollupStatement, 12))
+                    chargeSessions += Int(sqlite3_column_int64(rollupStatement, 13))
+                }
+            }
+        }
+        sqlite3_finalize(rollupStatement)
 
         guard sampleCount > 0 else {
             return .empty(range: range)
