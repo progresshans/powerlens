@@ -17,6 +17,21 @@ struct MenuBarRootView: View {
                     .modifier(PopoverContainerStyle(maxContentHeight: maxContentHeight))
                     .frame(width: Self.contentWidth, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: maxContentHeight == nil)
+            } else if store.telemetryUnavailable {
+                VStack(spacing: 10) {
+                    Image(systemName: "bolt.slash")
+                        .font(.title)
+                        .foregroundStyle(.secondary)
+                    Text(L10n.text("ui.telemetryUnavailable.title"))
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                    Text(L10n.text("ui.telemetryUnavailable.message"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(24)
+                .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
             } else {
                 ProgressView(L10n.text("ui.readingPowerData"))
                     .padding(32)
@@ -40,8 +55,8 @@ struct MenuBarRootView: View {
                 }
             }
 
-            if snapshot.frontmostAppName != nil || snapshot.frontmostAppBundleID != nil {
-                ForegroundAppCard(snapshot: snapshot)
+            if !store.topEnergyApps.isEmpty {
+                EnergyUsageCard(apps: store.topEnergyApps)
             }
 
             CompactDetailCard(

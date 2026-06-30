@@ -2,7 +2,6 @@
 "language.system" = "시스템";
 "language.english" = "English";
 "language.korean" = "한국어";
-"language.description" = "PowerLens 안에서만 적용됩니다. 보통 한 번 정하면 거의 바꾸지 않습니다.";
 
 "dockIcon.title" = "Dock 아이콘";
 "dockIcon.toggle" = "Dock에 PowerLens 표시";
@@ -36,11 +35,8 @@
 "telemetry.live.detail" = "%@ · %@";
 
 "settings.pane.general" = "일반";
-"settings.pane.general.description" = "PowerLens의 기본 표시 방식을 정합니다.";
 "settings.pane.telemetry" = "텔레메트리";
-"settings.pane.telemetry.description" = "전력 데이터를 읽는 경로와 현재 상태를 확인합니다.";
 "settings.pane.behavior" = "앱 동작";
-"settings.pane.behavior.description" = "메뉴바와 Dock에서 보이는 방식을 조정합니다.";
 "settings.telemetry.status" = "텔레메트리 상태";
 "settings.currentMode" = "현재 모드";
 
@@ -158,7 +154,7 @@
 "ui.sidebar.power" = "전력 흐름";
 "ui.sidebar.battery" = "배터리";
 "ui.sidebar.diagnostics" = "진단";
-"ui.sidebar.history" = "히스토리";
+"ui.sidebar.history" = "인사이트";
 
 "ui.flow.batteryAssist" = "배터리 보조";
 "ui.flow.charging" = "배터리 충전";
@@ -174,7 +170,7 @@
 "ui.flow.directPowerDetail" = "어댑터가 현재 시스템 부하를 직접 커버하고 있습니다.";
 "ui.flow.batteryOnlyDetail" = "시스템 부하를 배터리 전력만으로 커버하고 있습니다.";
 "ui.flow.balanced" = "현재 유입 전력과 시스템 부하가 거의 균형입니다.";
-"ui.highEnergyApp.label" = "높은 전력 사용량:";
+"ui.highEnergyApp.label" = "전력 사용량 높은 앱";
 "ui.highEnergyApp.unknown" = "확인되지 않음";
 
 "ui.history.empty" = "앱이 실행되는 동안 히스토리가 쌓입니다. 몇 분 정도 켜두면 여기에서 차트를 볼 수 있습니다.";
@@ -217,3 +213,47 @@
 "format.secondsAgo" = "%d초 전";
 "format.minutesAgo" = "%d분 전";
 "format.hoursAgo" = "%d시간 전";
+
+"insights.title" = "인사이트";
+"insights.range.24h" = "24시간";
+"insights.range.7d" = "7일";
+"insights.range.30d" = "30일";
+"insights.range.all" = "전체";
+"insights.loading" = "인사이트 불러오는 중…";
+"insights.empty" = "이 기간에 대한 이력이 아직 부족합니다. PowerLens를 실행해 두고 잠시 후 다시 확인하세요.";
+
+"insights.summary.avgLoad" = "평균 시스템 부하";
+"insights.summary.peakLoad" = "최대 부하";
+"insights.summary.avgInput" = "평균 입력 전력";
+"insights.summary.avgTemp" = "평균 온도";
+"insights.summary.batteryRange" = "배터리 범위";
+"insights.summary.timeOnBattery" = "배터리 사용 시간";
+"insights.summary.timeOnExternal" = "어댑터 사용 시간";
+"insights.summary.chargeSessions" = "충전 세션";
+"insights.summary.rangeValue" = "%@ – %@";
+
+"insights.chart.battery.title" = "배터리 잔량";
+"insights.chart.battery.subtitle" = "선택한 기간의 충전 추이";
+"insights.chart.power.title" = "전력 흐름";
+"insights.chart.power.subtitle" = "입력 전력 대 시스템 부하";
+"insights.chart.health.title" = "배터리 건강";
+"insights.chart.health.subtitle" = "시간에 따른 완충 용량";
+"insights.chart.cycles.title" = "충전 사이클";
+"insights.chart.cycles.subtitle" = "시간에 따른 사이클 수";
+
+"insights.series.input" = "입력 전력";
+"insights.series.load" = "시스템 부하";
+"insights.series.battery" = "배터리 전력";
+"insights.series.capacity" = "용량";
+"insights.series.cycles" = "사이클";
+
+"insights.health.empty" = "용량 수치가 며칠~몇 주에 걸쳐 변하면서 배터리 건강 이력이 쌓입니다.";
+
+"notifications.toggle" = "진단 알림";
+"notifications.description" = "충전기나 배터리 문제가 감지되면 알림을 보냅니다.";
+"insights.export" = "내보내기";
+
+"ui.telemetryUnavailable.title" = "전력 데이터를 사용할 수 없음";
+"ui.telemetryUnavailable.message" = "이 Mac에서 배터리·전력 정보를 읽지 못했습니다. 백그라운드에서 계속 다시 시도합니다.";
+
+"launchAtLogin.toggle" = "로그인 시 실행";
