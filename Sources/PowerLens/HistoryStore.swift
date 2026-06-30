@@ -119,7 +119,7 @@ actor HistoryStore: HistoryStoring {
         }
     }
 
-    func purge(olderThan cutoffDate: Date) async {
+    func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async {
         guard let db = openDatabase() else {
             return
         }
@@ -129,17 +129,82 @@ actor HistoryStore: HistoryStoring {
         }
 
         let cutoff = Int64(cutoffDate.timeIntervalSince1970.rounded())
-        try? SQLiteStatement.executePrepared(
-            "DELETE FROM telemetry_samples WHERE ts < ?",
-            using: db
-        ) { statement in
-            sqlite3_bind_int64(statement, 1, cutoff)
+
+        if let bucketSeconds = rollupBucketSeconds, bucketSeconds > 0 {
+            // Only roll up and delete buckets that are fully older than the cutoff
+            // so a bucket straddling the cutoff is never split across two runs.
+            let effectiveCutoff = (cutoff / Int64(bucketSeconds)) * Int64(bucketSeconds)
+            SQLiteStatement.execute("BEGIN IMMEDIATE TRANSACTION;", using: db)
+            do {
+                try rollUpSamples(before: effectiveCutoff, bucketSeconds: bucketSeconds, using: db)
+                try SQLiteStatement.executePrepared(
+                    "DELETE FROM telemetry_samples WHERE ts < ?",
+                    using: db
+                ) { statement in
+                    sqlite3_bind_int64(statement, 1, effectiveCutoff)
+                }
+                SQLiteStatement.execute("COMMIT;", using: db)
+            } catch {
+                SQLiteStatement.execute("ROLLBACK;", using: db)
+            }
+        } else {
+            // Long-term resolution is off: discard old samples without downsampling.
+            try? SQLiteStatement.executePrepared(
+                "DELETE FROM telemetry_samples WHERE ts < ?",
+                using: db
+            ) { statement in
+                sqlite3_bind_int64(statement, 1, cutoff)
+            }
         }
 
         // Reclaim freed pages when incremental auto-vacuum is enabled. This is a
         // no-op on databases created before auto-vacuum was enabled, and on
         // those the file simply stops growing rather than shrinking.
         SQLiteStatement.execute("PRAGMA incremental_vacuum;", using: db)
+    }
+
+    private func rollUpSamples(before cutoff: Int64, bucketSeconds: Int, using db: OpaquePointer) throws {
+        let sql = """
+        INSERT INTO history_rollups (
+            bucket_start,
+            bucket_seconds,
+            sample_count,
+            battery_level_avg_x10,
+            battery_level_min_x10,
+            battery_level_max_x10,
+            adapter_input_power_avg_mw,
+            system_load_avg_mw,
+            system_load_max_mw,
+            battery_power_avg_mw,
+            battery_temperature_avg_c_x100,
+            battery_temperature_max_c_x100
+        )
+        SELECT
+            (ts / ?) * ?,
+            ?,
+            COUNT(*),
+            CAST(ROUND(AVG(battery_level_x10)) AS INTEGER),
+            MIN(battery_level_x10),
+            MAX(battery_level_x10),
+            CAST(ROUND(AVG(adapter_input_power_mw)) AS INTEGER),
+            CAST(ROUND(AVG(system_load_mw)) AS INTEGER),
+            MAX(system_load_mw),
+            CAST(ROUND(AVG(battery_power_mw)) AS INTEGER),
+            CAST(ROUND(AVG(battery_temperature_c_x100)) AS INTEGER),
+            MAX(battery_temperature_c_x100)
+        FROM telemetry_samples
+        WHERE ts < ?
+        GROUP BY (ts / ?)
+        """
+
+        try SQLiteStatement.executePrepared(sql, using: db) { statement in
+            let bucket = sqlite3_int64(bucketSeconds)
+            sqlite3_bind_int64(statement, 1, bucket)
+            sqlite3_bind_int64(statement, 2, bucket)
+            sqlite3_bind_int64(statement, 3, bucket)
+            sqlite3_bind_int64(statement, 4, cutoff)
+            sqlite3_bind_int64(statement, 5, bucket)
+        }
     }
 
     func aggregatedSeries(for range: DateInterval, bucketSeconds: Int) async -> [AggregatedTelemetryPoint] {
@@ -201,6 +266,67 @@ actor HistoryStore: HistoryStoring {
                     avgTemperatureC: SQLiteStatement.optionalDoubleValue(statement, index: 8).map { $0 / 100 },
                     maxTemperatureC: SQLiteStatement.optionalDoubleValue(statement, index: 9).map { $0 / 100 },
                     sampleCount: Int(sqlite3_column_int64(statement, 10))
+                )
+            )
+        }
+
+        return points
+    }
+
+    func rollupSeries(for range: DateInterval) async -> [AggregatedTelemetryPoint] {
+        guard let db = openDatabase() else {
+            return []
+        }
+
+        defer {
+            sqlite3_close(db)
+        }
+
+        let sql = """
+        SELECT
+            bucket_start,
+            sample_count,
+            battery_level_avg_x10,
+            battery_level_min_x10,
+            battery_level_max_x10,
+            adapter_input_power_avg_mw,
+            system_load_avg_mw,
+            system_load_max_mw,
+            battery_power_avg_mw,
+            battery_temperature_avg_c_x100,
+            battery_temperature_max_c_x100
+        FROM history_rollups
+        WHERE bucket_start >= ? AND bucket_start < ?
+        ORDER BY bucket_start ASC
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+        sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+
+        var points: [AggregatedTelemetryPoint] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            points.append(
+                AggregatedTelemetryPoint(
+                    bucketStart: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
+                    avgBatteryLevel: SQLiteStatement.optionalDoubleValue(statement, index: 2).map { $0 / 10 },
+                    minBatteryLevel: SQLiteStatement.optionalDoubleValue(statement, index: 3).map { $0 / 10 },
+                    maxBatteryLevel: SQLiteStatement.optionalDoubleValue(statement, index: 4).map { $0 / 10 },
+                    avgAdapterInputPowerW: SQLiteStatement.optionalDoubleValue(statement, index: 5).map { $0 / 1000 },
+                    avgSystemLoadW: SQLiteStatement.optionalDoubleValue(statement, index: 6).map { $0 / 1000 },
+                    maxSystemLoadW: SQLiteStatement.optionalDoubleValue(statement, index: 7).map { $0 / 1000 },
+                    avgBatteryPowerW: SQLiteStatement.optionalDoubleValue(statement, index: 8).map { $0 / 1000 },
+                    avgTemperatureC: SQLiteStatement.optionalDoubleValue(statement, index: 9).map { $0 / 100 },
+                    maxTemperatureC: SQLiteStatement.optionalDoubleValue(statement, index: 10).map { $0 / 100 },
+                    sampleCount: Int(sqlite3_column_int64(statement, 1))
                 )
             )
         }

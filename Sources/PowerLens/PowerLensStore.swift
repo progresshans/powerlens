@@ -27,7 +27,6 @@ final class PowerLensStore: ObservableObject {
     private var refreshSequence = 0
     private var recentSnapshots: [TelemetrySnapshot] = []
     private let memoryWindow: TimeInterval = 30 * 24 * 3600
-    private let retentionWindow: TimeInterval = 90 * 24 * 3600
     private let purgeInterval: TimeInterval = 24 * 3600
     private var lastPurgeAt: Date?
     private let interactiveRefreshInterval: Duration = .seconds(3)
@@ -70,7 +69,15 @@ final class PowerLensStore: ObservableObject {
         }
 
         lastPurgeAt = current
-        await historyStore.purge(olderThan: current.addingTimeInterval(-retentionWindow))
+
+        guard let window = RawHistoryWindow.current.seconds else {
+            return  // Full-detail history kept forever: nothing to prune.
+        }
+
+        await historyStore.purge(
+            olderThan: current.addingTimeInterval(-window),
+            rollupBucketSeconds: LongTermResolution.current.bucketSeconds
+        )
     }
 
     deinit {
@@ -100,18 +107,42 @@ final class PowerLensStore: ObservableObject {
     /// health trend for the Insights view. The health trend ignores the range
     /// because capacity changes slowly and is most useful over the full record.
     func loadInsights(for range: HistoryRange) async -> InsightsData {
-        let interval = range.interval(now: now())
+        let currentDate = now()
+        let interval = range.interval(now: currentDate)
 
-        async let series = historyStore.aggregatedSeries(for: interval, bucketSeconds: range.bucketSeconds)
-        async let summary = historyStore.summary(for: interval)
-        async let healthTrend = historyStore.batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
+        // Full-detail samples exist only within the raw retention window; older
+        // data is read from the downsampled rollups so long ranges still cover
+        // the full record at a coarser resolution.
+        let rawCutoff = RawHistoryWindow.current.seconds
+            .map { currentDate.addingTimeInterval(-$0) }
+            ?? Date(timeIntervalSince1970: 0)
+        let rawStart = max(interval.start, rawCutoff)
+
+        var rawSeries: [AggregatedTelemetryPoint] = []
+        if rawStart < interval.end {
+            rawSeries = await historyStore.aggregatedSeries(
+                for: DateInterval(start: rawStart, end: interval.end),
+                bucketSeconds: range.bucketSeconds
+            )
+        }
+
+        var rollups: [AggregatedTelemetryPoint] = []
+        if interval.start < rawCutoff {
+            rollups = await historyStore.rollupSeries(
+                for: DateInterval(start: interval.start, end: min(rawCutoff, interval.end))
+            )
+        }
+
+        let summary = await historyStore.summary(for: interval)
+        let healthTrend = await historyStore.batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
+        let mergedSeries = (rollups + rawSeries).sorted { $0.bucketStart < $1.bucketStart }
 
         return InsightsData(
             range: range,
             interval: interval,
-            series: await series,
-            summary: await summary,
-            healthTrend: await healthTrend
+            series: mergedSeries,
+            summary: summary,
+            healthTrend: healthTrend
         )
     }
 

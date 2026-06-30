@@ -10,6 +10,8 @@ struct SettingsView: View {
     @AppStorage(MenuBarDisplayStylePreference.storageKey) private var menuBarDisplayStyle = MenuBarDisplayStylePreference.defaultValue
     @AppStorage(NotificationPreference.storageKey) private var notificationsEnabled = NotificationPreference.defaultValue
     @AppStorage(UpdateChannelPreference.storageKey) private var updateChannel = UpdateChannelPreference.defaultValue
+    @AppStorage(RawHistoryWindow.storageKey) private var rawHistoryWindow = RawHistoryWindow.defaultValue
+    @AppStorage(LongTermResolution.storageKey) private var longTermResolution = LongTermResolution.defaultValue
     @SceneStorage("settings.selectedPane") private var selectedPaneRaw = SettingsPane.general.rawValue
 
     private var selectedPane: SettingsPane {
@@ -59,6 +61,8 @@ struct SettingsView: View {
                 generalSection
             case .telemetry:
                 telemetrySection
+            case .history:
+                historySection
             case .behavior:
                 behaviorSection
             }
@@ -111,6 +115,36 @@ struct SettingsView: View {
                     L10n.text("telemetry.label.preference"),
                     (TelemetryEnginePreference(rawValue: telemetryEnginePreference) ?? .auto).detail
                 )
+            }
+        }
+    }
+
+    // MARK: - History
+
+    @ViewBuilder
+    private var historySection: some View {
+        Section {
+            LabeledContent {
+                Picker(L10n.text("history.rawWindow.title"), selection: $rawHistoryWindow) {
+                    ForEach(RawHistoryWindow.allCases) { window in
+                        Text(window.title).tag(window.rawValue)
+                    }
+                }
+                .labelsHidden()
+            } label: {
+                rowLabel(L10n.text("history.rawWindow.title"), L10n.text("history.rawWindow.detail"))
+            }
+
+            LabeledContent {
+                Picker(L10n.text("history.longTerm.title"), selection: $longTermResolution) {
+                    ForEach(LongTermResolution.allCases) { resolution in
+                        Text(resolution.title).tag(resolution.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .disabled(rawHistoryWindow == RawHistoryWindow.forever.rawValue)
+            } label: {
+                rowLabel(L10n.text("history.longTerm.title"), L10n.text("history.longTerm.detail"))
             }
         }
     }

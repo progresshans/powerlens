@@ -15,8 +15,10 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   Settings toggle and debouncing.
 - CSV and JSON export of local history for the selected range.
 - Launch-at-login option.
-- Automatic local-history retention with pruning and incremental vacuum so the
-  on-disk database stays bounded.
+- Configurable local-history retention: full-resolution samples are kept for a
+  chosen window (30 days, 90 days, 1 year, or forever); older data is
+  downsampled to an hourly or daily resolution and kept indefinitely (or
+  discarded), with incremental vacuum so the database stays bounded.
 
 ### Changed
 

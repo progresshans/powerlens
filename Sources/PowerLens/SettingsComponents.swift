@@ -3,6 +3,7 @@ import SwiftUI
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
     case telemetry
+    case history
     case behavior
 
     var id: String { rawValue }
@@ -13,6 +14,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             L10n.text("settings.pane.general")
         case .telemetry:
             L10n.text("settings.pane.telemetry")
+        case .history:
+            L10n.text("settings.pane.history")
         case .behavior:
             L10n.text("settings.pane.behavior")
         }
@@ -24,6 +27,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             "gearshape"
         case .telemetry:
             "waveform.path.ecg"
+        case .history:
+            "clock.arrow.circlepath"
         case .behavior:
             "macwindow"
         }

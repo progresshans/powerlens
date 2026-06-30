@@ -257,3 +257,16 @@
 "ui.telemetryUnavailable.message" = "PowerLens couldn't read battery or power telemetry on this Mac. It will keep trying in the background.";
 
 "launchAtLogin.toggle" = "Launch at Login";
+
+"settings.pane.history" = "History";
+"history.rawWindow.title" = "Full-detail history";
+"history.rawWindow.detail" = "How long to keep minute-level samples.";
+"history.window.days30" = "30 days";
+"history.window.days90" = "90 days";
+"history.window.year1" = "1 year";
+"history.window.forever" = "Forever";
+"history.longTerm.title" = "Older data";
+"history.longTerm.detail" = "Keep older data downsampled to this resolution, indefinitely.";
+"history.resolution.hourly" = "Hourly";
+"history.resolution.daily" = "Daily";
+"history.resolution.off" = "Don't keep";

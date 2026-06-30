@@ -248,7 +248,7 @@ private actor StubHistoryStore: HistoryStoring {
         appended.append(snapshot)
     }
 
-    func purge(olderThan cutoffDate: Date) async {
+    func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async {
         purgedCutoffs.append(cutoffDate)
     }
 
@@ -257,6 +257,10 @@ private actor StubHistoryStore: HistoryStoring {
     }
 
     func aggregatedSeries(for range: DateInterval, bucketSeconds: Int) async -> [AggregatedTelemetryPoint] {
+        []
+    }
+
+    func rollupSeries(for range: DateInterval) async -> [AggregatedTelemetryPoint] {
         []
     }
 

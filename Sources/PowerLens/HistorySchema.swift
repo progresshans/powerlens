@@ -95,5 +95,26 @@ enum HistorySchema {
         CREATE INDEX IF NOT EXISTS telemetry_samples_app_idx
         ON telemetry_samples(app_id);
         """,
+        """
+        CREATE TABLE IF NOT EXISTS history_rollups (
+            bucket_start INTEGER NOT NULL,
+            bucket_seconds INTEGER NOT NULL,
+            sample_count INTEGER NOT NULL,
+            battery_level_avg_x10 INTEGER,
+            battery_level_min_x10 INTEGER,
+            battery_level_max_x10 INTEGER,
+            adapter_input_power_avg_mw INTEGER,
+            system_load_avg_mw INTEGER,
+            system_load_max_mw INTEGER,
+            battery_power_avg_mw INTEGER,
+            battery_temperature_avg_c_x100 INTEGER,
+            battery_temperature_max_c_x100 INTEGER,
+            PRIMARY KEY (bucket_start, bucket_seconds)
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS history_rollups_bucket_idx
+        ON history_rollups(bucket_start);
+        """,
     ]
 }
