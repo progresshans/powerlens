@@ -15,7 +15,31 @@ final class DiagnosticsNotifier {
             return
         }
 
-        requestAuthorizationIfNeeded()
+        // Resolve authorization first so the debounce record is only written when
+        // a notification can actually be delivered. Otherwise the first alert
+        // would be suppressed for the debounce window while the permission prompt
+        // is still pending.
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let status = settings.authorizationStatus
+            Task { @MainActor [weak self] in
+                self?.handle(diagnostics: diagnostics, authorizationStatus: status)
+            }
+        }
+    }
+
+    private func handle(diagnostics: [DiagnosticItem], authorizationStatus: UNAuthorizationStatus) {
+        switch authorizationStatus {
+        case .notDetermined:
+            // Ask once; a later refresh will deliver alerts after the user responds.
+            requestAuthorizationIfNeeded()
+            return
+        case .authorized, .provisional, .ephemeral:
+            break
+        case .denied:
+            return
+        @unknown default:
+            return
+        }
 
         let result = planner.plan(diagnostics: diagnostics, lastNotified: lastNotified, now: Date())
         lastNotified = result.lastNotified
