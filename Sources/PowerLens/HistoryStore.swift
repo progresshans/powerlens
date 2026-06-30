@@ -119,6 +119,273 @@ actor HistoryStore: HistoryStoring {
         }
     }
 
+    func purge(olderThan cutoffDate: Date) async {
+        guard let db = openDatabase() else {
+            return
+        }
+
+        defer {
+            sqlite3_close(db)
+        }
+
+        let cutoff = Int64(cutoffDate.timeIntervalSince1970.rounded())
+        try? SQLiteStatement.executePrepared(
+            "DELETE FROM telemetry_samples WHERE ts < ?",
+            using: db
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, cutoff)
+        }
+
+        // Reclaim freed pages when incremental auto-vacuum is enabled. This is a
+        // no-op on databases created before auto-vacuum was enabled, and on
+        // those the file simply stops growing rather than shrinking.
+        SQLiteStatement.execute("PRAGMA incremental_vacuum;", using: db)
+    }
+
+    func aggregatedSeries(for range: DateInterval, bucketSeconds: Int) async -> [AggregatedTelemetryPoint] {
+        guard bucketSeconds > 0, let db = openDatabase() else {
+            return []
+        }
+
+        defer {
+            sqlite3_close(db)
+        }
+
+        let sql = """
+        SELECT
+            (ts / ?) * ? AS bucket_start,
+            AVG(battery_level_x10),
+            MIN(battery_level_x10),
+            MAX(battery_level_x10),
+            AVG(adapter_input_power_mw),
+            AVG(system_load_mw),
+            MAX(system_load_mw),
+            AVG(battery_power_mw),
+            AVG(battery_temperature_c_x100),
+            MAX(battery_temperature_c_x100),
+            COUNT(*)
+        FROM telemetry_samples
+        WHERE ts >= ? AND ts < ?
+        GROUP BY bucket_start
+        ORDER BY bucket_start ASC
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        let bucket = sqlite3_int64(bucketSeconds)
+        sqlite3_bind_int64(statement, 1, bucket)
+        sqlite3_bind_int64(statement, 2, bucket)
+        sqlite3_bind_int64(statement, 3, Int64(range.start.timeIntervalSince1970.rounded()))
+        sqlite3_bind_int64(statement, 4, Int64(range.end.timeIntervalSince1970.rounded()))
+
+        var points: [AggregatedTelemetryPoint] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let bucketStart = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0)))
+            points.append(
+                AggregatedTelemetryPoint(
+                    bucketStart: bucketStart,
+                    avgBatteryLevel: SQLiteStatement.optionalDoubleValue(statement, index: 1).map { $0 / 10 },
+                    minBatteryLevel: SQLiteStatement.optionalDoubleValue(statement, index: 2).map { $0 / 10 },
+                    maxBatteryLevel: SQLiteStatement.optionalDoubleValue(statement, index: 3).map { $0 / 10 },
+                    avgAdapterInputPowerW: SQLiteStatement.optionalDoubleValue(statement, index: 4).map { $0 / 1000 },
+                    avgSystemLoadW: SQLiteStatement.optionalDoubleValue(statement, index: 5).map { $0 / 1000 },
+                    maxSystemLoadW: SQLiteStatement.optionalDoubleValue(statement, index: 6).map { $0 / 1000 },
+                    avgBatteryPowerW: SQLiteStatement.optionalDoubleValue(statement, index: 7).map { $0 / 1000 },
+                    avgTemperatureC: SQLiteStatement.optionalDoubleValue(statement, index: 8).map { $0 / 100 },
+                    maxTemperatureC: SQLiteStatement.optionalDoubleValue(statement, index: 9).map { $0 / 100 },
+                    sampleCount: Int(sqlite3_column_int64(statement, 10))
+                )
+            )
+        }
+
+        return points
+    }
+
+    func batteryHealthTrend(since cutoffDate: Date) async -> [BatteryHealthPoint] {
+        guard let db = openDatabase() else {
+            return []
+        }
+
+        defer {
+            sqlite3_close(db)
+        }
+
+        let sql = """
+        SELECT
+            bs.first_seen_ts,
+            bs.full_charge_capacity_mah,
+            bs.nominal_capacity_mah,
+            bs.cycle_count,
+            b.design_capacity_mah
+        FROM battery_states bs
+        JOIN batteries b ON b.battery_id = bs.battery_id
+        WHERE bs.first_seen_ts >= ?
+        ORDER BY bs.first_seen_ts ASC
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return []
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        sqlite3_bind_int64(statement, 1, Int64(cutoffDate.timeIntervalSince1970.rounded()))
+
+        var points: [BatteryHealthPoint] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            points.append(
+                BatteryHealthPoint(
+                    date: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
+                    fullChargeCapacityMah: SQLiteStatement.optionalIntValue(statement, index: 1),
+                    designCapacityMah: SQLiteStatement.optionalIntValue(statement, index: 4),
+                    nominalCapacityMah: SQLiteStatement.optionalIntValue(statement, index: 2),
+                    cycleCount: SQLiteStatement.optionalIntValue(statement, index: 3)
+                )
+            )
+        }
+
+        return points
+    }
+
+    func summary(for range: DateInterval) async -> HistorySummary {
+        guard let db = openDatabase() else {
+            return .empty(range: range)
+        }
+
+        defer {
+            sqlite3_close(db)
+        }
+
+        let sql = """
+        SELECT
+            ts,
+            external_connected,
+            is_charging,
+            system_load_mw,
+            adapter_input_power_mw,
+            battery_temperature_c_x100,
+            battery_level_x10
+        FROM telemetry_samples
+        WHERE ts >= ? AND ts < ?
+        ORDER BY ts ASC
+        """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            return .empty(range: range)
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+        sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+
+        // Cap inter-sample gaps so sleep/quit periods do not inflate the on-battery
+        // and on-external totals. The persistence cadence is roughly one sample a
+        // minute, so a 10-minute cap tolerates brief stalls without overcounting.
+        let maxGap: TimeInterval = 600
+        var sampleCount = 0
+        var loadSum = 0.0
+        var loadSamples = 0
+        var loadMax: Double?
+        var inputSum = 0.0
+        var inputSamples = 0
+        var tempSum = 0.0
+        var tempSamples = 0
+        var tempMax: Double?
+        var levelMin: Double?
+        var levelMax: Double?
+        var timeOnBattery: TimeInterval = 0
+        var timeOnExternal: TimeInterval = 0
+        var chargeSessions = 0
+
+        var previousTimestamp: TimeInterval?
+        var previousExternal = false
+        var previousCharging = false
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            sampleCount += 1
+            let timestamp = TimeInterval(sqlite3_column_int64(statement, 0))
+            let external = sqlite3_column_int(statement, 1) == 1
+            let charging = sqlite3_column_int(statement, 2) == 1
+
+            if let loadMW = SQLiteStatement.optionalDoubleValue(statement, index: 3) {
+                let load = loadMW / 1000
+                loadSum += load
+                loadSamples += 1
+                loadMax = Swift.max(loadMax ?? load, load)
+            }
+
+            if let inputMW = SQLiteStatement.optionalDoubleValue(statement, index: 4) {
+                inputSum += inputMW / 1000
+                inputSamples += 1
+            }
+
+            if let tempHundredths = SQLiteStatement.optionalDoubleValue(statement, index: 5) {
+                let temperature = tempHundredths / 100
+                tempSum += temperature
+                tempSamples += 1
+                tempMax = Swift.max(tempMax ?? temperature, temperature)
+            }
+
+            if let levelTenths = SQLiteStatement.optionalDoubleValue(statement, index: 6) {
+                let level = levelTenths / 10
+                levelMin = Swift.min(levelMin ?? level, level)
+                levelMax = Swift.max(levelMax ?? level, level)
+            }
+
+            if let previousTimestamp {
+                let gap = Swift.min(timestamp - previousTimestamp, maxGap)
+                if gap > 0 {
+                    if previousExternal {
+                        timeOnExternal += gap
+                    } else {
+                        timeOnBattery += gap
+                    }
+                }
+            }
+
+            if charging, !previousCharging {
+                chargeSessions += 1
+            }
+
+            previousTimestamp = timestamp
+            previousExternal = external
+            previousCharging = charging
+        }
+
+        guard sampleCount > 0 else {
+            return .empty(range: range)
+        }
+
+        return HistorySummary(
+            range: range,
+            sampleCount: sampleCount,
+            avgSystemLoadW: loadSamples > 0 ? loadSum / Double(loadSamples) : nil,
+            maxSystemLoadW: loadMax,
+            avgAdapterInputPowerW: inputSamples > 0 ? inputSum / Double(inputSamples) : nil,
+            avgTemperatureC: tempSamples > 0 ? tempSum / Double(tempSamples) : nil,
+            maxTemperatureC: tempMax,
+            minBatteryLevel: levelMin,
+            maxBatteryLevel: levelMax,
+            timeOnBattery: timeOnBattery,
+            timeOnExternal: timeOnExternal,
+            chargeSessions: chargeSessions
+        )
+    }
+
     private func openDatabase() -> OpaquePointer? {
         let directory = databaseURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -134,6 +401,7 @@ actor HistoryStore: HistoryStoring {
         SQLiteStatement.execute("PRAGMA journal_mode=WAL;", using: db)
         SQLiteStatement.execute("PRAGMA synchronous=NORMAL;", using: db)
         SQLiteStatement.execute("PRAGMA foreign_keys=ON;", using: db)
+        SQLiteStatement.execute("PRAGMA auto_vacuum=INCREMENTAL;", using: db)
 
         for statement in HistorySchema.statements {
             SQLiteStatement.execute(statement, using: db)

@@ -81,6 +81,13 @@ enum SQLiteStatement {
         return Int(sqlite3_column_int64(statement, index))
     }
 
+    static func optionalDoubleValue(_ statement: OpaquePointer?, index: Int32) -> Double? {
+        guard sqlite3_column_type(statement, index) != SQLITE_NULL else {
+            return nil
+        }
+        return sqlite3_column_double(statement, index)
+    }
+
     static func execute(_ sql: String, using db: OpaquePointer) {
         sqlite3_exec(db, sql, nil, nil, nil)
     }

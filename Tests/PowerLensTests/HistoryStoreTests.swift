@@ -55,6 +55,113 @@ struct HistoryStoreTests {
         #expect(loaded.last?.fullChargeCapacityMah == 5600)
         #expect(loaded.last?.nominalCapacityMah == 5840)
     }
+
+    @Test
+    func purgeRemovesOldSamplesButKeepsReferenceRows() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "purge")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let baseTime = Date(timeIntervalSince1970: 1_775_000_000)
+        await store.append(makeSnapshot(timestamp: baseTime))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(10 * 24 * 3_600)))
+        #expect(try tableCount("telemetry_samples", dbURL: dbURL) == 2)
+
+        await store.purge(olderThan: baseTime.addingTimeInterval(5 * 24 * 3_600))
+
+        #expect(try tableCount("telemetry_samples", dbURL: dbURL) == 1)
+        // De-duplicated dimension rows are preserved so long-term trends survive.
+        #expect(try tableCount("batteries", dbURL: dbURL) == 1)
+        #expect(try tableCount("battery_states", dbURL: dbURL) == 1)
+        #expect(try tableCount("adapters", dbURL: dbURL) == 1)
+        #expect(try tableCount("apps", dbURL: dbURL) == 1)
+
+        let loaded = await store.loadRecent(since: baseTime.addingTimeInterval(-1))
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.timestamp == baseTime.addingTimeInterval(10 * 24 * 3_600))
+    }
+
+    @Test
+    func aggregatedSeriesGroupsSamplesIntoBuckets() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "aggregate")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let baseTime = Date(timeIntervalSince1970: 1_775_000_000)
+        let loads: [(TimeInterval, Double)] = [
+            (0, 10), (60, 20), (120, 30),
+            (3_700, 40), (3_760, 50),
+        ]
+        for (offset, load) in loads {
+            await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(offset), systemLoadW: load))
+        }
+
+        let range = DateInterval(start: baseTime.addingTimeInterval(-1), end: baseTime.addingTimeInterval(7_200))
+        let series = await store.aggregatedSeries(for: range, bucketSeconds: 3_600)
+
+        #expect(series.count == 2)
+        #expect(series.first?.sampleCount == 3)
+        #expect(series.last?.sampleCount == 2)
+        #expect(abs((series.first?.avgSystemLoadW ?? 0) - 20) < 0.001)
+        #expect(abs((series.last?.avgSystemLoadW ?? 0) - 45) < 0.001)
+        #expect(abs((series.last?.maxSystemLoadW ?? 0) - 50) < 0.001)
+    }
+
+    @Test
+    func summaryComputesAggregateStatistics() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "summary")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let baseTime = Date(timeIntervalSince1970: 1_775_100_000)
+        await store.append(makeSnapshot(timestamp: baseTime, systemLoadW: 10))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(60), systemLoadW: 20))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(120), systemLoadW: 30))
+
+        let range = DateInterval(start: baseTime.addingTimeInterval(-1), end: baseTime.addingTimeInterval(300))
+        let summary = await store.summary(for: range)
+
+        #expect(summary.sampleCount == 3)
+        #expect(abs((summary.avgSystemLoadW ?? 0) - 20) < 0.001)
+        #expect(abs((summary.maxSystemLoadW ?? 0) - 30) < 0.001)
+        #expect(abs(summary.timeOnExternal - 120) < 0.001)
+        #expect(summary.timeOnBattery == 0)
+    }
+
+    @Test
+    func summaryCountsChargeSessionsAndBatteryTime() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "summary-sessions")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let baseTime = Date(timeIntervalSince1970: 1_775_300_000)
+        await store.append(makeSnapshot(timestamp: baseTime, externalConnected: false, isCharging: false))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(60), externalConnected: false, isCharging: false))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(120), externalConnected: true, isCharging: true))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(180), externalConnected: true, isCharging: true))
+
+        let range = DateInterval(start: baseTime.addingTimeInterval(-1), end: baseTime.addingTimeInterval(300))
+        let summary = await store.summary(for: range)
+
+        #expect(summary.chargeSessions == 1)
+        #expect(abs(summary.timeOnBattery - 120) < 0.001)
+        #expect(abs(summary.timeOnExternal - 60) < 0.001)
+    }
+
+    @Test
+    func batteryHealthTrendReturnsPointPerDistinctState() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "health-trend")
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let baseTime = Date(timeIntervalSince1970: 1_775_200_000)
+        await store.append(makeSnapshot(timestamp: baseTime, cycleCount: 74, fullChargeCapacityMah: 5637))
+        await store.append(makeSnapshot(timestamp: baseTime.addingTimeInterval(86_400), cycleCount: 75, fullChargeCapacityMah: 5600))
+
+        let trend = await store.batteryHealthTrend(since: baseTime.addingTimeInterval(-1))
+
+        #expect(trend.count == 2)
+        #expect(trend.first?.cycleCount == 74)
+        #expect(trend.first?.fullChargeCapacityMah == 5637)
+        #expect(trend.last?.cycleCount == 75)
+        #expect(trend.last?.designCapacityMah == 6249)
+        #expect(abs((trend.first?.healthPercent ?? 0) - (5637.0 / 6249.0 * 100)) < 0.001)
+    }
 }
 
 private func makeSnapshot(
@@ -63,15 +170,17 @@ private func makeSnapshot(
     fullChargeCapacityMah: Int = 5637,
     nominalCapacityMah: Int = 5874,
     systemLoadW: Double = 22.36,
-    batteryTemperatureC: Double = 29.5
+    batteryTemperatureC: Double = 29.5,
+    externalConnected: Bool = true,
+    isCharging: Bool = false
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
         timestamp: timestamp,
         batteryLevel: 80,
-        powerSource: .ac,
-        isCharging: false,
+        powerSource: externalConnected ? .ac : .battery,
+        isCharging: isCharging,
         isCharged: false,
-        externalConnected: true,
+        externalConnected: externalConnected,
         timeToEmptyMinutes: nil,
         timeToFullMinutes: nil,
         designCapacityMah: 6249,
