@@ -73,12 +73,14 @@ struct DashboardSceneRootView: View {
 struct SettingsSceneRootView: View {
     @ObservedObject var store: PowerLensStore
     @ObservedObject var softwareUpdateController: SoftwareUpdateController
+    @ObservedObject var launchAtLoginController: LaunchAtLoginController
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
 
     var body: some View {
         SettingsView(
             store: store,
-            softwareUpdateController: softwareUpdateController
+            softwareUpdateController: softwareUpdateController,
+            launchAtLoginController: launchAtLoginController
         )
             .environment(\.locale, L10n.locale)
             .id(appLanguage)

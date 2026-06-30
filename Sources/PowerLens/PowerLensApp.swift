@@ -47,7 +47,8 @@ struct PowerLensApp: App {
         Window(L10n.text("ui.window.settings"), id: PowerLensSceneID.settings) {
             SettingsSceneRootView(
                 store: appDelegate.store,
-                softwareUpdateController: appDelegate.softwareUpdateController
+                softwareUpdateController: appDelegate.softwareUpdateController,
+                launchAtLoginController: appDelegate.launchAtLoginController
             )
         }
     }
