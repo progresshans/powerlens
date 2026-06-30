@@ -5,6 +5,9 @@ import Combine
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = PowerLensStore()
     let softwareUpdateController = SoftwareUpdateController()
+    let launchAtLoginController = LaunchAtLoginController()
+
+    private let diagnosticsNotifier = DiagnosticsNotifier()
 
     private let dashboardSceneController = DashboardSceneController()
     private let presentationController = ApplicationPresentationController()
@@ -92,6 +95,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 self.updateStatusItem(using: snapshot)
                 self.popoverPresenter.updateLayoutIfShown(using: snapshot)
+            }
+            .store(in: &cancellables)
+
+        store.$diagnostics
+            .receive(on: RunLoop.main)
+            .sink { [weak self] diagnostics in
+                self?.diagnosticsNotifier.process(diagnostics: diagnostics)
             }
             .store(in: &cancellables)
 

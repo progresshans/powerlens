@@ -118,6 +118,63 @@ struct PowerLensStoreTests {
 
         #expect(store.menuBarBatteryBadge == .pluggedHolding)
     }
+
+    @Test
+    @MainActor
+    func startupPurgesHistoryOnce() async {
+        let historyStore = StubHistoryStore()
+        let snapshot = makeTelemetrySnapshot(
+            batteryPowerW: 1,
+            adapterInputPowerW: 10,
+            systemLoadW: 11
+        )
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(result: TelemetryReadResult(snapshot: snapshot, activeEngine: .compatible)),
+            historyStore: historyStore,
+            startsAutomatically: true
+        )
+
+        for _ in 0..<200 {
+            if await historyStore.purgedCutoffDates().count >= 1 {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(await historyStore.purgedCutoffDates().count == 1)
+        withExtendedLifetime(store) {}
+    }
+
+    @Test
+    @MainActor
+    func telemetryUnavailableSetWhenReadFailsWithNoData() async {
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(error: TelemetryReadError.unavailable),
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: true)
+
+        #expect(store.telemetryUnavailable)
+        #expect(store.latest == nil)
+    }
+
+    @Test
+    @MainActor
+    func telemetryUnavailableClearsAfterSuccessfulRead() async {
+        let snapshot = makeTelemetrySnapshot()
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(result: TelemetryReadResult(snapshot: snapshot, activeEngine: .compatible)),
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: true)
+
+        #expect(store.telemetryUnavailable == false)
+        #expect(store.latest == snapshot)
+    }
 }
 
 private func waitForPendingReads(_ expectedCount: Int, in reader: ControlledTelemetryReader) async {
@@ -181,6 +238,7 @@ private actor ControlledTelemetryReader: TelemetryReading {
 
 private actor StubHistoryStore: HistoryStoring {
     private var appended: [TelemetrySnapshot] = []
+    private var purgedCutoffs: [Date] = []
 
     func loadRecent(since cutoffDate: Date) async -> [TelemetrySnapshot] {
         []
@@ -190,7 +248,31 @@ private actor StubHistoryStore: HistoryStoring {
         appended.append(snapshot)
     }
 
+    func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async {
+        purgedCutoffs.append(cutoffDate)
+    }
+
+    func summary(for range: DateInterval) async -> HistorySummary {
+        .empty(range: range)
+    }
+
+    func aggregatedSeries(for range: DateInterval, bucketSeconds: Int) async -> [AggregatedTelemetryPoint] {
+        []
+    }
+
+    func rollupSeries(for range: DateInterval) async -> [AggregatedTelemetryPoint] {
+        []
+    }
+
+    func batteryHealthTrend(since cutoffDate: Date) async -> [BatteryHealthPoint] {
+        []
+    }
+
     func appendedSnapshots() -> [TelemetrySnapshot] {
         appended
+    }
+
+    func purgedCutoffDates() -> [Date] {
+        purgedCutoffs
     }
 }

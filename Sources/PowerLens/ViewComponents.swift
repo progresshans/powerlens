@@ -1,99 +1,56 @@
 import AppKit
 import SwiftUI
 
-struct ForegroundAppCard: View {
-    let snapshot: TelemetrySnapshot
-
-    private var displayName: String {
-        snapshot.frontmostAppName ?? snapshot.frontmostAppBundleID ?? L10n.text("ui.highEnergyApp.unknown")
-    }
+struct EnergyUsageCard: View {
+    let apps: [AppEnergyUsage]
 
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(L10n.text("ui.highEnergyApp.label"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Spacer(minLength: 10)
+            ForEach(apps) { app in
+                HStack(spacing: 8) {
+                    if let icon = AppIconCache.icon(forPath: app.appPath) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 16, height: 16)
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
 
-            AppBadge(bundleIdentifier: snapshot.frontmostAppBundleID, name: displayName)
+                    Text(app.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+                }
+            }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
-private struct AppBadge: View {
-    let bundleIdentifier: String?
-    let name: String
-
-    private var appIcon: NSImage? {
-        AppIconCache.icon(for: bundleIdentifier)
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let appIcon {
-                Image(nsImage: appIcon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 16, height: 16)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            }
-
-            Text(name)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-        }
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(.background.opacity(0.72), in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(.quaternary.opacity(0.6))
-        )
     }
 }
 
 @MainActor
 private enum AppIconCache {
-    private static var iconsByBundleIdentifier: [String: NSImage] = [:]
-    private static var missingBundleIdentifiers: Set<String> = []
+    private static var iconsByPath: [String: NSImage] = [:]
 
-    static func icon(for bundleIdentifier: String?) -> NSImage? {
-        guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
+    static func icon(forPath path: String) -> NSImage? {
+        if let cached = iconsByPath[path] {
+            return cached
+        }
+
+        guard FileManager.default.fileExists(atPath: path) else {
             return nil
         }
 
-        if let icon = iconsByBundleIdentifier[bundleIdentifier] {
-            return icon
-        }
-
-        guard !missingBundleIdentifiers.contains(bundleIdentifier) else {
-            return nil
-        }
-
-        if let icon = runningApplicationIcon(for: bundleIdentifier) ?? installedApplicationIcon(for: bundleIdentifier) {
-            iconsByBundleIdentifier[bundleIdentifier] = icon
-            return icon
-        }
-
-        missingBundleIdentifiers.insert(bundleIdentifier)
-        return nil
-    }
-
-    private static func runningApplicationIcon(for bundleIdentifier: String) -> NSImage? {
-        NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first?.icon
-    }
-
-    private static func installedApplicationIcon(for bundleIdentifier: String) -> NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-            return nil
-        }
-
-        return NSWorkspace.shared.icon(forFile: url.path)
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        iconsByPath[path] = icon
+        return icon
     }
 }
 

@@ -60,13 +60,4 @@ enum TelemetryDetailRows {
             (L10n.text("ui.detail.timeToEmpty"), Formatters.minutes(snapshot.timeToEmptyMinutes)),
         ]
     }
-
-    static func historySystem(_ snapshot: TelemetrySnapshot, lastRefreshAt: Date?) -> [(String, String)] {
-        [
-            (L10n.text("ui.detail.lastUpdate"), Formatters.lastUpdated(lastRefreshAt ?? snapshot.timestamp)),
-            (L10n.text("ui.metric.systemLoad"), snapshot.systemLoadW.map(Formatters.power) ?? L10n.text("common.none")),
-            (L10n.text("ui.metric.powerIn"), snapshot.adapterInputPowerW.map(Formatters.power) ?? L10n.text("common.none")),
-            (L10n.text("ui.metric.battery"), snapshot.batteryLevel.map(Formatters.percent) ?? L10n.text("common.none")),
-        ]
-    }
 }

@@ -82,12 +82,27 @@ struct DashboardView: View {
                     case .diagnostics:
                         diagnosticsSection(snapshot)
                     case .history:
-                        historySection(snapshot)
+                        InsightsView(store: store)
                     }
                 }
                 .padding(28)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        } else if store.telemetryUnavailable {
+            VStack(spacing: Spacing.medium) {
+                Image(systemName: "bolt.slash")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(L10n.text("ui.telemetryUnavailable.title"))
+                    .font(.title3.weight(.semibold))
+                Text(L10n.text("ui.telemetryUnavailable.message"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(Spacing.xxLarge)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityElement(children: .combine)
         } else {
             ProgressView(L10n.text("ui.readingBatteryTelemetry"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -168,8 +183,8 @@ struct DashboardView: View {
 
             PowerFlowCard(snapshot: snapshot)
 
-            if snapshot.frontmostAppName != nil || snapshot.frontmostAppBundleID != nil {
-                ForegroundAppCard(snapshot: snapshot)
+            if !store.topEnergyApps.isEmpty {
+                EnergyUsageCard(apps: store.topEnergyApps)
             }
 
             diagnosticsBlock
@@ -180,8 +195,8 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 20) {
             PowerFlowCard(snapshot: snapshot)
 
-            if snapshot.frontmostAppName != nil || snapshot.frontmostAppBundleID != nil {
-                ForegroundAppCard(snapshot: snapshot)
+            if !store.topEnergyApps.isEmpty {
+                EnergyUsageCard(apps: store.topEnergyApps)
             }
 
             LazyVGrid(columns: columns, spacing: 16) {
@@ -233,33 +248,13 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 20) {
             diagnosticsBlock
 
-            if snapshot.frontmostAppName != nil || snapshot.frontmostAppBundleID != nil {
-                ForegroundAppCard(snapshot: snapshot)
+            if !store.topEnergyApps.isEmpty {
+                EnergyUsageCard(apps: store.topEnergyApps)
             }
 
             LazyVGrid(columns: columns, spacing: 16) {
                 detailCard(title: L10n.text("ui.section.batterySnapshot"), rows: TelemetryDetailRows.batterySnapshot(snapshot))
                 detailCard(title: L10n.text("ui.section.powerSnapshot"), rows: TelemetryDetailRows.powerSnapshot(snapshot))
-            }
-        }
-    }
-
-    private func historySection(_ snapshot: TelemetrySnapshot) -> some View {
-        let recentHistory = store.history(hours: 24)
-
-        return VStack(alignment: .leading, spacing: 20) {
-            if recentHistory.count >= 2 {
-                HistoryCharts(history: recentHistory)
-            } else {
-                Text(L10n.text("ui.history.empty"))
-                    .foregroundStyle(.secondary)
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            }
-
-            LazyVGrid(columns: columns, spacing: 16) {
-                detailCard(title: L10n.text("ui.detail.system"), rows: TelemetryDetailRows.historySystem(snapshot, lastRefreshAt: store.lastRefreshAt))
             }
         }
     }
@@ -288,7 +283,9 @@ struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
         .padding(18)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .cardSurface(cornerRadius: CornerRadius.xLarge)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value). \(detail)")
     }
 
     private func detailCard(title: String, rows: [(String, String)]) -> some View {
@@ -316,6 +313,6 @@ struct DashboardView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .cardSurface(cornerRadius: CornerRadius.xLarge)
     }
 }

@@ -89,14 +89,19 @@ PowerLens watches for common power situations:
 </p>
 
 PowerLens includes app-language settings, telemetry-engine selection, menu bar
-display styles, Dock visibility control, update checking, and Stable/Alpha
-update-channel selection. The telemetry engine can run in automatic,
-compatible, or live precision mode depending on the Mac and the data available.
+display styles, Dock visibility control, optional diagnostic notifications,
+update checking, and Stable/Alpha update-channel selection. The telemetry engine
+can run in automatic, compatible, or live precision mode depending on the Mac
+and the data available.
 
-### Local History
+### Insights And Local History
 
-Recent telemetry is stored locally so PowerLens can show history views and make
-comparisons without sending your data anywhere.
+Recent telemetry is stored locally in a SQLite history, so PowerLens can show
+trends and comparisons without sending your data anywhere. The Insights view
+offers selectable time ranges (24 hours, 7 days, 30 days, or all), summary
+statistics, interactive charts you can scrub, and a long-term battery health and
+charge-cycle trend. Old samples are pruned automatically so the database stays
+bounded, and you can export the history as CSV or JSON.
 
 ## Requirements
 
