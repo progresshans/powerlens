@@ -13,6 +13,19 @@ enum DockIconPreference {
     }
 }
 
+enum NotificationPreference {
+    static let storageKey = "diagnosticsNotificationsEnabled"
+    static let defaultValue = false
+
+    static var enabled: Bool {
+        guard UserDefaults.standard.object(forKey: storageKey) != nil else {
+            return defaultValue
+        }
+
+        return UserDefaults.standard.bool(forKey: storageKey)
+    }
+}
+
 enum MenuBarDisplayStylePreference: String, CaseIterable, Identifiable {
     case powerLens
     case powerText
