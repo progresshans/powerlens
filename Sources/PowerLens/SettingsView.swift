@@ -3,11 +3,15 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: PowerLensStore
     @ObservedObject var softwareUpdateController: SoftwareUpdateController
+    @ObservedObject var launchAtLoginController: LaunchAtLoginController
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(TelemetryEnginePreference.storageKey) private var telemetryEnginePreference = TelemetryEnginePreference.auto.rawValue
     @AppStorage(DockIconPreference.storageKey) private var showDockIcon = DockIconPreference.defaultValue
     @AppStorage(MenuBarDisplayStylePreference.storageKey) private var menuBarDisplayStyle = MenuBarDisplayStylePreference.defaultValue
+    @AppStorage(NotificationPreference.storageKey) private var notificationsEnabled = NotificationPreference.defaultValue
     @AppStorage(UpdateChannelPreference.storageKey) private var updateChannel = UpdateChannelPreference.defaultValue
+    @AppStorage(RawHistoryWindow.storageKey) private var rawHistoryWindow = RawHistoryWindow.defaultValue
+    @AppStorage(LongTermResolution.storageKey) private var longTermResolution = LongTermResolution.defaultValue
     @SceneStorage("settings.selectedPane") private var selectedPaneRaw = SettingsPane.general.rawValue
 
     private var selectedPane: SettingsPane {
@@ -28,7 +32,10 @@ struct SettingsView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 760, minHeight: 480)
+        .frame(minWidth: 720, minHeight: 480)
+        .onAppear {
+            launchAtLoginController.refresh()
+        }
         .onChange(of: telemetryEnginePreference) { _ in
             store.refreshNow()
         }
@@ -38,192 +45,219 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.text("ui.dashboardTitle"))
-                    .font(.title2.weight(.bold))
-
-                Text(L10n.text("ui.section.settings"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+        List(selection: paneSelection) {
+            ForEach(SettingsPane.allCases) { pane in
+                Label(pane.title, systemImage: pane.systemImage)
+                    .tag(Optional(pane.rawValue))
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-            .padding(.bottom, 14)
-
-            List(selection: paneSelection) {
-                ForEach(SettingsPane.allCases) { pane in
-                    Label(pane.title, systemImage: pane.systemImage)
-                        .tag(Optional(pane.rawValue))
-                }
-            }
-            .listStyle(.sidebar)
         }
-        .navigationSplitViewColumnWidth(190)
+        .navigationSplitViewColumnWidth(min: 188, ideal: 200, max: 240)
     }
 
     private var detail: some View {
-        VStack(spacing: 0) {
-            SettingsHeader(pane: selectedPane)
-
-            Divider()
-
-            ScrollView {
-                selectedFormContent
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+        Form {
+            switch selectedPane {
+            case .general:
+                generalSection
+            case .telemetry:
+                telemetrySection
+            case .history:
+                historySection
+            case .behavior:
+                behaviorSection
             }
         }
+        .formStyle(.grouped)
+        .navigationTitle(selectedPane.title)
     }
+
+    // MARK: - General
 
     @ViewBuilder
-    private var selectedFormContent: some View {
-        switch selectedPane {
-        case .general:
-            generalForm
-        case .telemetry:
-            telemetryForm
-        case .behavior:
-            behaviorForm
-        }
-    }
-
-    private var generalForm: some View {
-        SettingsGroup {
-            PreferenceRow(
-                title: L10n.text("language.title"),
-                detail: L10n.text("language.description")
-            ) {
+    private var generalSection: some View {
+        Section {
+            LabeledContent {
                 Picker(L10n.text("language.title"), selection: $appLanguage) {
                     ForEach(AppLanguage.allCases) { language in
                         Text(language.displayName).tag(language.rawValue)
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 250)
+            } label: {
+                rowLabel(L10n.text("language.title"))
             }
         }
     }
 
-    private var telemetryForm: some View {
-        SettingsGroup {
-            TelemetryStatusRow(
-                title: L10n.text("settings.telemetry.status"),
-                statusText: store.telemetryStatusText,
-                activeEngineName: store.activeTelemetryEngine.displayName
-            )
+    // MARK: - Telemetry
 
-            SettingsDivider()
+    @ViewBuilder
+    private var telemetrySection: some View {
+        Section {
+            LabeledContent {
+                HStack(spacing: 8) {
+                    LiveDot()
+                    StatusChip(text: store.activeTelemetryEngine.displayName)
+                }
+            } label: {
+                rowLabel(L10n.text("settings.telemetry.status"), store.telemetryStatusText)
+            }
 
-            PreferenceRow(
-                title: L10n.text("telemetry.label.preference"),
-                detail: (TelemetryEnginePreference(rawValue: telemetryEnginePreference) ?? .auto).detail
-            ) {
+            LabeledContent {
                 Picker(L10n.text("telemetry.label.preference"), selection: $telemetryEnginePreference) {
                     ForEach(TelemetryEnginePreference.allCases) { preference in
                         Text(preference.displayName).tag(preference.rawValue)
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: SettingsLayout.controlColumnWidth)
+            } label: {
+                rowLabel(
+                    L10n.text("telemetry.label.preference"),
+                    (TelemetryEnginePreference(rawValue: telemetryEnginePreference) ?? .auto).detail
+                )
             }
-
-            SettingsDivider()
-
-            ValueRow(
-                title: L10n.text("telemetry.label.active"),
-                detail: store.telemetryStatusText,
-                value: store.activeTelemetryEngine.displayName
-            )
         }
     }
 
-    private var behaviorForm: some View {
-        SettingsGroup {
-            PreferenceRow(
-                title: L10n.text("menuBarStyle.title"),
-                detail: (MenuBarDisplayStylePreference(rawValue: menuBarDisplayStyle) ?? .powerLens).detail
-            ) {
-                MenuBarDisplayStyleMenu(selection: $menuBarDisplayStyle)
+    // MARK: - History
+
+    @ViewBuilder
+    private var historySection: some View {
+        Section {
+            LabeledContent {
+                Picker(L10n.text("history.rawWindow.title"), selection: $rawHistoryWindow) {
+                    ForEach(RawHistoryWindow.allCases) { window in
+                        Text(window.title).tag(window.rawValue)
+                    }
+                }
+                .labelsHidden()
+            } label: {
+                rowLabel(L10n.text("history.rawWindow.title"), L10n.text("history.rawWindow.detail"))
             }
 
-            SettingsDivider()
+            LabeledContent {
+                Picker(L10n.text("history.longTerm.title"), selection: $longTermResolution) {
+                    ForEach(LongTermResolution.allCases) { resolution in
+                        Text(resolution.title).tag(resolution.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .disabled(rawHistoryWindow == RawHistoryWindow.forever.rawValue)
+            } label: {
+                rowLabel(L10n.text("history.longTerm.title"), L10n.text("history.longTerm.detail"))
+            }
+        }
+    }
 
-            PreferenceRow(
-                title: L10n.text("dockIcon.toggle"),
-                detail: showDockIcon
-                    ? L10n.text("dockIcon.description.visible")
-                    : L10n.text("dockIcon.description.hidden")
-            ) {
-                Toggle(L10n.text("dockIcon.toggle"), isOn: $showDockIcon)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
+    // MARK: - Behavior
+
+    @ViewBuilder
+    private var behaviorSection: some View {
+        Section {
+            LabeledContent {
+                Picker(L10n.text("menuBarStyle.title"), selection: $menuBarDisplayStyle) {
+                    ForEach(MenuBarDisplayStylePreference.allCases) { style in
+                        Text(style.title).tag(style.rawValue)
+                    }
+                }
+                .labelsHidden()
+            } label: {
+                rowLabel(
+                    L10n.text("menuBarStyle.title"),
+                    (MenuBarDisplayStylePreference(rawValue: menuBarDisplayStyle) ?? .powerLens).detail
+                )
+            }
+        }
+
+        Section {
+            Toggle(isOn: $showDockIcon) {
+                rowLabel(
+                    L10n.text("dockIcon.toggle"),
+                    showDockIcon
+                        ? L10n.text("dockIcon.description.visible")
+                        : L10n.text("dockIcon.description.hidden")
+                )
             }
 
-            SettingsDivider()
+            Toggle(isOn: launchAtLoginBinding) {
+                rowLabel(L10n.text("launchAtLogin.toggle"))
+            }
 
-            PreferenceRow(
-                title: L10n.text("updates.channel"),
-                detail: (UpdateChannelPreference(rawValue: updateChannel) ?? .stable).detail
-            ) {
+            Toggle(isOn: $notificationsEnabled) {
+                rowLabel(L10n.text("notifications.toggle"), L10n.text("notifications.description"))
+            }
+        }
+
+        Section {
+            LabeledContent {
                 Picker(L10n.text("updates.channel"), selection: $updateChannel) {
                     ForEach(UpdateChannelPreference.allCases) { channel in
                         Text(channel.title).tag(channel.rawValue)
                     }
                 }
                 .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 220)
                 .disabled(!softwareUpdateController.isConfigured)
+            } label: {
+                rowLabel(
+                    L10n.text("updates.channel"),
+                    (UpdateChannelPreference(rawValue: updateChannel) ?? .stable).detail
+                )
             }
 
-            SettingsDivider()
-
-            PreferenceRow(
-                title: L10n.text("updates.check"),
-                detail: softwareUpdateController.isConfigured
-                    ? L10n.text("updates.check.description")
-                    : L10n.text("updates.notConfigured")
-            ) {
+            LabeledContent {
                 Button(L10n.text("updates.check.button")) {
                     softwareUpdateController.checkForUpdates()
                 }
                 .disabled(!softwareUpdateController.canCheckForUpdates)
-                .controlSize(.regular)
-            }
-
-            SettingsDivider()
-
-            PreferenceRow(
-                title: L10n.text("updates.automatic"),
-                detail: softwareUpdateController.isConfigured
-                    ? L10n.text("updates.automatic.description")
-                    : L10n.text("updates.notConfigured")
-            ) {
-                Toggle(
-                    L10n.text("updates.automatic"),
-                    isOn: Binding(
-                        get: { softwareUpdateController.automaticallyChecksForUpdates },
-                        set: { softwareUpdateController.automaticallyChecksForUpdates = $0 }
-                    )
+            } label: {
+                rowLabel(
+                    L10n.text("updates.check"),
+                    softwareUpdateController.isConfigured
+                        ? L10n.text("updates.check.description")
+                        : L10n.text("updates.notConfigured")
                 )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(!softwareUpdateController.isConfigured)
             }
 
-            SettingsDivider()
+            Toggle(isOn: automaticUpdatesBinding) {
+                rowLabel(
+                    L10n.text("updates.automatic"),
+                    softwareUpdateController.isConfigured
+                        ? L10n.text("updates.automatic.description")
+                        : L10n.text("updates.notConfigured")
+                )
+            }
+            .disabled(!softwareUpdateController.isConfigured)
+        }
+    }
 
-            ValueRow(
-                title: L10n.text("settings.currentMode"),
-                detail: showDockIcon
-                    ? L10n.text("dockIcon.mode.regular")
-                    : L10n.text("dockIcon.mode.accessory"),
-                value: showDockIcon ? L10n.text("common.on") : L10n.text("common.off")
-            )
+    // MARK: - Helpers
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLoginController.isEnabled },
+            set: { launchAtLoginController.setEnabled($0) }
+        )
+    }
+
+    private var automaticUpdatesBinding: Binding<Bool> {
+        Binding(
+            get: { softwareUpdateController.automaticallyChecksForUpdates },
+            set: { softwareUpdateController.automaticallyChecksForUpdates = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private func rowLabel(_ title: String, _ detail: String? = nil) -> some View {
+        if let detail, !detail.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            Text(title)
         }
     }
 }

@@ -13,6 +13,111 @@ enum DockIconPreference {
     }
 }
 
+enum NotificationPreference {
+    static let storageKey = "diagnosticsNotificationsEnabled"
+    static let defaultValue = false
+
+    static var enabled: Bool {
+        guard UserDefaults.standard.object(forKey: storageKey) != nil else {
+            return defaultValue
+        }
+
+        return UserDefaults.standard.bool(forKey: storageKey)
+    }
+}
+
+/// How long full-resolution (minute-level) telemetry samples are kept on disk.
+enum RawHistoryWindow: String, CaseIterable, Identifiable {
+    case days30
+    case days90
+    case year1
+    case forever
+
+    static let storageKey = "history.rawWindow"
+    static let defaultValue = Self.days90.rawValue
+
+    var id: String { rawValue }
+
+    static var current: Self {
+        guard let raw = UserDefaults.standard.string(forKey: storageKey),
+              let value = Self(rawValue: raw) else {
+            return .days90
+        }
+        return value
+    }
+
+    /// Retention length in seconds, or `nil` for unlimited (never pruned).
+    var seconds: TimeInterval? {
+        switch self {
+        case .days30:
+            30 * 24 * 3_600
+        case .days90:
+            90 * 24 * 3_600
+        case .year1:
+            365 * 24 * 3_600
+        case .forever:
+            nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .days30:
+            L10n.text("history.window.days30")
+        case .days90:
+            L10n.text("history.window.days90")
+        case .year1:
+            L10n.text("history.window.year1")
+        case .forever:
+            L10n.text("history.window.forever")
+        }
+    }
+}
+
+/// Resolution at which older telemetry is downsampled and kept indefinitely
+/// once it ages out of the full-resolution window.
+enum LongTermResolution: String, CaseIterable, Identifiable {
+    case hourly
+    case daily
+    case off
+
+    static let storageKey = "history.longTermResolution"
+    static let defaultValue = Self.daily.rawValue
+
+    var id: String { rawValue }
+
+    static var current: Self {
+        guard let raw = UserDefaults.standard.string(forKey: storageKey),
+              let value = Self(rawValue: raw) else {
+            return .daily
+        }
+        return value
+    }
+
+    /// Bucket size in seconds for long-term rollups, or `nil` to discard old data.
+    var bucketSeconds: Int? {
+        switch self {
+        case .hourly:
+            3_600
+        case .daily:
+            86_400
+        case .off:
+            nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .hourly:
+            L10n.text("history.resolution.hourly")
+        case .daily:
+            L10n.text("history.resolution.daily")
+        case .off:
+            L10n.text("history.resolution.off")
+        }
+    }
+}
+
 enum MenuBarDisplayStylePreference: String, CaseIterable, Identifiable {
     case powerLens
     case powerText

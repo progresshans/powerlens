@@ -2,7 +2,6 @@
 "language.system" = "System";
 "language.english" = "English";
 "language.korean" = "한국어";
-"language.description" = "Only affects PowerLens. You will usually set this once.";
 
 "dockIcon.title" = "Dock Icon";
 "dockIcon.toggle" = "Show PowerLens in the Dock";
@@ -36,11 +35,8 @@
 "telemetry.live.detail" = "%@ · %@";
 
 "settings.pane.general" = "General";
-"settings.pane.general.description" = "Control PowerLens display defaults.";
 "settings.pane.telemetry" = "Telemetry";
-"settings.pane.telemetry.description" = "Choose how PowerLens reads power data.";
 "settings.pane.behavior" = "App Behavior";
-"settings.pane.behavior.description" = "Adjust how PowerLens appears in the menu bar and Dock.";
 "settings.telemetry.status" = "Telemetry Status";
 "settings.currentMode" = "Current Mode";
 
@@ -158,7 +154,7 @@
 "ui.sidebar.power" = "Power Flow";
 "ui.sidebar.battery" = "Battery";
 "ui.sidebar.diagnostics" = "Diagnostics";
-"ui.sidebar.history" = "History";
+"ui.sidebar.history" = "Insights";
 
 "ui.flow.batteryAssist" = "Battery Assist";
 "ui.flow.charging" = "Battery Charge";
@@ -174,7 +170,7 @@
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
 "ui.flow.batteryOnlyDetail" = "System load is being covered only by battery power.";
 "ui.flow.balanced" = "Input power and system load are nearly balanced right now.";
-"ui.highEnergyApp.label" = "High Energy Usage:";
+"ui.highEnergyApp.label" = "High Energy Usage";
 "ui.highEnergyApp.unknown" = "Unknown App";
 
 "ui.history.empty" = "History builds up as the app runs. Leave PowerLens open for a few minutes to see charts here.";
@@ -217,3 +213,60 @@
 "format.secondsAgo" = "%d sec ago";
 "format.minutesAgo" = "%d min ago";
 "format.hoursAgo" = "%d hr ago";
+
+"insights.title" = "Insights";
+"insights.range.24h" = "24h";
+"insights.range.7d" = "7d";
+"insights.range.30d" = "30d";
+"insights.range.all" = "All";
+"insights.loading" = "Loading insights…";
+"insights.empty" = "Not enough history for this range yet. Leave PowerLens running and check back.";
+
+"insights.summary.avgLoad" = "Avg System Load";
+"insights.summary.peakLoad" = "Peak Load";
+"insights.summary.avgInput" = "Avg Power In";
+"insights.summary.avgTemp" = "Avg Temperature";
+"insights.summary.batteryRange" = "Battery Range";
+"insights.summary.timeOnBattery" = "Time on Battery";
+"insights.summary.timeOnExternal" = "Time on Adapter";
+"insights.summary.chargeSessions" = "Charge Sessions";
+"insights.summary.rangeValue" = "%@ – %@";
+
+"insights.chart.battery.title" = "Battery Level";
+"insights.chart.battery.subtitle" = "Charge over the selected range";
+"insights.chart.power.title" = "Power Flow";
+"insights.chart.power.subtitle" = "Power in vs system load";
+"insights.chart.health.title" = "Battery Health";
+"insights.chart.health.subtitle" = "Full charge capacity over time";
+"insights.chart.cycles.title" = "Charge Cycles";
+"insights.chart.cycles.subtitle" = "Cycle count over time";
+
+"insights.series.input" = "Power In";
+"insights.series.load" = "System Load";
+"insights.series.battery" = "Battery Power";
+"insights.series.capacity" = "Capacity";
+"insights.series.cycles" = "Cycles";
+
+"insights.health.empty" = "Battery health history builds up as capacity readings change over days and weeks.";
+
+"notifications.toggle" = "Diagnostic Notifications";
+"notifications.description" = "Notify me when PowerLens detects a charger or battery issue.";
+"insights.export" = "Export";
+
+"ui.telemetryUnavailable.title" = "Power Data Unavailable";
+"ui.telemetryUnavailable.message" = "PowerLens couldn't read battery or power telemetry on this Mac. It will keep trying in the background.";
+
+"launchAtLogin.toggle" = "Launch at Login";
+
+"settings.pane.history" = "History";
+"history.rawWindow.title" = "Full-detail history";
+"history.rawWindow.detail" = "How long to keep minute-level samples.";
+"history.window.days30" = "30 days";
+"history.window.days90" = "90 days";
+"history.window.year1" = "1 year";
+"history.window.forever" = "Forever";
+"history.longTerm.title" = "Older data";
+"history.longTerm.detail" = "Keep older data downsampled to this resolution, indefinitely.";
+"history.resolution.hourly" = "Hourly";
+"history.resolution.daily" = "Daily";
+"history.resolution.off" = "Don't keep";
