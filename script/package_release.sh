@@ -197,15 +197,16 @@ build_app_bundle() {
     swift package clean
   fi
 
-  swift build -c release
+  swift build -c release --arch "$POWERLENS_BUILD_ARCH"
 
   local build_dir
   local build_binary
-  build_dir="$(swift build -c release --show-bin-path)"
+  build_dir="$(swift build -c release --arch "$POWERLENS_BUILD_ARCH" --show-bin-path)"
   build_binary="$build_dir/$APP_NAME"
 
   cp "$build_binary" "$APP_BINARY"
   chmod +x "$APP_BINARY"
+  powerlens_require_exact_executable_architecture "$APP_BINARY" "$POWERLENS_BUILD_ARCH"
   powerlens_copy_sparkle_framework "$APP_FRAMEWORKS" "$APP_BINARY"
   powerlens_copy_resource_bundle "$build_dir" "$APP_RESOURCES"
 

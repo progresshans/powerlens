@@ -49,6 +49,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate Apple silicon runner
+        run: |
+          test "$(uname -m)" = "arm64"
+          uname -m
+
       - name: Resolve release metadata
         id: meta
         env:
@@ -241,7 +246,7 @@ jobs:
           POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
         run: ./script/package_release.sh
 
-      - name: Verify distribution bundle
+      - name: Verify arm64 distribution bundle
         env:
           STRICT: "1"
         run: ./script/verify_distribution.sh release/stage/PowerLens.app
