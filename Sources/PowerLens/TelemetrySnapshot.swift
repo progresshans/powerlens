@@ -92,6 +92,13 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
     let serialNumber: String?
     let frontmostAppBundleID: String?
     let frontmostAppName: String?
+    /// A live, read-only observation of the charging policy macOS is applying.
+    ///
+    /// This value is intentionally optional so snapshots decoded from older
+    /// exports and snapshots loaded from the history database remain valid.
+    /// PowerLens strips it before persistence because the first version of this
+    /// feature is presentation-only.
+    let chargingPolicyStatus: ObservedChargingPolicyStatus?
 
     init(
         id: UUID = UUID(),
@@ -124,7 +131,8 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
         thermalState: String,
         serialNumber: String?,
         frontmostAppBundleID: String? = nil,
-        frontmostAppName: String?
+        frontmostAppName: String?,
+        chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -157,5 +165,45 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
         self.serialNumber = serialNumber
         self.frontmostAppBundleID = frontmostAppBundleID
         self.frontmostAppName = frontmostAppName
+        self.chargingPolicyStatus = chargingPolicyStatus
+    }
+
+    func withChargingPolicyStatus(
+        _ chargingPolicyStatus: ObservedChargingPolicyStatus?
+    ) -> TelemetrySnapshot {
+        TelemetrySnapshot(
+            id: id,
+            timestamp: timestamp,
+            batteryLevel: batteryLevel,
+            powerSource: powerSource,
+            isCharging: isCharging,
+            isCharged: isCharged,
+            externalConnected: externalConnected,
+            timeToEmptyMinutes: timeToEmptyMinutes,
+            timeToFullMinutes: timeToFullMinutes,
+            designCapacityMah: designCapacityMah,
+            fullChargeCapacityMah: fullChargeCapacityMah,
+            nominalCapacityMah: nominalCapacityMah,
+            cycleCount: cycleCount,
+            designCycleCount: designCycleCount,
+            batteryHealthText: batteryHealthText,
+            batteryHealthCondition: batteryHealthCondition,
+            batteryTemperatureC: batteryTemperatureC,
+            batteryVoltageV: batteryVoltageV,
+            batteryCurrentA: batteryCurrentA,
+            batteryPowerW: batteryPowerW,
+            adapterDescription: adapterDescription,
+            adapterMaxPowerW: adapterMaxPowerW,
+            adapterInputPowerW: adapterInputPowerW,
+            adapterVoltageV: adapterVoltageV,
+            adapterCurrentA: adapterCurrentA,
+            systemLoadW: systemLoadW,
+            lowPowerModeEnabled: lowPowerModeEnabled,
+            thermalState: thermalState,
+            serialNumber: serialNumber,
+            frontmostAppBundleID: frontmostAppBundleID,
+            frontmostAppName: frontmostAppName,
+            chargingPolicyStatus: chargingPolicyStatus
+        )
     }
 }

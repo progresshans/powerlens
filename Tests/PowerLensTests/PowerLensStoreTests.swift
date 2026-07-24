@@ -9,8 +9,10 @@ struct PowerLensStoreTests {
         let snapshot = makeTelemetrySnapshot(
             batteryPowerW: 4.2,
             adapterInputPowerW: 12.5,
-            systemLoadW: 16.7
+            systemLoadW: 16.7,
+            chargingPolicyStatus: .manualLimit(targetPercent: 87)
         )
+        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
         let historyStore = StubHistoryStore()
         let store = PowerLensStore(
             telemetryReader: StubTelemetryReader(result: TelemetryReadResult(snapshot: snapshot, activeEngine: .livePrecision)),
@@ -24,8 +26,8 @@ struct PowerLensStoreTests {
         #expect(store.latest == snapshot)
         #expect(store.activeTelemetryEngine == .livePrecision)
         #expect(store.lastRefreshAt == snapshot.timestamp)
-        #expect(store.history == [snapshot])
-        #expect(await historyStore.appendedSnapshots() == [snapshot])
+        #expect(store.history == [historicalSnapshot])
+        #expect(await historyStore.appendedSnapshots() == [historicalSnapshot])
     }
 
     @Test

@@ -239,11 +239,15 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        history.append(snapshot)
+        // Charging-policy observations explain the current UI only. Keeping
+        // them out of history avoids silently changing Insights, CSV, or JSON
+        // semantics before a dedicated history schema is designed.
+        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
+        history.append(historicalSnapshot)
         let cutoff = now().addingTimeInterval(-memoryWindow)
         history.removeAll { $0.timestamp < cutoff }
 
-        await historyStore.append(snapshot)
+        await historyStore.append(historicalSnapshot)
     }
 
     private func shouldPersist(snapshot: TelemetrySnapshot) -> Bool {

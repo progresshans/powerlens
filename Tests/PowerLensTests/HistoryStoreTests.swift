@@ -5,6 +5,23 @@ import Testing
 
 struct HistoryStoreTests {
     @Test
+    func liveChargingPolicyIsNotPersisted() async {
+        let dbURL = makeTemporaryDatabaseURL(name: "live-policy-not-persisted")
+        let store = HistoryStore(databaseURL: dbURL)
+        let timestamp = Date(timeIntervalSince1970: 1_775_627_900)
+        let liveSnapshot = makeSnapshot(timestamp: timestamp)
+            .withChargingPolicyStatus(.manualLimit(targetPercent: 87))
+
+        await store.append(liveSnapshot)
+
+        let loaded = await store.loadRecent(
+            since: timestamp.addingTimeInterval(-1)
+        )
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.chargingPolicyStatus == nil)
+    }
+
+    @Test
     func reusesReferenceRowsForRepeatedSamples() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "reused-references")
         let store = HistoryStore(databaseURL: dbURL)

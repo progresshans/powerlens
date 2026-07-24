@@ -20,7 +20,12 @@ struct HistoryExporterTests {
 
     @Test
     func jsonRoundTripsSnapshots() throws {
-        let snapshots = [makeTelemetrySnapshot(systemLoadW: 12.5)]
+        let snapshots = [
+            makeTelemetrySnapshot(
+                systemLoadW: 12.5,
+                chargingPolicyStatus: .manualLimit(targetPercent: 87)
+            )
+        ]
 
         let data = try HistoryExporter.jsonData(snapshots)
         let decoder = JSONDecoder()
@@ -30,6 +35,7 @@ struct HistoryExporterTests {
         #expect(decoded.count == 1)
         #expect(decoded.first?.systemLoadW == 12.5)
         #expect(decoded.first?.cycleCount == 75)
+        #expect(decoded.first?.chargingPolicyStatus == nil)
     }
 
     @Test

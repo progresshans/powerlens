@@ -13,7 +13,8 @@ func makeTelemetrySnapshot(
     batteryPowerW: Double? = 0,
     adapterInputPowerW: Double? = 11,
     systemLoadW: Double? = 10,
-    adapterMaxPowerW: Double? = 97
+    adapterMaxPowerW: Double? = 97,
+    chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
         timestamp: Date(timeIntervalSince1970: 1_775_000_000),
@@ -44,6 +45,7 @@ func makeTelemetrySnapshot(
         lowPowerModeEnabled: false,
         thermalState: "Nominal",
         serialNumber: "SERIAL",
-        frontmostAppName: "PowerLens"
+        frontmostAppName: "PowerLens",
+        chargingPolicyStatus: chargingPolicyStatus
     )
 }
