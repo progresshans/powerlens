@@ -116,6 +116,8 @@
 "status.subheadline.optimizedCharging.active" = "macOS is managing the charging schedule while the battery continues to charge.";
 "status.subheadline.optimizedCharging.holding" = "macOS is temporarily holding charging to reduce time spent fully charged.";
 "status.subheadline.optimizedCharging.activeFlowUnknown" = "Optimized Battery Charging is active. PowerLens evaluates the current power flow separately.";
+"status.subheadline.manualLimit.transientAssist" = "The battery is briefly helping while the charge limit remains active.";
+"status.subheadline.optimizedCharging.transientAssist" = "The battery is briefly helping while Optimized Battery Charging remains active.";
 
 "diag.slowCharger.title" = "Slow Charger Detected";
 "diag.slowCharger.message" = "Incoming power is lower than system draw by about %@. Your Mac may still drain on wall power.";
@@ -178,11 +180,6 @@
 "ui.flow.holding" = "Holding";
 "ui.flow.directPower" = "System Covered";
 "ui.flow.batteryOnly" = "Battery Power";
-"ui.flow.manualLimit.charging" = "Charging to %@";
-"ui.flow.manualLimit.reducing" = "Adjusting to %@";
-"ui.flow.manualLimit.holding" = "Holding at %@";
-"ui.flow.optimizedCharging.active" = "Optimized Charging";
-"ui.flow.optimizedCharging.holding" = "Optimized Charge Hold";
 "ui.flow.batteryAssistDetail" = "The battery can assist transient load even while an adapter is connected.";
 "ui.flow.chargingDetail" = "The adapter is covering system load and sending remaining power into the battery.";
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";

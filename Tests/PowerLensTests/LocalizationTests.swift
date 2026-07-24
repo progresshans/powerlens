@@ -19,11 +19,8 @@ struct LocalizationTests {
             "status.subheadline.optimizedCharging.active",
             "status.subheadline.optimizedCharging.holding",
             "status.subheadline.optimizedCharging.activeFlowUnknown",
-            "ui.flow.manualLimit.charging",
-            "ui.flow.manualLimit.reducing",
-            "ui.flow.manualLimit.holding",
-            "ui.flow.optimizedCharging.active",
-            "ui.flow.optimizedCharging.holding",
+            "status.subheadline.manualLimit.transientAssist",
+            "status.subheadline.optimizedCharging.transientAssist",
         ]
 
         for language in [AppLanguage.english, .korean] {

@@ -116,6 +116,8 @@
 "status.subheadline.optimizedCharging.active" = "배터리가 충전되는 동안 macOS가 충전 일정을 관리하고 있습니다.";
 "status.subheadline.optimizedCharging.holding" = "macOS가 완충 상태로 머무는 시간을 줄이기 위해 충전을 일시적으로 보류하고 있습니다.";
 "status.subheadline.optimizedCharging.activeFlowUnknown" = "최적화된 배터리 충전이 동작 중입니다. PowerLens는 현재 전력 흐름을 별도로 판단합니다.";
+"status.subheadline.manualLimit.transientAssist" = "충전 한도가 활성화된 동안 배터리가 잠시 전력을 보조하고 있습니다.";
+"status.subheadline.optimizedCharging.transientAssist" = "최적화된 배터리 충전이 활성화된 동안 배터리가 잠시 전력을 보조하고 있습니다.";
 
 "diag.slowCharger.title" = "느린 충전기 감지";
 "diag.slowCharger.message" = "유입 전력이 시스템 부하보다 약 %@ 낮습니다. 전원 연결 상태에서도 배터리가 줄어들 수 있습니다.";
@@ -178,11 +180,6 @@
 "ui.flow.holding" = "유지";
 "ui.flow.directPower" = "시스템 커버";
 "ui.flow.batteryOnly" = "배터리 사용";
-"ui.flow.manualLimit.charging" = "%@까지 충전";
-"ui.flow.manualLimit.reducing" = "%@로 조정 중";
-"ui.flow.manualLimit.holding" = "%@에서 유지";
-"ui.flow.optimizedCharging.active" = "최적화 충전";
-"ui.flow.optimizedCharging.holding" = "최적화 충전 대기";
 "ui.flow.batteryAssistDetail" = "어댑터 연결 중에도 배터리가 순간 부하를 함께 보조합니다.";
 "ui.flow.chargingDetail" = "어댑터가 시스템 부하를 맡고 남은 전력이 배터리로 갑니다.";
 "ui.flow.directPowerDetail" = "어댑터가 현재 시스템 부하를 직접 커버하고 있습니다.";

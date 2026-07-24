@@ -2,15 +2,31 @@ import Foundation
 
 extension TelemetrySnapshot {
     var statusHeadline: String {
+        statusHeadline(resolvedState: nil)
+    }
+
+    func statusHeadline(resolvedState: ResolvedPowerState?) -> String {
         if !externalConnected {
             return L10n.text("status.runningOnBattery")
         }
 
-        if let managedChargingHeadline {
-            return managedChargingHeadline
+        if resolvedState?.powerDeliveryState == .sustainedShortfall {
+            return L10n.text("status.adapterBatteryAssist")
         }
 
-        switch externalPowerState {
+        let managedState: ManagedChargingState?
+        if let resolvedState {
+            managedState = resolvedState.managedChargingState
+        } else {
+            managedState = managedChargingState
+        }
+        if let managedHeadline = managedChargingHeadline(for: managedState) {
+            return managedHeadline
+        }
+
+        let resolvedExternalPowerState = resolvedState?.externalPowerState
+            ?? externalPowerState
+        switch resolvedExternalPowerState {
         case .onBattery:
             return L10n.text("status.runningOnBattery")
         case .charging:
@@ -29,32 +45,83 @@ extension TelemetrySnapshot {
     }
 
     var statusSubheadline: String {
+        statusSubheadline(resolvedState: nil)
+    }
+
+    func statusSubheadline(resolvedState: ResolvedPowerState?) -> String {
         if !externalConnected {
             return L10n.text("status.subheadline.batteryOnly")
         }
 
-        if let managedChargingSubheadline {
-            return managedChargingSubheadline
+        if let resolvedState,
+           resolvedState.powerDeliveryState == .sustainedShortfall {
+            return stablePowerDeliverySubheadline(
+                confirmedShortfall: resolvedState.confirmedShortfall
+            )
         }
 
-        if externalPowerState == .holding {
+        let managedState: ManagedChargingState?
+        if let resolvedState {
+            managedState = resolvedState.managedChargingState
+        } else {
+            managedState = managedChargingState
+        }
+        if resolvedState?.powerDeliveryState == .transientBatteryAssist {
+            switch managedState {
+            case .holdingAtLimit:
+                return L10n.text(
+                    "status.subheadline.manualLimit.transientAssist"
+                )
+            case .optimizedHold:
+                return L10n.text(
+                    "status.subheadline.optimizedCharging.transientAssist"
+                )
+            case .chargingToLimit, .reducingToLimit, .limitConfigured,
+                 .optimizedCharging, .optimizedActive, nil:
+                break
+            }
+        }
+
+        if let managedSubheadline = managedChargingSubheadline(
+            for: managedState
+        ) {
+            return managedSubheadline
+        }
+
+        let resolvedExternalPowerState = resolvedState?.externalPowerState
+            ?? externalPowerState
+        if resolvedExternalPowerState == .holding {
             return L10n.text("status.subheadline.holdingCurrentLevel")
         }
 
+        return powerDeliverySubheadline
+    }
+
+    private var powerDeliverySubheadline: String {
         switch chargerAdequacy {
         case .insufficient:
             if let deficit = estimatedPowerDeficitW {
-                return L10n.tr("status.subheadline.deficit", Formatters.power(deficit))
+                return L10n.tr(
+                    "status.subheadline.deficit",
+                    Formatters.power(deficit)
+                )
             }
             return L10n.text("status.subheadline.powerLimited")
         case .constrained:
             if let adapterInputPowerW, let systemLoadW {
-                return L10n.tr("status.subheadline.inputVsLoad", Formatters.power(adapterInputPowerW), Formatters.power(systemLoadW))
+                return L10n.tr(
+                    "status.subheadline.inputVsLoad",
+                    Formatters.power(adapterInputPowerW),
+                    Formatters.power(systemLoadW)
+                )
             }
             return L10n.text("status.subheadline.tightHeadroom")
         case .ample:
             if let headroom = ratedHeadroomW {
-                return L10n.tr("status.subheadline.ratedHeadroom", Formatters.power(headroom))
+                return L10n.tr(
+                    "status.subheadline.ratedHeadroom",
+                    Formatters.power(headroom)
+                )
             }
             return L10n.text("status.subheadline.currentChargerHealthy")
         case .adequate:
@@ -66,7 +133,40 @@ extension TelemetrySnapshot {
         }
     }
 
+    private func stablePowerDeliverySubheadline(
+        confirmedShortfall: ConfirmedPowerDeliveryShortfall?
+    ) -> String {
+        guard let confirmedShortfall else {
+            return powerDeliverySubheadline
+        }
+
+        if confirmedShortfall.isSlowCharger {
+            return L10n.tr(
+                "status.subheadline.deficit",
+                Formatters.power(confirmedShortfall.deficitW)
+            )
+        }
+        if confirmedShortfall.isNegotiatedLow {
+            return L10n.tr(
+                "status.subheadline.inputVsLoad",
+                Formatters.power(
+                    confirmedShortfall.adapterInputPowerW
+                ),
+                Formatters.power(
+                    confirmedShortfall.systemLoadW
+                )
+            )
+        }
+        return L10n.text("status.subheadline.powerLimited")
+    }
+
     var managedChargingHeadline: String? {
+        managedChargingHeadline(for: managedChargingState)
+    }
+
+    func managedChargingHeadline(
+        for managedChargingState: ManagedChargingState?
+    ) -> String? {
         guard let managedChargingState else {
             return nil
         }
@@ -97,6 +197,12 @@ extension TelemetrySnapshot {
     }
 
     var managedChargingSubheadline: String? {
+        managedChargingSubheadline(for: managedChargingState)
+    }
+
+    func managedChargingSubheadline(
+        for managedChargingState: ManagedChargingState?
+    ) -> String? {
         guard let managedChargingState else {
             return nil
         }
@@ -118,6 +224,12 @@ extension TelemetrySnapshot {
     }
 
     var managedChargingDiagnosticTitle: String? {
+        managedChargingDiagnosticTitle(for: managedChargingState)
+    }
+
+    func managedChargingDiagnosticTitle(
+        for managedChargingState: ManagedChargingState?
+    ) -> String? {
         guard let managedChargingState else {
             return nil
         }
@@ -132,11 +244,17 @@ extension TelemetrySnapshot {
             return L10n.text("status.optimizedCharging.active")
         case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
              .optimizedCharging, .optimizedHold:
-            return managedChargingHeadline
+            return managedChargingHeadline(for: managedChargingState)
         }
     }
 
     var managedChargingDiagnosticMessage: String? {
+        managedChargingDiagnosticMessage(for: managedChargingState)
+    }
+
+    func managedChargingDiagnosticMessage(
+        for managedChargingState: ManagedChargingState?
+    ) -> String? {
         guard let managedChargingState else {
             return nil
         }
@@ -150,7 +268,7 @@ extension TelemetrySnapshot {
             )
         case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
              .optimizedCharging, .optimizedHold:
-            return managedChargingSubheadline
+            return managedChargingSubheadline(for: managedChargingState)
         }
     }
 
@@ -189,11 +307,16 @@ extension TelemetrySnapshot {
         return externalPowerState.menuBarSymbolName
     }
 
-    func menuBarSymbolName(using diagnostics: [DiagnosticItem], externalPowerState: ExternalPowerState? = nil) -> String {
+    func menuBarSymbolName(
+        using diagnostics: [DiagnosticItem],
+        externalPowerState: ExternalPowerState? = nil
+    ) -> String {
         let resolvedState = externalPowerState ?? self.externalPowerState
 
         if resolvedState == .connected,
-           diagnostics.contains(where: { Self.powerDiagnosticTitles.contains($0.title) }) {
+           diagnostics.contains(where: {
+               Self.powerDiagnosticTitles.contains($0.title)
+           }) {
             return "exclamationmark.triangle.fill"
         }
 

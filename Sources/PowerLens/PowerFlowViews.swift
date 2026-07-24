@@ -62,7 +62,7 @@ struct PowerFlowCard: View {
 
             BatteryLevelStrip(
                 level: snapshot.batteryLevel,
-                isCharging: snapshot.isBatteryChargingForDisplay,
+                isCharging: model.state == .charging,
                 isCharged: snapshot.isCharged
             )
 

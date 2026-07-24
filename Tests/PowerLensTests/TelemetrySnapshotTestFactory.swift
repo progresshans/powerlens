@@ -2,6 +2,7 @@ import Foundation
 @testable import PowerLens
 
 func makeTelemetrySnapshot(
+    timestamp: Date = Date(timeIntervalSince1970: 1_775_000_000),
     batteryLevel: Double? = 80,
     powerSource: PowerSourceKind = .ac,
     isCharging: Bool = false,
@@ -17,7 +18,7 @@ func makeTelemetrySnapshot(
     chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
-        timestamp: Date(timeIntervalSince1970: 1_775_000_000),
+        timestamp: timestamp,
         batteryLevel: batteryLevel,
         powerSource: powerSource,
         isCharging: isCharging,

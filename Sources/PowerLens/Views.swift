@@ -75,11 +75,19 @@ struct MenuBarRootView: View {
     private func popoverHeader(_ snapshot: TelemetrySnapshot) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(snapshot.statusHeadline)
+                Text(
+                    snapshot.statusHeadline(
+                        resolvedState: store.resolvedPowerState
+                    )
+                )
                     .font(.headline)
                     .lineLimit(2)
 
-                Text(snapshot.statusSubheadline)
+                Text(
+                    snapshot.statusSubheadline(
+                        resolvedState: store.resolvedPowerState
+                    )
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

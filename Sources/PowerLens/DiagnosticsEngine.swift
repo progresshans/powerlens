@@ -2,16 +2,39 @@ import Foundation
 
 extension TelemetrySnapshot {
     var diagnostics: [DiagnosticItem] {
-        var results: [DiagnosticItem] = []
+        diagnostics(resolvedState: nil)
+    }
 
-        if !shouldSuppressPowerDeliveryWarnings,
-           let warning = slowChargerDiagnostic {
-            results.append(warning)
+    func diagnostics(resolvedState: ResolvedPowerState?) -> [DiagnosticItem] {
+        var results: [DiagnosticItem] = []
+        let shouldShowPowerWarnings: Bool
+        if let resolvedState {
+            shouldShowPowerWarnings =
+                resolvedState.powerDeliveryState == .sustainedShortfall
+        } else {
+            shouldShowPowerWarnings = !shouldSuppressPowerDeliveryWarnings
         }
 
-        if !shouldSuppressPowerDeliveryWarnings,
-           let warning = negotiatedLowDiagnostic {
-            results.append(warning)
+        if shouldShowPowerWarnings {
+            if let confirmedShortfall = resolvedState?.confirmedShortfall {
+                if let warning = slowChargerDiagnostic(
+                    for: confirmedShortfall
+                ) {
+                    results.append(warning)
+                }
+                if let warning = negotiatedLowDiagnostic(
+                    for: confirmedShortfall
+                ) {
+                    results.append(warning)
+                }
+            } else {
+                if let warning = slowChargerDiagnostic {
+                    results.append(warning)
+                }
+                if let warning = negotiatedLowDiagnostic {
+                    results.append(warning)
+                }
+            }
         }
 
         if let temperature = batteryTemperatureC,
@@ -46,7 +69,15 @@ extension TelemetrySnapshot {
             )
         }
 
-        if let managedChargingDiagnostic {
+        let managedState: ManagedChargingState?
+        if let resolvedState {
+            managedState = resolvedState.managedChargingState
+        } else {
+            managedState = managedChargingState
+        }
+        if let managedChargingDiagnostic = managedChargingDiagnostic(
+            for: managedState
+        ) {
             results.append(managedChargingDiagnostic)
         }
 
@@ -115,8 +146,18 @@ extension TelemetrySnapshot {
     }
 
     private var managedChargingDiagnostic: DiagnosticItem? {
-        guard let title = managedChargingDiagnosticTitle,
-              let message = managedChargingDiagnosticMessage else {
+        managedChargingDiagnostic(for: managedChargingState)
+    }
+
+    private func managedChargingDiagnostic(
+        for managedChargingState: ManagedChargingState?
+    ) -> DiagnosticItem? {
+        guard let title = managedChargingDiagnosticTitle(
+                  for: managedChargingState
+              ),
+              let message = managedChargingDiagnosticMessage(
+                  for: managedChargingState
+              ) else {
             return nil
         }
 
@@ -151,6 +192,42 @@ extension TelemetrySnapshot {
             severity: .caution,
             title: L10n.text("diag.negotiatedLow.title"),
             message: L10n.tr("diag.negotiatedLow.message", Formatters.power(rated), Formatters.power(input))
+        )
+    }
+
+    private func slowChargerDiagnostic(
+        for evidence: ConfirmedPowerDeliveryShortfall
+    ) -> DiagnosticItem? {
+        guard evidence.isSlowCharger else {
+            return nil
+        }
+
+        return DiagnosticItem(
+            severity: .warning,
+            title: L10n.text("diag.slowCharger.title"),
+            message: L10n.tr(
+                "diag.slowCharger.message",
+                Formatters.power(evidence.deficitW)
+            )
+        )
+    }
+
+    private func negotiatedLowDiagnostic(
+        for evidence: ConfirmedPowerDeliveryShortfall
+    ) -> DiagnosticItem? {
+        guard evidence.isNegotiatedLow,
+              let adapterMaxPowerW = evidence.adapterMaxPowerW else {
+            return nil
+        }
+
+        return DiagnosticItem(
+            severity: .caution,
+            title: L10n.text("diag.negotiatedLow.title"),
+            message: L10n.tr(
+                "diag.negotiatedLow.message",
+                Formatters.power(adapterMaxPowerW),
+                Formatters.power(evidence.adapterInputPowerW)
+            )
         )
     }
 

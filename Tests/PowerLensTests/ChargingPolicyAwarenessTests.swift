@@ -45,10 +45,7 @@ struct ChargingPolicyAwarenessTests {
         #expect(managedFlow.routes.map(\.role) == [.input, .battery])
         #expect(
             managedFlow.statusTitle
-                == L10n.tr(
-                    "ui.flow.manualLimit.reducing",
-                    Formatters.percent(87)
-                )
+                == L10n.text("ui.flow.batteryAssist")
         )
     }
 
@@ -83,10 +80,7 @@ struct ChargingPolicyAwarenessTests {
         #expect(flow.routes.map(\.role) == [.input, .charge])
         #expect(
             flow.statusTitle
-                == L10n.tr(
-                    "ui.flow.manualLimit.charging",
-                    Formatters.percent(93)
-                )
+                == L10n.text("ui.flow.charging")
         )
     }
 
@@ -138,10 +132,7 @@ struct ChargingPolicyAwarenessTests {
         #expect(flow.routes.map(\.role) == [.input])
         #expect(
             flow.statusTitle
-                == L10n.tr(
-                    "ui.flow.manualLimit.holding",
-                    Formatters.percent(85)
-                )
+                == L10n.text("ui.flow.holding")
         )
     }
 
@@ -175,10 +166,7 @@ struct ChargingPolicyAwarenessTests {
         #expect(flow.routes.map(\.role) == [.input])
         #expect(
             flow.statusTitle
-                == L10n.tr(
-                    "ui.flow.manualLimit.holding",
-                    Formatters.percent(85)
-                )
+                == L10n.text("ui.flow.directPower")
         )
     }
 
@@ -449,7 +437,7 @@ struct ChargingPolicyAwarenessTests {
         )
         #expect(
             PowerFlowPresentationModel(snapshot: snapshot).statusTitle
-                == L10n.text("ui.flow.optimizedCharging.active")
+                == L10n.text("ui.flow.charging")
         )
     }
 
@@ -476,7 +464,7 @@ struct ChargingPolicyAwarenessTests {
         #expect(flow.routes.map(\.role) == [.input])
         #expect(
             flow.statusTitle
-                == L10n.text("ui.flow.optimizedCharging.holding")
+                == L10n.text("ui.flow.holding")
         )
     }
 

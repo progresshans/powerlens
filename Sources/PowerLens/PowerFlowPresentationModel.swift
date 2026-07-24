@@ -73,23 +73,44 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
     init(snapshot: TelemetrySnapshot) {
         let inputPower = max(snapshot.adapterInputPowerW ?? 0, 0)
         let loadPower = max(snapshot.systemLoadW ?? 0, 0)
-        let externalToSystemPower = snapshot.externalConnected ? min(inputPower, loadPower) : 0
-        let chargePower = inputPower > 0 ? max(inputPower - externalToSystemPower, 0) : snapshot.batteryChargeInflowW
-        let batteryAssist = max(loadPower - inputPower, 0)
+        let inferredBatteryAssist = max(loadPower - inputPower, 0)
+        let resolvedBatteryAssist = Self.resolveBatteryAssist(
+            snapshot: snapshot,
+            inferredBatteryAssist: inferredBatteryAssist
+        )
+        let batteryAssist = loadPower > 0
+            ? min(resolvedBatteryAssist, loadPower)
+            : resolvedBatteryAssist
+        let inferredChargePower = max(inputPower - loadPower, 0)
+        let chargePower = Self.resolveChargePower(
+            snapshot: snapshot,
+            inferredChargePower: inferredChargePower
+        )
         let state = Self.resolveState(
             snapshot: snapshot,
             batteryAssist: batteryAssist,
             chargePower: chargePower
         )
+        let externalToSystemPower: Double
+        switch state {
+        case .underpowered:
+            externalToSystemPower = max(loadPower - batteryAssist, 0)
+        case .discharging:
+            externalToSystemPower = 0
+        case .holding, .directPower, .charging:
+            externalToSystemPower = snapshot.externalConnected ? loadPower : 0
+        }
         let externalToBatteryPower = state == .charging ? max(chargePower, 0) : 0
         let batteryToSystemPower = Self.batteryToSystemPower(
             state: state,
             loadPower: loadPower,
-            externalToSystemPower: externalToSystemPower
+            batteryAssist: batteryAssist
         )
 
         self.state = state
-        self.statusTitle = Self.resolveStatusTitle(snapshot: snapshot, state: state)
+        // The flow badge describes the latest physical route only. Managed
+        // charging policy is presented separately in the stable status model.
+        self.statusTitle = state.localizedTitle
         self.inputPower = inputPower
         self.loadPower = loadPower
         self.chargePower = chargePower
@@ -104,41 +125,6 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             batteryToSystemPower: batteryToSystemPower,
             externalToBatteryPower: externalToBatteryPower
         )
-    }
-
-    private static func resolveStatusTitle(
-        snapshot: TelemetrySnapshot,
-        state: PowerFlowDiagramState
-    ) -> String {
-        guard let managedChargingState = snapshot.managedChargingState else {
-            return state.localizedTitle
-        }
-
-        switch managedChargingState {
-        case let .chargingToLimit(targetPercent):
-            return L10n.tr(
-                "ui.flow.manualLimit.charging",
-                Formatters.percent(Double(targetPercent))
-            )
-        case let .reducingToLimit(targetPercent):
-            return L10n.tr(
-                "ui.flow.manualLimit.reducing",
-                Formatters.percent(Double(targetPercent))
-            )
-        case let .holdingAtLimit(targetPercent):
-            return L10n.tr(
-                "ui.flow.manualLimit.holding",
-                Formatters.percent(Double(targetPercent))
-            )
-        case .limitConfigured:
-            return state.localizedTitle
-        case .optimizedCharging:
-            return L10n.text("ui.flow.optimizedCharging.active")
-        case .optimizedHold:
-            return L10n.text("ui.flow.optimizedCharging.holding")
-        case .optimizedActive:
-            return state.localizedTitle
-        }
     }
 
     private static func resolveState(
@@ -165,16 +151,52 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         return .directPower
     }
 
+    private static func resolveBatteryAssist(
+        snapshot: TelemetrySnapshot,
+        inferredBatteryAssist: Double
+    ) -> Double {
+        switch snapshot.batteryFlowEvidence {
+        case .discharging:
+            if let measuredBatteryDischargeW =
+                snapshot.measuredBatteryDischargeW {
+                return measuredBatteryDischargeW
+            }
+            return inferredBatteryAssist
+        case .unavailable:
+            // Compatible telemetry has no direct battery-flow measurements,
+            // so retain the input/load fallback.
+            return inferredBatteryAssist
+        case .charging, .calm, .conflicted:
+            // Direct measurements take precedence over a non-atomic
+            // input/load difference.
+            return 0
+        }
+    }
+
+    private static func resolveChargePower(
+        snapshot: TelemetrySnapshot,
+        inferredChargePower: Double
+    ) -> Double {
+        guard snapshot.batteryFlowEvidence == .charging else {
+            return 0
+        }
+
+        if let measuredBatteryChargeW = snapshot.measuredBatteryChargeW {
+            return measuredBatteryChargeW
+        }
+        return inferredChargePower
+    }
+
     private static func batteryToSystemPower(
         state: PowerFlowDiagramState,
         loadPower: Double,
-        externalToSystemPower: Double
+        batteryAssist: Double
     ) -> Double {
         switch state {
         case .discharging:
             return loadPower
         case .underpowered:
-            return max(loadPower - externalToSystemPower, 0)
+            return batteryAssist
         case .holding, .directPower, .charging:
             return 0
         }
@@ -233,10 +255,17 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         }
     }
 
-    private static func inputEndpoint(_ snapshot: TelemetrySnapshot) -> PowerFlowEndpointModel {
+    private static func inputEndpoint(
+        _ snapshot: TelemetrySnapshot
+    ) -> PowerFlowEndpointModel {
+        // Endpoint cards stay aligned with the raw dashboard metrics. The
+        // battery-flow direction can be more trustworthy than a non-atomic
+        // input/load pair, but we must not fabricate an exact adapter reading
+        // merely to make those independently sampled values add up.
         PowerFlowEndpointModel(
             title: L10n.text("ui.metric.input"),
-            value: snapshot.adapterInputPowerW.map(Formatters.power) ?? L10n.text("common.none"),
+            value: snapshot.adapterInputPowerW.map(Formatters.power)
+                ?? L10n.text("common.none"),
             systemImage: "powerplug.fill",
             role: .input
         )

@@ -123,6 +123,111 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
+    func managedHoldSurvivesTransientAssistButReportsSustainedShortfall() async {
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        let calm = { (seconds: TimeInterval) in
+            makeTelemetrySnapshot(
+                timestamp: start.addingTimeInterval(seconds),
+                batteryLevel: 80,
+                isCharging: false,
+                batteryCurrentA: 0,
+                batteryPowerW: 0,
+                adapterInputPowerW: 20,
+                systemLoadW: 20,
+                adapterMaxPowerW: 96,
+                chargingPolicyStatus: .manualLimit(targetPercent: 80)
+            )
+        }
+        let assist = { (seconds: TimeInterval) in
+            makeTelemetrySnapshot(
+                timestamp: start.addingTimeInterval(seconds),
+                batteryLevel: 80,
+                isCharging: true,
+                batteryCurrentA: -1.5,
+                batteryPowerW: 18,
+                adapterInputPowerW: 20,
+                systemLoadW: 38,
+                adapterMaxPowerW: 96,
+                chargingPolicyStatus: .manualLimit(targetPercent: 80)
+            )
+        }
+        let reader = SequenceTelemetryReader(
+            snapshots: [
+                calm(0),
+                calm(12),
+                assist(15),
+                assist(24),
+                assist(30),
+            ]
+        )
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: false)
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(
+            store.resolvedPowerState?.managedChargingState
+                == .holdingAtLimit(targetPercent: 80)
+        )
+        #expect(store.resolvedPowerState?.externalPowerState == .holding)
+
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(store.resolvedPowerState?.batteryFlowEvidence == .discharging)
+        #expect(
+            store.resolvedPowerState?.powerDeliveryState
+                == .transientBatteryAssist
+        )
+        #expect(
+            store.resolvedPowerState?.managedChargingState
+                == .holdingAtLimit(targetPercent: 80)
+        )
+        #expect(store.resolvedPowerState?.externalPowerState == .holding)
+        #expect(store.menuBarBatteryBadge == .pluggedHolding)
+        #expect(store.menuBarSymbolName == "pause.circle.fill")
+        #expect(
+            store.latest?.statusSubheadline(
+                resolvedState: store.resolvedPowerState
+            ) == L10n.text(
+                "status.subheadline.manualLimit.transientAssist"
+            )
+        )
+        #expect(
+            !store.diagnostics.contains {
+                TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
+            }
+        )
+        #expect(
+            store.latest.map(PowerFlowPresentationModel.init)?.state
+                == .underpowered
+        )
+
+        await store.refreshOnce(persistImmediately: false)
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(
+            store.resolvedPowerState?.powerDeliveryState
+                == .sustainedShortfall
+        )
+        #expect(
+            store.resolvedPowerState?.managedChargingState
+                == .limitConfigured(targetPercent: 80)
+        )
+        #expect(store.resolvedPowerState?.externalPowerState == .connected)
+        #expect(store.menuBarSymbolName == "exclamationmark.triangle.fill")
+        #expect(
+            store.diagnostics.contains {
+                $0.title == L10n.text("diag.slowCharger.title")
+            }
+        )
+    }
+
+    @Test
+    @MainActor
     func startupPurgesHistoryOnce() async {
         let historyStore = StubHistoryStore()
         let snapshot = makeTelemetrySnapshot(
@@ -176,6 +281,29 @@ struct PowerLensStoreTests {
 
         #expect(store.telemetryUnavailable == false)
         #expect(store.latest == snapshot)
+    }
+}
+
+private actor SequenceTelemetryReader: TelemetryReading {
+    private let snapshots: [TelemetrySnapshot]
+    private var nextIndex = 0
+
+    init(snapshots: [TelemetrySnapshot]) {
+        self.snapshots = snapshots
+    }
+
+    func readSnapshot(
+        preference: TelemetryEnginePreference
+    ) async throws -> TelemetryReadResult {
+        guard nextIndex < snapshots.count else {
+            throw TelemetryReadError.unavailable
+        }
+
+        defer { nextIndex += 1 }
+        return TelemetryReadResult(
+            snapshot: snapshots[nextIndex],
+            activeEngine: .livePrecision
+        )
     }
 }
 
