@@ -1,7 +1,45 @@
+import Foundation
 import Testing
 @testable import PowerLens
 
 struct LocalizationTests {
+    @Test
+    func managedChargingCopyExistsInEnglishAndKorean() {
+        let keys = [
+            "status.manualLimit.charging",
+            "status.manualLimit.reducing",
+            "status.manualLimit.holding",
+            "status.manualLimit.active",
+            "status.optimizedCharging.active",
+            "status.optimizedCharging.holding",
+            "status.subheadline.manualLimit.charging",
+            "status.subheadline.manualLimit.reducing",
+            "status.subheadline.manualLimit.holding",
+            "status.subheadline.manualLimit.active",
+            "status.subheadline.optimizedCharging.active",
+            "status.subheadline.optimizedCharging.holding",
+            "status.subheadline.optimizedCharging.activeFlowUnknown",
+            "ui.flow.manualLimit.charging",
+            "ui.flow.manualLimit.reducing",
+            "ui.flow.manualLimit.holding",
+            "ui.flow.optimizedCharging.active",
+            "ui.flow.optimizedCharging.holding",
+        ]
+
+        for language in [AppLanguage.english, .korean] {
+            for key in keys {
+                let localized = language.bundle.localizedString(
+                    forKey: key,
+                    value: nil,
+                    table: "Localizable"
+                )
+
+                #expect(!localized.isEmpty)
+                #expect(localized != key)
+            }
+        }
+    }
+
     @Test
     func batteryHealthSummaryPrefersComputedCapacityWhenRawStatusConflicts() {
         let snapshot = sampleSnapshot(

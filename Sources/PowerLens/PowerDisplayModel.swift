@@ -2,6 +2,14 @@ import Foundation
 
 extension TelemetrySnapshot {
     var statusHeadline: String {
+        if !externalConnected {
+            return L10n.text("status.runningOnBattery")
+        }
+
+        if let managedChargingHeadline {
+            return managedChargingHeadline
+        }
+
         switch externalPowerState {
         case .onBattery:
             return L10n.text("status.runningOnBattery")
@@ -21,6 +29,14 @@ extension TelemetrySnapshot {
     }
 
     var statusSubheadline: String {
+        if !externalConnected {
+            return L10n.text("status.subheadline.batteryOnly")
+        }
+
+        if let managedChargingSubheadline {
+            return managedChargingSubheadline
+        }
+
         if externalPowerState == .holding {
             return L10n.text("status.subheadline.holdingCurrentLevel")
         }
@@ -47,6 +63,94 @@ extension TelemetrySnapshot {
             return L10n.text("status.subheadline.batteryOnly")
         case .unknown:
             return L10n.text("status.subheadline.qualityUnknown")
+        }
+    }
+
+    var managedChargingHeadline: String? {
+        guard let managedChargingState else {
+            return nil
+        }
+
+        switch managedChargingState {
+        case let .chargingToLimit(targetPercent):
+            return L10n.tr(
+                "status.manualLimit.charging",
+                Formatters.percent(Double(targetPercent))
+            )
+        case let .reducingToLimit(targetPercent):
+            return L10n.tr(
+                "status.manualLimit.reducing",
+                Formatters.percent(Double(targetPercent))
+            )
+        case let .holdingAtLimit(targetPercent):
+            return L10n.tr(
+                "status.manualLimit.holding",
+                Formatters.percent(Double(targetPercent))
+            )
+        case .optimizedCharging:
+            return L10n.text("status.optimizedCharging.active")
+        case .optimizedHold:
+            return L10n.text("status.optimizedCharging.holding")
+        case .limitConfigured, .optimizedActive:
+            return nil
+        }
+    }
+
+    var managedChargingSubheadline: String? {
+        guard let managedChargingState else {
+            return nil
+        }
+
+        switch managedChargingState {
+        case .chargingToLimit:
+            return L10n.text("status.subheadline.manualLimit.charging")
+        case .reducingToLimit:
+            return L10n.text("status.subheadline.manualLimit.reducing")
+        case .holdingAtLimit:
+            return L10n.text("status.subheadline.manualLimit.holding")
+        case .optimizedCharging:
+            return L10n.text("status.subheadline.optimizedCharging.active")
+        case .optimizedHold:
+            return L10n.text("status.subheadline.optimizedCharging.holding")
+        case .limitConfigured, .optimizedActive:
+            return nil
+        }
+    }
+
+    var managedChargingDiagnosticTitle: String? {
+        guard let managedChargingState else {
+            return nil
+        }
+
+        switch managedChargingState {
+        case let .limitConfigured(targetPercent):
+            return L10n.tr(
+                "status.manualLimit.active",
+                Formatters.percent(Double(targetPercent))
+            )
+        case .optimizedActive:
+            return L10n.text("status.optimizedCharging.active")
+        case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
+             .optimizedCharging, .optimizedHold:
+            return managedChargingHeadline
+        }
+    }
+
+    var managedChargingDiagnosticMessage: String? {
+        guard let managedChargingState else {
+            return nil
+        }
+
+        switch managedChargingState {
+        case .limitConfigured:
+            return L10n.text("status.subheadline.manualLimit.active")
+        case .optimizedActive:
+            return L10n.text(
+                "status.subheadline.optimizedCharging.activeFlowUnknown"
+            )
+        case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
+             .optimizedCharging, .optimizedHold:
+            return managedChargingSubheadline
         }
     }
 
@@ -77,7 +181,9 @@ extension TelemetrySnapshot {
     }
 
     var menuBarSymbolName: String {
-        if externalPowerState == .connected, chargerAdequacy == .insufficient {
+        if externalPowerState == .connected,
+           chargerAdequacy == .insufficient,
+           !shouldSuppressPowerDeliveryWarnings {
             return "exclamationmark.triangle.fill"
         }
         return externalPowerState.menuBarSymbolName

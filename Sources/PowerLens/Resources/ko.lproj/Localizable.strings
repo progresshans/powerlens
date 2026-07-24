@@ -92,6 +92,12 @@
 "status.chargedHolding" = "충전 완료 후 유지 중";
 "status.holdingCurrentLevel" = "현재 배터리 수준 유지 중";
 "status.externalPowerConnected" = "외부 전원 연결됨";
+"status.manualLimit.charging" = "%@ 충전 한도까지 충전 중";
+"status.manualLimit.reducing" = "%@ 충전 한도에 맞추는 중";
+"status.manualLimit.holding" = "%@ 충전 한도에서 유지 중";
+"status.manualLimit.active" = "%@ 충전 한도 설정됨";
+"status.optimizedCharging.active" = "최적화된 배터리 충전 동작 중";
+"status.optimizedCharging.holding" = "최적화된 배터리 충전으로 대기 중";
 
 "status.subheadline.deficit" = "시스템 부하가 유입 전력보다 약 %@ 더 높습니다.";
 "status.subheadline.powerLimited" = "현재 맥이 전력 부족 상태로 보입니다.";
@@ -103,6 +109,13 @@
 "status.subheadline.currentChargerSufficient" = "현재 충전기는 이 작업 부하에 충분해 보입니다.";
 "status.subheadline.batteryOnly" = "현재 맥은 배터리 전력만 사용하고 있습니다.";
 "status.subheadline.qualityUnknown" = "전력 흐름은 읽히지만 어댑터 품질은 아직 확정하기 어렵습니다.";
+"status.subheadline.manualLimit.charging" = "macOS가 선택한 충전 한도까지 배터리를 충전하고 있습니다.";
+"status.subheadline.manualLimit.reducing" = "어댑터가 연결된 상태에서 macOS가 배터리 잔량을 선택한 충전 한도에 맞추고 있습니다.";
+"status.subheadline.manualLimit.holding" = "macOS가 선택한 충전 한도에서 배터리 충전을 멈추고 유지하고 있습니다.";
+"status.subheadline.manualLimit.active" = "선택한 충전 한도가 설정되어 있습니다. PowerLens는 현재 전력 흐름을 별도로 판단합니다.";
+"status.subheadline.optimizedCharging.active" = "배터리가 충전되는 동안 macOS가 충전 일정을 관리하고 있습니다.";
+"status.subheadline.optimizedCharging.holding" = "macOS가 완충 상태로 머무는 시간을 줄이기 위해 충전을 일시적으로 보류하고 있습니다.";
+"status.subheadline.optimizedCharging.activeFlowUnknown" = "최적화된 배터리 충전이 동작 중입니다. PowerLens는 현재 전력 흐름을 별도로 판단합니다.";
 
 "diag.slowCharger.title" = "느린 충전기 감지";
 "diag.slowCharger.message" = "유입 전력이 시스템 부하보다 약 %@ 낮습니다. 전원 연결 상태에서도 배터리가 줄어들 수 있습니다.";
@@ -165,6 +178,11 @@
 "ui.flow.holding" = "유지";
 "ui.flow.directPower" = "시스템 커버";
 "ui.flow.batteryOnly" = "배터리 사용";
+"ui.flow.manualLimit.charging" = "%@까지 충전";
+"ui.flow.manualLimit.reducing" = "%@로 조정 중";
+"ui.flow.manualLimit.holding" = "%@에서 유지";
+"ui.flow.optimizedCharging.active" = "최적화 충전";
+"ui.flow.optimizedCharging.holding" = "최적화 충전 대기";
 "ui.flow.batteryAssistDetail" = "어댑터 연결 중에도 배터리가 순간 부하를 함께 보조합니다.";
 "ui.flow.chargingDetail" = "어댑터가 시스템 부하를 맡고 남은 전력이 배터리로 갑니다.";
 "ui.flow.directPowerDetail" = "어댑터가 현재 시스템 부하를 직접 커버하고 있습니다.";

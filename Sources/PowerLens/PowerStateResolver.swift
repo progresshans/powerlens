@@ -1,5 +1,24 @@
 import Foundation
 
+enum ManagedChargingState: Equatable, Sendable {
+    case chargingToLimit(targetPercent: Int)
+    case reducingToLimit(targetPercent: Int)
+    case holdingAtLimit(targetPercent: Int)
+    case limitConfigured(targetPercent: Int)
+    case optimizedCharging
+    case optimizedHold
+    case optimizedActive
+
+    var suppressesPowerDeliveryWarnings: Bool {
+        switch self {
+        case .reducingToLimit, .holdingAtLimit, .optimizedHold:
+            true
+        case .chargingToLimit, .limitConfigured, .optimizedCharging, .optimizedActive:
+            false
+        }
+    }
+}
+
 extension TelemetrySnapshot {
     var estimatedPowerDeficitW: Double? {
         guard externalConnected, let systemLoadW, let adapterInputPowerW else { return nil }
@@ -12,6 +31,32 @@ extension TelemetrySnapshot {
 
     var isBatteryChargingForDisplay: Bool {
         isCharging || batteryChargeInflowW > PowerStateThresholds.displayChargeInflowW
+    }
+
+    var isBatteryDischargingForDisplay: Bool {
+        let batteryPowerShowsDischarge = batteryPowerW.map {
+            $0 > PowerStateThresholds.displayDischargeOutflowW
+        } ?? false
+        let batteryCurrentShowsDischarge = batteryCurrentA.map {
+            $0 < -PowerStateThresholds.displayDischargeCurrentA
+        } ?? false
+
+        return batteryPowerShowsDischarge || batteryCurrentShowsDischarge
+    }
+
+    var canInferManualLimitHoldWithoutBatteryFlowMeasurements: Bool {
+        guard externalConnected,
+              batteryPowerW == nil,
+              batteryCurrentA == nil,
+              !isBatteryChargingForDisplay,
+              timeToFullMinutes == nil,
+              timeToEmptyMinutes == nil else {
+            return false
+        }
+
+        return estimatedPowerDeficitW.map {
+            $0 <= PowerStateThresholds.clearPowerDeficitW
+        } ?? true
     }
 
     var ratedHeadroomW: Double? {
@@ -90,6 +135,27 @@ extension TelemetrySnapshot {
         return deficit > 5
     }
 
+    /// Evidence that a real delivery problem may coexist with a managed
+    /// discharge. The adapter must be close to its rated capacity so the
+    /// evidence is independent of the battery discharge that the policy may
+    /// itself be causing.
+    var hasClearAdapterCapacityShortfall: Bool {
+        guard externalConnected,
+              isBatteryDischargingForDisplay,
+              let adapterMaxPowerW,
+              let adapterInputPowerW,
+              let systemLoadW,
+              adapterMaxPowerW > 0 else {
+            return false
+        }
+
+        let hasClearDeficit = systemLoadW - adapterInputPowerW
+            > PowerStateThresholds.clearPowerDeficitW
+        let adapterIsSaturated = adapterInputPowerW
+            >= adapterMaxPowerW * PowerStateThresholds.adapterSaturationRatio
+        return hasClearDeficit && adapterIsSaturated
+    }
+
     var hasNegotiatedLowCondition: Bool {
         guard externalConnected,
               let rated = adapterMaxPowerW,
@@ -112,8 +178,71 @@ extension TelemetrySnapshot {
             )
     }
 
+    /// Interprets the observed macOS charging policy together with the current
+    /// physical power flow. Neutral policy states remain distinct from states
+    /// that the policy can causally explain.
+    var managedChargingState: ManagedChargingState? {
+        guard externalConnected, let chargingPolicyStatus else {
+            return nil
+        }
+
+        switch chargingPolicyStatus {
+        case let .manualLimit(targetPercent):
+            guard (1...100).contains(targetPercent) else {
+                return nil
+            }
+
+            let isAtOrBelowSelectedLimit = batteryLevel.map {
+                $0 <= Double(targetPercent)
+                    + PowerStateThresholds.manualLimitUpperHoldTolerancePercent
+            } ?? false
+
+            if isBatteryChargingForDisplay, isAtOrBelowSelectedLimit {
+                return .chargingToLimit(targetPercent: targetPercent)
+            }
+
+            if hasClearAdapterCapacityShortfall {
+                return .limitConfigured(targetPercent: targetPercent)
+            }
+
+            if targetPercent < 100,
+               isBatteryDischargingForDisplay,
+               let batteryLevel,
+               batteryLevel > Double(targetPercent) {
+                return .reducingToLimit(targetPercent: targetPercent)
+            }
+
+            let isNearSelectedLimit = batteryLevel.map {
+                $0 >= Double(targetPercent)
+                    - PowerStateThresholds.manualLimitLowerHoldTolerancePercent
+                    && $0 <= Double(targetPercent)
+                    + PowerStateThresholds.manualLimitUpperHoldTolerancePercent
+            } ?? (targetPercent == 100 && isCharged)
+
+            if (
+                isHoldingBatteryLevelCandidate
+                    || canInferManualLimitHoldWithoutBatteryFlowMeasurements
+            ), isNearSelectedLimit {
+                return .holdingAtLimit(targetPercent: targetPercent)
+            }
+
+            return .limitConfigured(targetPercent: targetPercent)
+        case .optimizedCharging:
+            if isBatteryChargingForDisplay {
+                return .optimizedCharging
+            }
+
+            return isHoldingBatteryLevelCandidate
+                ? .optimizedHold
+                : .optimizedActive
+        case .inactive, .unavailable:
+            return nil
+        }
+    }
+
     var shouldSuppressPowerDeliveryWarnings: Bool {
         isHoldingBatteryLevelCandidate
+            || (managedChargingState?.suppressesPowerDeliveryWarnings ?? false)
     }
 
     static func stableExternalPowerState(
@@ -148,6 +277,12 @@ extension TelemetrySnapshot {
 
 private enum PowerStateThresholds {
     static let displayChargeInflowW = 0.35
+    static let displayDischargeOutflowW = 0.35
+    static let displayDischargeCurrentA = 0.05
+    static let manualLimitLowerHoldTolerancePercent = 5.0
+    static let manualLimitUpperHoldTolerancePercent = 1.0
+    static let adapterSaturationRatio = 0.8
+    static let clearPowerDeficitW = 5.0
     static let holdBatteryPowerToleranceW = 4.0
     static let holdBatteryCurrentToleranceA = 0.2
     static let holdBatteryLevelDriftPercent = 1.0

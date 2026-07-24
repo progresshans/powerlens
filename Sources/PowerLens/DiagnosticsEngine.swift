@@ -46,11 +46,15 @@ extension TelemetrySnapshot {
             )
         }
 
+        if let managedChargingDiagnostic {
+            results.append(managedChargingDiagnostic)
+        }
+
         if results.isEmpty {
             results.append(healthyDiagnostic)
         }
 
-        return results
+        return Self.sortedBySeverity(results)
     }
 
     static func stableDiagnostics(for recentSnapshots: [TelemetrySnapshot], requiredConsecutiveSamples: Int = 3) -> [DiagnosticItem] {
@@ -81,7 +85,46 @@ extension TelemetrySnapshot {
             results.append(current.healthyDiagnostic)
         }
 
-        return results
+        return Self.sortedBySeverity(results)
+    }
+
+    private static func sortedBySeverity(_ diagnostics: [DiagnosticItem]) -> [DiagnosticItem] {
+        diagnostics.enumerated()
+            .sorted { lhs, rhs in
+                let lhsRank = severityRank(lhs.element.severity)
+                let rhsRank = severityRank(rhs.element.severity)
+
+                if lhsRank == rhsRank {
+                    return lhs.offset < rhs.offset
+                }
+
+                return lhsRank < rhsRank
+            }
+            .map(\.element)
+    }
+
+    private static func severityRank(_ severity: DiagnosticSeverity) -> Int {
+        switch severity {
+        case .warning:
+            0
+        case .caution:
+            1
+        case .info:
+            2
+        }
+    }
+
+    private var managedChargingDiagnostic: DiagnosticItem? {
+        guard let title = managedChargingDiagnosticTitle,
+              let message = managedChargingDiagnosticMessage else {
+            return nil
+        }
+
+        return DiagnosticItem(
+            severity: .info,
+            title: title,
+            message: message
+        )
     }
 
     private var slowChargerDiagnostic: DiagnosticItem? {

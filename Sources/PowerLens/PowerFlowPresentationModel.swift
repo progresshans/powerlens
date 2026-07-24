@@ -60,6 +60,7 @@ struct PowerFlowRouteModel: Equatable, Sendable {
 
 struct PowerFlowPresentationModel: Equatable, Sendable {
     let state: PowerFlowDiagramState
+    let statusTitle: String
     let inputPower: Double
     let loadPower: Double
     let chargePower: Double
@@ -88,6 +89,7 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         )
 
         self.state = state
+        self.statusTitle = Self.resolveStatusTitle(snapshot: snapshot, state: state)
         self.inputPower = inputPower
         self.loadPower = loadPower
         self.chargePower = chargePower
@@ -102,6 +104,41 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             batteryToSystemPower: batteryToSystemPower,
             externalToBatteryPower: externalToBatteryPower
         )
+    }
+
+    private static func resolveStatusTitle(
+        snapshot: TelemetrySnapshot,
+        state: PowerFlowDiagramState
+    ) -> String {
+        guard let managedChargingState = snapshot.managedChargingState else {
+            return state.localizedTitle
+        }
+
+        switch managedChargingState {
+        case let .chargingToLimit(targetPercent):
+            return L10n.tr(
+                "ui.flow.manualLimit.charging",
+                Formatters.percent(Double(targetPercent))
+            )
+        case let .reducingToLimit(targetPercent):
+            return L10n.tr(
+                "ui.flow.manualLimit.reducing",
+                Formatters.percent(Double(targetPercent))
+            )
+        case let .holdingAtLimit(targetPercent):
+            return L10n.tr(
+                "ui.flow.manualLimit.holding",
+                Formatters.percent(Double(targetPercent))
+            )
+        case .limitConfigured:
+            return state.localizedTitle
+        case .optimizedCharging:
+            return L10n.text("ui.flow.optimizedCharging.active")
+        case .optimizedHold:
+            return L10n.text("ui.flow.optimizedCharging.holding")
+        case .optimizedActive:
+            return state.localizedTitle
+        }
     }
 
     private static func resolveState(

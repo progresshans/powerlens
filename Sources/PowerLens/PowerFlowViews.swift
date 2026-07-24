@@ -52,7 +52,7 @@ struct PowerFlowCard: View {
 
                 Spacer()
 
-                Text(model.state.localizedTitle)
+                Text(model.statusTitle)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(stateTint)
                     .padding(.horizontal, 8)
