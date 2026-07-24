@@ -101,6 +101,22 @@ enum PowerUIQueryError: Error {
     case operationFailed(NSError)
 }
 
+enum ObjectiveCBooleanReturnABI: Equatable, Sendable {
+    case boolean
+    case signedChar
+
+    init?(typeEncoding: String) {
+        switch typeEncoding {
+        case "B":
+            self = .boolean
+        case "c":
+            self = .signedChar
+        default:
+            return nil
+        }
+    }
+}
+
 /// Owns the process-long runtime session used by a reader.
 ///
 /// Calls are serialized because the private client's thread-safety contract is
@@ -237,6 +253,12 @@ private final class DynamicPowerUISmartChargeClient:
             Selector,
             AutoreleasingUnsafeMutablePointer<NSError?>?
         ) -> Bool
+    private typealias SignedCharQueryFunction =
+        @convention(c) (
+            AnyObject,
+            Selector,
+            AutoreleasingUnsafeMutablePointer<NSError?>?
+        ) -> Int8
 
     private var frameworkHandle: UnsafeMutableRawPointer?
     private var object: NSObject?
@@ -361,22 +383,32 @@ private final class DynamicPowerUISmartChargeClient:
 
     func isOptimizedChargingEngaged() throws -> Bool {
         let selector = PowerUIRuntime.optimizedChargingEngagedSelector
-        let method = try queryMethod(
-            selector,
-            returnType: "B"
-        )
-        let query = unsafeBitCast(
-            method_getImplementation(method),
-            to: BooleanQueryFunction.self
-        )
-
-        var error: NSError?
         guard let object else {
             throw PowerUIQueryError.unsupported
         }
-        let result = query(object, selector, &error)
-        try throwIfNeeded(error)
-        return result
+        let (method, returnABI) = try booleanQueryMethod(selector)
+        let implementation = method_getImplementation(method)
+
+        switch returnABI {
+        case .boolean:
+            let query = unsafeBitCast(
+                implementation,
+                to: BooleanQueryFunction.self
+            )
+            var error: NSError?
+            let result = query(object, selector, &error)
+            try throwIfNeeded(error)
+            return result
+        case .signedChar:
+            let query = unsafeBitCast(
+                implementation,
+                to: SignedCharQueryFunction.self
+            )
+            var error: NSError?
+            let rawValue = query(object, selector, &error)
+            try throwIfNeeded(error)
+            return rawValue != 0
+        }
     }
 
     private func queryMethod(
@@ -396,6 +428,28 @@ private final class DynamicPowerUISmartChargeClient:
         return method
     }
 
+    private func booleanQueryMethod(
+        _ selector: Selector
+    ) throws -> (Method, ObjectiveCBooleanReturnABI) {
+        guard let method = class_getInstanceMethod(objectClass, selector) else {
+            throw PowerUIQueryError.unsupported
+        }
+        guard Self.hasExactArgumentTypes(
+            method,
+            argumentTypes: ["@", ":", "^@"]
+        ),
+              let returnType = Self.copiedType(
+                  method_copyReturnType(method)
+              ),
+              let returnABI = ObjectiveCBooleanReturnABI(
+                  typeEncoding: returnType
+              )
+        else {
+            throw PowerUIQueryError.incompatibleSignature
+        }
+        return (method, returnABI)
+    }
+
     private func throwIfNeeded(_ error: NSError?) throws {
         if let error {
             throw PowerUIQueryError.operationFailed(error)
@@ -408,8 +462,22 @@ private final class DynamicPowerUISmartChargeClient:
         argumentTypes: [String]
     ) -> Bool {
         guard copiedType(method_copyReturnType(method)) == returnType,
-              method_getNumberOfArguments(method) == argumentTypes.count
+              hasExactArgumentTypes(
+                  method,
+                  argumentTypes: argumentTypes
+              )
         else {
+            return false
+        }
+
+        return true
+    }
+
+    private static func hasExactArgumentTypes(
+        _ method: Method,
+        argumentTypes: [String]
+    ) -> Bool {
+        guard method_getNumberOfArguments(method) == argumentTypes.count else {
             return false
         }
 

@@ -3,6 +3,25 @@ import Testing
 @testable import PowerLens
 
 struct ChargingPolicyReaderTests {
+    @Test
+    func objectiveCBooleanReturnABIRecognizesSupportedEncodings() {
+        #expect(
+            ObjectiveCBooleanReturnABI(typeEncoding: "B") == .boolean
+        )
+        #expect(
+            ObjectiveCBooleanReturnABI(typeEncoding: "c") == .signedChar
+        )
+    }
+
+    @Test(arguments: ["C", "i", "q", "Q", ""])
+    func objectiveCBooleanReturnABIRejectsUnsupportedEncodings(
+        typeEncoding: String
+    ) {
+        #expect(
+            ObjectiveCBooleanReturnABI(typeEncoding: typeEncoding) == nil
+        )
+    }
+
     @Test(arguments: [87, 93])
     func manualLimitUsesTheRuntimeValue(
         targetPercent: Int
