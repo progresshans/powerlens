@@ -18,6 +18,7 @@ final class PowerLensStore: ObservableObject {
     @Published private(set) var lastRefreshAt: Date?
     @Published private(set) var requestedTelemetryEngine = TelemetryEnginePreference.current
     @Published private(set) var activeTelemetryEngine: TelemetryEngineKind = .compatible
+    @Published private(set) var resolvedPowerState: ResolvedPowerState?
 
     private let telemetryReader: any TelemetryReading
     private let historyStore: any HistoryStoring
@@ -25,25 +26,27 @@ final class PowerLensStore: ObservableObject {
     private let energySampler = ProcessEnergySampler()
     private var refreshTask: Task<Void, Never>?
     private var refreshSequence = 0
-    private var recentSnapshots: [TelemetrySnapshot] = []
+    private var powerStateTracker: PowerStateTracker
     private let memoryWindow: TimeInterval = 30 * 24 * 3600
     private let purgeInterval: TimeInterval = 24 * 3600
     private var lastPurgeAt: Date?
     private let interactiveRefreshInterval: Duration = .seconds(3)
     private let backgroundRefreshInterval: Duration = .seconds(10)
-    private let diagnosticStabilitySamples = 3
-    private let holdStateStabilitySamples = 5
     private var refreshCadence: RefreshCadence = .background
 
     init(
         telemetryReader: any TelemetryReading = TelemetryReadService(),
         historyStore: any HistoryStoring = HistoryStore(),
         startsAutomatically: Bool = true,
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        powerStateConfiguration: PowerStateHysteresisConfiguration = .init()
     ) {
         self.telemetryReader = telemetryReader
         self.historyStore = historyStore
         self.now = now
+        self.powerStateTracker = PowerStateTracker(
+            configuration: powerStateConfiguration
+        )
 
         guard startsAutomatically else {
             return
@@ -212,24 +215,23 @@ final class PowerLensStore: ObservableObject {
         telemetryUnavailable = false
 
         let snapshot = result.snapshot
-        recentSnapshots.append(snapshot)
-        recentSnapshots = Array(recentSnapshots.suffix(max(diagnosticStabilitySamples, holdStateStabilitySamples)))
-        let stableDiagnostics = TelemetrySnapshot.stableDiagnostics(
-            for: recentSnapshots,
-            requiredConsecutiveSamples: diagnosticStabilitySamples
-        )
-        let stableExternalPowerState = TelemetrySnapshot.stableExternalPowerState(
-            for: recentSnapshots,
-            requiredConsecutiveSamples: holdStateStabilitySamples
+        let resolvedState = powerStateTracker.resolve(snapshot)
+        let resolvedDiagnostics = snapshot.diagnostics(
+            resolvedState: resolvedState
         )
         menuBarSymbolName = snapshot.menuBarSymbolName(
-            using: stableDiagnostics,
-            externalPowerState: stableExternalPowerState
+            using: resolvedDiagnostics,
+            externalPowerState: resolvedState.externalPowerState
         )
-        menuBarBatteryBadge = .resolved(for: stableExternalPowerState)
+        menuBarBatteryBadge = .resolved(
+            for: resolvedState.externalPowerState
+        )
 
+        // Publish the resolved interpretation before the raw snapshot. The
+        // existing `$latest` subscriber is the commit signal for AppKit UI.
+        resolvedPowerState = resolvedState
         latest = snapshot
-        diagnostics = stableDiagnostics
+        diagnostics = resolvedDiagnostics
         lastRefreshAt = snapshot.timestamp
         activeTelemetryEngine = result.activeEngine
         topEnergyApps = energySampler.sample(now: now())
@@ -239,11 +241,15 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        history.append(snapshot)
+        // Charging-policy observations explain the current UI only. Keeping
+        // them out of history avoids silently changing Insights, CSV, or JSON
+        // semantics before a dedicated history schema is designed.
+        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
+        history.append(historicalSnapshot)
         let cutoff = now().addingTimeInterval(-memoryWindow)
         history.removeAll { $0.timestamp < cutoff }
 
-        await historyStore.append(snapshot)
+        await historyStore.append(historicalSnapshot)
     }
 
     private func shouldPersist(snapshot: TelemetrySnapshot) -> Bool {

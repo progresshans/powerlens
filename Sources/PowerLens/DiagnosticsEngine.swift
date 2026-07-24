@@ -2,16 +2,39 @@ import Foundation
 
 extension TelemetrySnapshot {
     var diagnostics: [DiagnosticItem] {
-        var results: [DiagnosticItem] = []
+        diagnostics(resolvedState: nil)
+    }
 
-        if !shouldSuppressPowerDeliveryWarnings,
-           let warning = slowChargerDiagnostic {
-            results.append(warning)
+    func diagnostics(resolvedState: ResolvedPowerState?) -> [DiagnosticItem] {
+        var results: [DiagnosticItem] = []
+        let shouldShowPowerWarnings: Bool
+        if let resolvedState {
+            shouldShowPowerWarnings =
+                resolvedState.powerDeliveryState == .sustainedShortfall
+        } else {
+            shouldShowPowerWarnings = !shouldSuppressPowerDeliveryWarnings
         }
 
-        if !shouldSuppressPowerDeliveryWarnings,
-           let warning = negotiatedLowDiagnostic {
-            results.append(warning)
+        if shouldShowPowerWarnings {
+            if let confirmedShortfall = resolvedState?.confirmedShortfall {
+                if let warning = slowChargerDiagnostic(
+                    for: confirmedShortfall
+                ) {
+                    results.append(warning)
+                }
+                if let warning = negotiatedLowDiagnostic(
+                    for: confirmedShortfall
+                ) {
+                    results.append(warning)
+                }
+            } else {
+                if let warning = slowChargerDiagnostic {
+                    results.append(warning)
+                }
+                if let warning = negotiatedLowDiagnostic {
+                    results.append(warning)
+                }
+            }
         }
 
         if let temperature = batteryTemperatureC,
@@ -46,11 +69,23 @@ extension TelemetrySnapshot {
             )
         }
 
+        let managedState: ManagedChargingState?
+        if let resolvedState {
+            managedState = resolvedState.managedChargingState
+        } else {
+            managedState = managedChargingState
+        }
+        if let managedChargingDiagnostic = managedChargingDiagnostic(
+            for: managedState
+        ) {
+            results.append(managedChargingDiagnostic)
+        }
+
         if results.isEmpty {
             results.append(healthyDiagnostic)
         }
 
-        return results
+        return Self.sortedBySeverity(results)
     }
 
     static func stableDiagnostics(for recentSnapshots: [TelemetrySnapshot], requiredConsecutiveSamples: Int = 3) -> [DiagnosticItem] {
@@ -81,7 +116,56 @@ extension TelemetrySnapshot {
             results.append(current.healthyDiagnostic)
         }
 
-        return results
+        return Self.sortedBySeverity(results)
+    }
+
+    private static func sortedBySeverity(_ diagnostics: [DiagnosticItem]) -> [DiagnosticItem] {
+        diagnostics.enumerated()
+            .sorted { lhs, rhs in
+                let lhsRank = severityRank(lhs.element.severity)
+                let rhsRank = severityRank(rhs.element.severity)
+
+                if lhsRank == rhsRank {
+                    return lhs.offset < rhs.offset
+                }
+
+                return lhsRank < rhsRank
+            }
+            .map(\.element)
+    }
+
+    private static func severityRank(_ severity: DiagnosticSeverity) -> Int {
+        switch severity {
+        case .warning:
+            0
+        case .caution:
+            1
+        case .info:
+            2
+        }
+    }
+
+    private var managedChargingDiagnostic: DiagnosticItem? {
+        managedChargingDiagnostic(for: managedChargingState)
+    }
+
+    private func managedChargingDiagnostic(
+        for managedChargingState: ManagedChargingState?
+    ) -> DiagnosticItem? {
+        guard let title = managedChargingDiagnosticTitle(
+                  for: managedChargingState
+              ),
+              let message = managedChargingDiagnosticMessage(
+                  for: managedChargingState
+              ) else {
+            return nil
+        }
+
+        return DiagnosticItem(
+            severity: .info,
+            title: title,
+            message: message
+        )
     }
 
     private var slowChargerDiagnostic: DiagnosticItem? {
@@ -108,6 +192,42 @@ extension TelemetrySnapshot {
             severity: .caution,
             title: L10n.text("diag.negotiatedLow.title"),
             message: L10n.tr("diag.negotiatedLow.message", Formatters.power(rated), Formatters.power(input))
+        )
+    }
+
+    private func slowChargerDiagnostic(
+        for evidence: ConfirmedPowerDeliveryShortfall
+    ) -> DiagnosticItem? {
+        guard evidence.isSlowCharger else {
+            return nil
+        }
+
+        return DiagnosticItem(
+            severity: .warning,
+            title: L10n.text("diag.slowCharger.title"),
+            message: L10n.tr(
+                "diag.slowCharger.message",
+                Formatters.power(evidence.deficitW)
+            )
+        )
+    }
+
+    private func negotiatedLowDiagnostic(
+        for evidence: ConfirmedPowerDeliveryShortfall
+    ) -> DiagnosticItem? {
+        guard evidence.isNegotiatedLow,
+              let adapterMaxPowerW = evidence.adapterMaxPowerW else {
+            return nil
+        }
+
+        return DiagnosticItem(
+            severity: .caution,
+            title: L10n.text("diag.negotiatedLow.title"),
+            message: L10n.tr(
+                "diag.negotiatedLow.message",
+                Formatters.power(adapterMaxPowerW),
+                Formatters.power(evidence.adapterInputPowerW)
+            )
         )
     }
 

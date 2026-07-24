@@ -143,6 +143,10 @@ case "$MODE" in
     ;;
 esac
 
+if [[ "$MODE" == "run" ]]; then
+  powerlens_require_native_apple_silicon_host
+fi
+
 trap cleanup EXIT INT TERM
 require_local_update_inputs
 rm -rf "$TEST_ROOT"

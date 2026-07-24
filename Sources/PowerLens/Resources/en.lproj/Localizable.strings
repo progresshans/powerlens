@@ -92,6 +92,12 @@
 "status.chargedHolding" = "Charged and Holding";
 "status.holdingCurrentLevel" = "Holding Current Battery Level";
 "status.externalPowerConnected" = "External Power Connected";
+"status.manualLimit.charging" = "Charging to the %@ Charge Limit";
+"status.manualLimit.reducing" = "Adjusting to the %@ Charge Limit";
+"status.manualLimit.holding" = "Holding at the %@ Charge Limit";
+"status.manualLimit.active" = "%@ Charge Limit Set";
+"status.optimizedCharging.active" = "Optimized Battery Charging Active";
+"status.optimizedCharging.holding" = "Charging Paused by Optimized Battery Charging";
 
 "status.subheadline.deficit" = "System load is about %@ higher than incoming power.";
 "status.subheadline.powerLimited" = "The Mac appears to be power-limited.";
@@ -103,6 +109,15 @@
 "status.subheadline.currentChargerSufficient" = "The current charger looks sufficient for this workload.";
 "status.subheadline.batteryOnly" = "The Mac is drawing power only from the battery.";
 "status.subheadline.qualityUnknown" = "Power flow is readable, but adapter quality is not fully known yet.";
+"status.subheadline.manualLimit.charging" = "macOS is charging the battery to the selected charge limit.";
+"status.subheadline.manualLimit.reducing" = "The adapter is connected while macOS lets the battery move toward the selected charge limit.";
+"status.subheadline.manualLimit.holding" = "macOS has paused battery charging at the selected charge limit.";
+"status.subheadline.manualLimit.active" = "The selected charge limit is set. PowerLens evaluates the current power flow separately.";
+"status.subheadline.optimizedCharging.active" = "macOS is managing the charging schedule while the battery continues to charge.";
+"status.subheadline.optimizedCharging.holding" = "macOS is temporarily holding charging to reduce time spent fully charged.";
+"status.subheadline.optimizedCharging.activeFlowUnknown" = "Optimized Battery Charging is active. PowerLens evaluates the current power flow separately.";
+"status.subheadline.manualLimit.transientAssist" = "The battery is briefly helping while the charge limit remains active.";
+"status.subheadline.optimizedCharging.transientAssist" = "The battery is briefly helping while Optimized Battery Charging remains active.";
 
 "diag.slowCharger.title" = "Slow Charger Detected";
 "diag.slowCharger.message" = "Incoming power is lower than system draw by about %@. Your Mac may still drain on wall power.";

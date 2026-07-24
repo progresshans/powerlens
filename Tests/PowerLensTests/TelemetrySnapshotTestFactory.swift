@@ -2,6 +2,7 @@ import Foundation
 @testable import PowerLens
 
 func makeTelemetrySnapshot(
+    timestamp: Date = Date(timeIntervalSince1970: 1_775_000_000),
     batteryLevel: Double? = 80,
     powerSource: PowerSourceKind = .ac,
     isCharging: Bool = false,
@@ -13,10 +14,11 @@ func makeTelemetrySnapshot(
     batteryPowerW: Double? = 0,
     adapterInputPowerW: Double? = 11,
     systemLoadW: Double? = 10,
-    adapterMaxPowerW: Double? = 97
+    adapterMaxPowerW: Double? = 97,
+    chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
-        timestamp: Date(timeIntervalSince1970: 1_775_000_000),
+        timestamp: timestamp,
         batteryLevel: batteryLevel,
         powerSource: powerSource,
         isCharging: isCharging,
@@ -44,6 +46,7 @@ func makeTelemetrySnapshot(
         lowPowerModeEnabled: false,
         thermalState: "Nominal",
         serialNumber: "SERIAL",
-        frontmostAppName: "PowerLens"
+        frontmostAppName: "PowerLens",
+        chargingPolicyStatus: chargingPolicyStatus
     )
 }

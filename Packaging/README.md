@@ -16,7 +16,11 @@ This folder holds distribution metadata for `PowerLens`.
 ## Release Packaging
 
 Run `script/package_release.sh` to create release artifacts under `release/`.
-By default it builds an ad-hoc signed local release and creates:
+PowerLens release artifacts support Apple silicon Macs (M1 or later) running
+macOS 13 or later. The packaging script builds the PowerLens executable
+explicitly for arm64, then rejects the bundle unless that executable contains
+exactly the arm64 architecture. By default it builds an ad-hoc signed local
+release and creates:
 
 - `PowerLens-<version>.app.zip`
 - `PowerLens-<version>.dmg`
@@ -47,6 +51,9 @@ set +a
   checksum generation when local environment variables are provided
 - release packaging embeds Sparkle and can optionally generate an appcast when
   local Sparkle signing material is available
+- PowerLens's main executable is arm64-only; the embedded Sparkle framework may
+  remain universal because only the app executable defines PowerLens's supported
+  architecture
 - signing certificates and notarization credentials are intentionally local and
   are not stored in the repository
 
@@ -121,12 +128,15 @@ PowerLens has two workflow layers:
 
 - `.github/workflows/ci.yml`
   - runs on pull requests and pushes to `main` and `develop`
-  - runs `swift test`
+  - runs on an Apple silicon runner and executes `swift test --arch arm64`
   - validates scripts, metadata, and appcast XML
-  - performs an ad-hoc package smoke build without notarization
+  - performs an ad-hoc package smoke build without notarization and verifies
+    that the PowerLens executable is exactly arm64
 - `.github/workflows/release.yml`
   - runs on `v*` tags, `develop` pushes, or manual dispatch
-  - builds, signs, notarizes, and packages the app
+  - runs on an Apple silicon runner
+  - builds an arm64 executable, then signs, notarizes, and packages the app
+  - verifies that the packaged PowerLens executable is exactly arm64
   - creates or updates a GitHub Release
   - regenerates the stable or alpha Sparkle appcast
   - deploys the appcast site through GitHub Pages Actions
@@ -182,6 +192,8 @@ to 96 bytes and are still accepted by the release tooling.
 1. build a release with `POWERLENS_SIGN_IDENTITY` and
    `POWERLENS_NOTARY_PROFILE`
 2. validate the resulting app bundle with `script/verify_distribution.sh`
+   and confirm the PowerLens executable reports exactly `arm64` (a universal
+   nested Sparkle framework is expected and allowed)
 3. install the DMG on a clean macOS user account and confirm first-launch
    Gatekeeper behavior
 4. generate and publish the Sparkle appcast when the release should be visible

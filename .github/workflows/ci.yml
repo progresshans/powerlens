@@ -25,11 +25,13 @@ jobs:
 
       - name: Show toolchain
         run: |
+          test "$(uname -m)" = "arm64"
+          uname -m
           swift --version
           xcodebuild -version
 
       - name: Run unit tests
-        run: swift test
+        run: swift test --arch arm64
 
       - name: Validate scripts
         run: |
@@ -61,7 +63,7 @@ jobs:
           POWERLENS_CLEAN_BUILD: "0"
         run: ./script/package_release.sh
 
-      - name: Verify packaged bundle metadata
+      - name: Verify packaged arm64 bundle
         run: |
           ./script/verify_distribution.sh release/stage/PowerLens.app
           test -f release/PowerLens-0.0.0-ci.app.zip

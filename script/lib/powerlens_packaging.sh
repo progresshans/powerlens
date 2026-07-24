@@ -2,6 +2,7 @@ POWERLENS_ROOT_DIR="${POWERLENS_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.
 POWERLENS_APP_NAME="${POWERLENS_APP_NAME:-PowerLens}"
 POWERLENS_BUNDLE_ID="${POWERLENS_BUNDLE_ID:-com.progresshans.powerlens}"
 POWERLENS_MIN_SYSTEM_VERSION="${POWERLENS_MIN_SYSTEM_VERSION:-13.0}"
+POWERLENS_BUILD_ARCH="arm64"
 POWERLENS_PACKAGING_DIR="${POWERLENS_PACKAGING_DIR:-$POWERLENS_ROOT_DIR/Packaging}"
 POWERLENS_SOURCE_INFO_PLIST="${POWERLENS_SOURCE_INFO_PLIST:-$POWERLENS_PACKAGING_DIR/Info.plist}"
 POWERLENS_SOURCE_ICON="${POWERLENS_SOURCE_ICON:-$POWERLENS_PACKAGING_DIR/AppIcon.icns}"
@@ -25,6 +26,36 @@ powerlens_require_directory() {
   local path="$1"
   if [[ ! -d "$path" ]]; then
     echo "missing required directory: $path" >&2
+    exit 2
+  fi
+}
+
+powerlens_require_native_apple_silicon_host() {
+  local host_arch
+  host_arch="$(uname -m)"
+
+  if [[ "$host_arch" != "$POWERLENS_BUILD_ARCH" ]]; then
+    echo "PowerLens supports Apple silicon only." >&2
+    echo "This script must run in a native arm64 shell; uname -m reported $host_arch." >&2
+    echo "Intel Macs are unsupported. On Apple silicon, reopen the terminal without Rosetta." >&2
+    exit 2
+  fi
+}
+
+powerlens_require_exact_executable_architecture() {
+  local executable="$1"
+  local expected_arch="$2"
+  local actual_archs
+
+  powerlens_require_file "$executable"
+  if ! actual_archs="$(lipo -archs "$executable" 2>/dev/null)"; then
+    echo "unable to inspect executable architecture: $executable" >&2
+    exit 2
+  fi
+
+  if [[ "$actual_archs" != "$expected_arch" ]]; then
+    echo "unexpected executable architectures for $executable: $actual_archs" >&2
+    echo "expected exactly: $expected_arch" >&2
     exit 2
   fi
 }

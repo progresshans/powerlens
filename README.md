@@ -8,6 +8,7 @@
   <p>
     <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue"></a>
     <img alt="macOS target: 13+" src="https://img.shields.io/badge/macOS%20target-13%2B-black">
+    <img alt="Architecture: Apple silicon" src="https://img.shields.io/badge/architecture-Apple%20silicon-black">
     <img alt="Tested on macOS 26" src="https://img.shields.io/badge/tested-macOS%2026-lightgrey">
     <img alt="Swift 6.2" src="https://img.shields.io/badge/Swift-6.2-orange">
   </p>
@@ -105,7 +106,8 @@ bounded, and you can export the history as CSV or JSON.
 
 ## Requirements
 
-- Build target: macOS 13.0 or later.
+- A Mac with Apple silicon (M1 or later). Intel Macs are not supported.
+- macOS 13.0 or later.
 - Tested environment: macOS 26.
 - Release validation currently focuses on macOS 26. PowerLens may run on
   earlier target-supported versions, but behavior can vary by macOS release and
@@ -145,14 +147,16 @@ To delete local history and preferences as well, follow the steps in
 ## Build From Source
 
 ```bash
-swift build
-swift test
+swift build --arch arm64
+swift test --arch arm64
 ./script/build_and_run.sh
 ```
 
 `./script/build_and_run.sh` builds a local app bundle at `dist/PowerLens.app`
-and launches it. Pass `debug`, `logs`, `telemetry`, or `verify` for the helper
-modes documented in the script.
+and launches it. It must run from a native Apple silicon shell; Rosetta and
+Intel hosts are rejected because PowerLens app bundles are arm64-only. Pass
+`debug`, `logs`, `telemetry`, or `verify` for the helper modes documented in
+the script.
 
 Release packaging notes for maintainers live in
 [Packaging/README.md](Packaging/README.md).

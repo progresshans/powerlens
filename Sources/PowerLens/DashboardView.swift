@@ -115,10 +115,18 @@ struct DashboardView: View {
                 Text(selectedDestination.detailTitle)
                     .font(.largeTitle.weight(.bold))
 
-                Text(snapshot.statusHeadline)
+                Text(
+                    snapshot.statusHeadline(
+                        resolvedState: store.resolvedPowerState
+                    )
+                )
                     .font(.title3.weight(.semibold))
 
-                Text(snapshot.statusSubheadline)
+                Text(
+                    snapshot.statusSubheadline(
+                        resolvedState: store.resolvedPowerState
+                    )
+                )
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
@@ -146,7 +154,11 @@ struct DashboardView: View {
                 metricCard(
                     L10n.text("ui.metric.battery"),
                     snapshot.batteryLevel.map(Formatters.percent) ?? L10n.text("common.none"),
-                    detail: snapshot.externalConnected ? snapshot.statusHeadline : L10n.text("ui.metric.portablePower"),
+                    detail: snapshot.externalConnected
+                        ? snapshot.statusHeadline(
+                            resolvedState: store.resolvedPowerState
+                        )
+                        : L10n.text("ui.metric.portablePower"),
                     systemImage: "battery.100"
                 )
                 metricCard(

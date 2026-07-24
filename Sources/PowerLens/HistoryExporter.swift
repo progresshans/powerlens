@@ -73,7 +73,9 @@ enum HistoryExporter {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(snapshots)
+        return try encoder.encode(
+            snapshots.map { $0.withChargingPolicyStatus(nil) }
+        )
     }
 
     static func data(for snapshots: [TelemetrySnapshot], format: HistoryExportFormat) throws -> Data {
