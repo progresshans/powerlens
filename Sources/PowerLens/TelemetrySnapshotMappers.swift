@@ -97,9 +97,12 @@ struct LivePrecisionTelemetrySnapshotMapper {
             batteryTemperatureC: TelemetryValueParser.doubleValue(batteryRegistry["Temperature"]).map { $0 / 100 },
             batteryVoltageV: batteryVoltageV,
             batteryCurrentA: batteryCurrentA,
+            // Keep this field limited to direct power telemetry. Callers can
+            // derive current × voltage separately without losing provenance.
             batteryPowerW: smcPower?.batteryPowerW
-                ?? TelemetryValueParser.milliwattsValue(telemetry["BatteryPower"])
-                ?? computedBatteryPowerW(voltage: batteryVoltageV, current: batteryCurrentA),
+                ?? TelemetryValueParser.milliwattsValue(
+                    telemetry["BatteryPower"]
+                ),
             adapterDescription: TelemetryValueParser.nonEmptyString(adapterDetails["Description"])
                 ?? TelemetryValueParser.nonEmptyString(batteryRegistry["DeviceName"]),
             adapterMaxPowerW: TelemetryValueParser.doubleValue(adapterDetails["Watts"]),
@@ -115,15 +118,5 @@ struct LivePrecisionTelemetrySnapshotMapper {
             frontmostAppBundleID: frontmostApp?.bundleIdentifier,
             frontmostAppName: frontmostApp?.localizedName
         )
-    }
-
-    private func computedBatteryPowerW(voltage: Double?, current: Double?) -> Double? {
-        guard let voltage, let current else {
-            return nil
-        }
-
-        // AppleSmartBattery amperage is negative while discharging. PowerLens normalizes
-        // battery power to positive = battery supports load, negative = battery charges.
-        return -(current * voltage)
     }
 }
