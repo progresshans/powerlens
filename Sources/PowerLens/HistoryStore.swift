@@ -54,7 +54,8 @@ actor HistoryStore: HistoryStoring {
             a.description,
             a.max_power_mw,
             ap.bundle_identifier,
-            ap.display_name
+            ap.display_name,
+            s.battery_power_source_code
         FROM telemetry_samples s
         LEFT JOIN batteries b ON b.battery_id = s.battery_id
         LEFT JOIN battery_states bs ON bs.battery_state_id = s.battery_state_id
@@ -843,8 +844,9 @@ actor HistoryStore: HistoryStoring {
             adapter_input_power_mw,
             adapter_voltage_mv,
             adapter_current_ma,
-            system_load_mw
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            system_load_mw,
+            battery_power_source_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         try SQLiteStatement.executePrepared(sql, using: db) { statement in
@@ -870,6 +872,13 @@ actor HistoryStore: HistoryStoring {
             SQLiteStatement.bind(HistoryValueCoding.millivolts(from: snapshot.adapterVoltageV), to: statement, index: 20)
             SQLiteStatement.bind(HistoryValueCoding.milliamps(from: snapshot.adapterCurrentA), to: statement, index: 21)
             SQLiteStatement.bind(HistoryValueCoding.milliwatts(from: snapshot.systemLoadW), to: statement, index: 22)
+            SQLiteStatement.bind(
+                HistoryValueCoding.batteryPowerSourceCode(
+                    snapshot.batteryPowerSource
+                ),
+                to: statement,
+                index: 23
+            )
         }
     }
 
@@ -900,6 +909,12 @@ actor HistoryStore: HistoryStoring {
             batteryVoltageV: HistoryValueCoding.volts(fromMillivolts: SQLiteStatement.optionalIntValue(statement, index: 11)),
             batteryCurrentA: HistoryValueCoding.amps(fromMilliamps: SQLiteStatement.optionalIntValue(statement, index: 12)),
             batteryPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 13)),
+            batteryPowerSource: HistoryValueCoding.batteryPowerSource(
+                from: SQLiteStatement.optionalIntValue(
+                    statement,
+                    index: 30
+                )
+            ),
             adapterDescription: SQLiteStatement.textValue(statement, index: 26),
             adapterMaxPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 27)),
             adapterInputPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 14)),

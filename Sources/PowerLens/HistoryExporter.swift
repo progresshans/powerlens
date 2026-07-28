@@ -39,6 +39,7 @@ enum HistoryExporter {
         "full_charge_capacity_mah",
         "thermal_state",
         "frontmost_app",
+        "battery_power_source",
     ]
 
     static func csv(_ snapshots: [TelemetrySnapshot]) -> String {
@@ -63,6 +64,7 @@ enum HistoryExporter {
                 snapshot.fullChargeCapacityMah.map(String.init) ?? "",
                 escape(snapshot.thermalState),
                 escape(snapshot.frontmostAppName ?? ""),
+                snapshot.batteryPowerSource?.rawValue ?? "",
             ].joined(separator: ",")
         }
 

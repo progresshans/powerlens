@@ -26,7 +26,9 @@ struct DiagnosticsNotificationPlannerTests {
         let planner = DiagnosticsNotificationPlanner()
         let now = Date(timeIntervalSince1970: 1_000_000)
         let managedChargingTitle = L10n.tr("status.manualLimit.active", "87%")
-        let warningTitle = L10n.text("diag.slowCharger.title")
+        let warningTitle = L10n.text(
+            "diag.powerDeliveryShortfall.title"
+        )
 
         let result = planner.plan(
             diagnostics: [
@@ -56,19 +58,13 @@ struct DiagnosticsNotificationPlannerTests {
 
         #expect(
             snapshot.diagnostics.map(\.severity)
-                == [.warning, .caution, .info]
+                == [.warning, .info]
         )
 
-        let stable = TelemetrySnapshot.stableDiagnostics(
-            for: [snapshot, snapshot, snapshot]
-        )
-
-        #expect(stable.map(\.severity) == [.warning, .caution, .info])
         #expect(
-            stable.prefix(2).map(\.title)
+            snapshot.diagnostics.prefix(1).map(\.title)
                 == [
-                    L10n.text("diag.slowCharger.title"),
-                    L10n.text("diag.negotiatedLow.title"),
+                    L10n.text("diag.powerDeliveryShortfall.title"),
                 ]
         )
     }

@@ -221,7 +221,8 @@ struct PowerLensStoreTests {
         #expect(store.menuBarSymbolName == "exclamationmark.triangle.fill")
         #expect(
             store.diagnostics.contains {
-                $0.title == L10n.text("diag.slowCharger.title")
+                $0.title
+                    == L10n.text("diag.powerDeliveryShortfall.title")
             }
         )
     }

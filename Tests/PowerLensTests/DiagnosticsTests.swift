@@ -37,11 +37,9 @@ struct DiagnosticsTests {
 
         #expect(snapshot.chargerAdequacy == .insufficient)
         #expect(snapshot.statusHeadline == L10n.text("status.adapterBatteryAssist"))
-        #expect(snapshot.diagnostics.contains(where: { $0.title == L10n.text("diag.slowCharger.title") }))
-        #expect(
-            TelemetrySnapshot.stableDiagnostics(for: [snapshot, snapshot, snapshot])
-                .contains(where: { $0.title == L10n.text("diag.slowCharger.title") })
-        )
+        #expect(snapshot.diagnostics.contains(where: {
+            $0.title == L10n.text("diag.powerDeliveryShortfall.title")
+        }))
     }
 
     @Test
@@ -116,12 +114,9 @@ struct DiagnosticsTests {
 
         #expect(snapshot.shouldSuppressPowerDeliveryWarnings)
         #expect(snapshot.statusHeadline == L10n.text("status.holdingCurrentLevel"))
-        #expect(!snapshot.diagnostics.contains(where: { $0.title == L10n.text("diag.slowCharger.title") }))
-        #expect(!snapshot.diagnostics.contains(where: { $0.title == L10n.text("diag.negotiatedLow.title") }))
-        #expect(
-            TelemetrySnapshot.stableDiagnostics(for: [snapshot, snapshot, snapshot]).first?.title
-                == L10n.text("diag.healthy.title")
-        )
+        #expect(!snapshot.diagnostics.contains(where: {
+            $0.title == L10n.text("diag.powerDeliveryShortfall.title")
+        }))
     }
 
     @Test
@@ -203,83 +198,4 @@ struct DiagnosticsTests {
         #expect(snapshot.menuBarTitle == "78% · 11.7W")
     }
 
-    @Test
-    func requiresRepeatedSamplesBeforeShowingPowerWarnings() {
-        let snapshot = TelemetrySnapshot(
-            batteryLevel: 67,
-            powerSource: .ac,
-            isCharging: false,
-            isCharged: false,
-            externalConnected: true,
-            timeToEmptyMinutes: 62,
-            timeToFullMinutes: nil,
-            designCapacityMah: 6249,
-            fullChargeCapacityMah: 5637,
-            nominalCapacityMah: 5874,
-            cycleCount: 74,
-            designCycleCount: 1000,
-            batteryHealthText: "Normal",
-            batteryHealthCondition: nil,
-            batteryTemperatureC: 29.5,
-            batteryVoltageV: 12.38,
-            batteryCurrentA: -0.48,
-            batteryPowerW: 5.9,
-            adapterDescription: "PD Charger",
-            adapterMaxPowerW: 97,
-            adapterInputPowerW: 18.4,
-            adapterVoltageV: 19.26,
-            adapterCurrentA: 0.95,
-            systemLoadW: 25.9,
-            lowPowerModeEnabled: false,
-            thermalState: "Nominal",
-            serialNumber: "SERIAL",
-            frontmostAppName: "Codex"
-        )
-
-        let earlyDiagnostics = TelemetrySnapshot.stableDiagnostics(for: [snapshot])
-        let stableDiagnostics = TelemetrySnapshot.stableDiagnostics(for: [snapshot, snapshot, snapshot])
-
-        #expect(earlyDiagnostics.first?.title == L10n.text("diag.healthy.title"))
-        #expect(stableDiagnostics.contains(where: { $0.title == L10n.text("diag.slowCharger.title") }))
-    }
-
-    @Test
-    func menuBarWarningIconAlsoWaitsForStablePowerWarning() {
-        let snapshot = TelemetrySnapshot(
-            batteryLevel: 67,
-            powerSource: .ac,
-            isCharging: false,
-            isCharged: false,
-            externalConnected: true,
-            timeToEmptyMinutes: 62,
-            timeToFullMinutes: nil,
-            designCapacityMah: 6249,
-            fullChargeCapacityMah: 5637,
-            nominalCapacityMah: 5874,
-            cycleCount: 74,
-            designCycleCount: 1000,
-            batteryHealthText: "Normal",
-            batteryHealthCondition: nil,
-            batteryTemperatureC: 29.5,
-            batteryVoltageV: 12.38,
-            batteryCurrentA: -0.48,
-            batteryPowerW: 5.9,
-            adapterDescription: "PD Charger",
-            adapterMaxPowerW: 97,
-            adapterInputPowerW: 18.4,
-            adapterVoltageV: 19.26,
-            adapterCurrentA: 0.95,
-            systemLoadW: 25.9,
-            lowPowerModeEnabled: false,
-            thermalState: "Nominal",
-            serialNumber: "SERIAL",
-            frontmostAppName: "Codex"
-        )
-
-        let earlyDiagnostics = TelemetrySnapshot.stableDiagnostics(for: [snapshot])
-        let stableDiagnostics = TelemetrySnapshot.stableDiagnostics(for: [snapshot, snapshot, snapshot])
-
-        #expect(snapshot.menuBarSymbolName(using: earlyDiagnostics) == "powerplug.fill")
-        #expect(snapshot.menuBarSymbolName(using: stableDiagnostics) == "exclamationmark.triangle.fill")
-    }
 }

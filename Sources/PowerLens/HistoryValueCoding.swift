@@ -46,6 +46,30 @@ enum HistoryValueCoding {
         value.map { Double($0) / 1000 }
     }
 
+    static func batteryPowerSourceCode(
+        _ source: BatteryPowerSource?
+    ) -> Int? {
+        switch source {
+        case .directTelemetry:
+            1
+        case .currentAndVoltage:
+            2
+        case nil:
+            nil
+        }
+    }
+
+    static func batteryPowerSource(from code: Int?) -> BatteryPowerSource? {
+        switch code {
+        case 1:
+            .directTelemetry
+        case 2:
+            .currentAndVoltage
+        default:
+            nil
+        }
+    }
+
     static func powerSourceCode(_ kind: PowerSourceKind) -> Int32 {
         switch kind {
         case .unknown:

@@ -27,7 +27,7 @@ your Mac is connected to a charger, dock, display, or running on battery:
 
 - Is the adapter covering the system load, or is the battery helping?
 - Is the battery charging, holding, or discharging?
-- Is the negotiated charger power lower than expected?
+- Is external power persistently falling short of the current system load?
 - Which app is currently using the most energy?
 - Is the battery health, temperature, and cycle count still in a normal range?
 
@@ -63,7 +63,10 @@ work as a small utility first, with the Dock icon optional.
 The popover is the fast check: battery level, power-flow diagram, diagnostics,
 high-energy app, battery snapshot, and raw power details. The flow diagram
 distinguishes adapter-only power, battery-only power, battery assist, charging,
-and holding-current states.
+and holding-current states. When independently sampled sensors do not line up,
+the diagram keeps its additive layout and preserves the observed readings
+instead of forcing the totals to balance. It discloses the timing mismatch and
+marks values derived from other readings with `≈`.
 
 ### Dashboard
 
@@ -81,7 +84,7 @@ PowerLens watches for common power situations:
 | Battery assist | Battery supplements the adapter when load spikes. |
 | Charging | Input power splits between system load and battery charging. |
 | Holding current level | Adapter covers the system while the battery stays nearly still. |
-| Negotiated power looks low | Charger, cable, dock, or display path may be limiting throughput. |
+| Sustained external-power shortfall | External input remains below system load while the battery assists; PowerLens reports the observed flow without assigning a cause to the adapter, cable, or dock. |
 
 ### Settings
 

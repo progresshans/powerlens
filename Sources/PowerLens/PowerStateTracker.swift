@@ -11,9 +11,6 @@ struct ConfirmedPowerDeliveryShortfall: Equatable, Sendable {
     let deficitW: Double
     let adapterInputPowerW: Double
     let systemLoadW: Double
-    let adapterMaxPowerW: Double?
-    let isSlowCharger: Bool
-    let isNegotiatedLow: Bool
 
     init?(snapshot: TelemetrySnapshot) {
         guard snapshot.hasCorroboratedPowerDeliveryShortfall,
@@ -26,9 +23,6 @@ struct ConfirmedPowerDeliveryShortfall: Equatable, Sendable {
         self.deficitW = deficitW
         self.adapterInputPowerW = adapterInputPowerW
         self.systemLoadW = systemLoadW
-        self.adapterMaxPowerW = snapshot.adapterMaxPowerW
-        isSlowCharger = snapshot.hasSlowChargerCondition
-        isNegotiatedLow = snapshot.hasNegotiatedLowCondition
     }
 }
 
@@ -157,20 +151,23 @@ struct PowerStateTracker: Sendable {
         let flow = policySnapshot.batteryFlowEvidence
         let instantaneousManagedState =
             policySnapshot.managedChargingState
-        let reductionContext = isIntentionalReductionContext(
-            snapshot: policySnapshot,
-            managedCandidate: instantaneousManagedState
-        )
 
-        updateDeliveryState(
-            snapshot: policySnapshot,
-            flow: flow,
-            intentionalReductionContext: reductionContext,
-            at: timestamp
-        )
+        // Stabilize the policy explanation before evaluating delivery. This
+        // keeps `updateDeliveryState` as the single owner of delivery-state
+        // transitions, including both confirmation and recovery hysteresis.
         updateManagedState(
             candidate: instantaneousManagedState,
             effectivePolicy: effectivePolicy,
+            at: timestamp
+        )
+        let managedDischargeContext = isManagedDischargeContext(
+            snapshot: policySnapshot,
+            instantaneousState: instantaneousManagedState
+        )
+        updateDeliveryState(
+            snapshot: policySnapshot,
+            flow: flow,
+            managedDischargeContext: managedDischargeContext,
             at: timestamp
         )
 
@@ -178,15 +175,6 @@ struct PowerStateTracker: Sendable {
            deliveryState == .sustainedShortfall {
             stableManagedState = fallbackManagedState(for: effectivePolicy)
             clearManagedCandidate()
-        }
-
-        if case .reducingToLimit = stableManagedState {
-            deliveryState = .normal
-            assistSince = nil
-            shortfallEvidenceSince = nil
-            recoverySince = nil
-            uncertainSince = nil
-            confirmedShortfall = nil
         }
 
         let externalPowerState = resolveExternalPowerState(
@@ -296,7 +284,7 @@ struct PowerStateTracker: Sendable {
     private mutating func updateDeliveryState(
         snapshot: TelemetrySnapshot,
         flow: BatteryFlowEvidence,
-        intentionalReductionContext: Bool,
+        managedDischargeContext: Bool,
         at timestamp: Date
     ) {
         let batteryIsMateriallyAssisting =
@@ -330,7 +318,7 @@ struct PowerStateTracker: Sendable {
             return
         }
 
-        if batteryIsMateriallyAssisting && !intentionalReductionContext {
+        if batteryIsMateriallyAssisting && !managedDischargeContext {
             recoverySince = nil
             if assistSince == nil {
                 assistSince = timestamp
@@ -420,11 +408,34 @@ struct PowerStateTracker: Sendable {
         confirmedShortfall = nil
     }
 
-    private func isIntentionalReductionContext(
+    private func isManagedDischargeContext(
         snapshot: TelemetrySnapshot,
-        managedCandidate: ManagedChargingState?
+        instantaneousState: ManagedChargingState?
     ) -> Bool {
-        guard case .reducingToLimit = managedCandidate else {
+        let instantaneousReduction: Bool
+        if case .reducingToLimit = instantaneousState {
+            instantaneousReduction = true
+        } else {
+            instantaneousReduction = false
+        }
+
+        let stabilizedReduction: Bool
+        if case .reducingToLimit = stableManagedState {
+            stabilizedReduction = true
+        } else {
+            stabilizedReduction = false
+        }
+
+        let stabilizedOptimizedManagement: Bool
+        if case .optimizedActive = stableManagedState {
+            stabilizedOptimizedManagement = true
+        } else {
+            stabilizedOptimizedManagement = false
+        }
+
+        guard instantaneousReduction
+                || stabilizedReduction
+                || stabilizedOptimizedManagement else {
             return false
         }
         return !snapshot.hasClearAdapterCapacityShortfall
@@ -454,7 +465,7 @@ struct PowerStateTracker: Sendable {
 
         let requiredDuration = confirmationDuration(
             for: candidate,
-            whileHolding: stableManagedState?.isHolding == true
+            previousStableState: stableManagedState
         )
         guard let managedCandidateSince,
               elapsed(from: managedCandidateSince, to: timestamp)
@@ -468,17 +479,27 @@ struct PowerStateTracker: Sendable {
 
     private func confirmationDuration(
         for candidate: ManagedChargingState?,
-        whileHolding: Bool
+        previousStableState: ManagedChargingState?
     ) -> TimeInterval {
+        let whileHolding = previousStableState?.isHolding == true
+        let whileReducing: Bool
+        if case .reducingToLimit = previousStableState {
+            whileReducing = true
+        } else {
+            whileReducing = false
+        }
+
         switch candidate {
         case .holdingAtLimit, .optimizedHold:
             return configuration.holdConfirmation
         case .reducingToLimit:
             return configuration.reductionConfirmation
         case .chargingToLimit, .optimizedCharging:
-            return whileHolding ? configuration.recoveryConfirmation : 0
+            return whileHolding || whileReducing
+                ? configuration.recoveryConfirmation
+                : 0
         case .limitConfigured, .optimizedActive, nil:
-            return whileHolding
+            return whileHolding || whileReducing
                 ? configuration.transientAssistGrace
                 : 0
         }

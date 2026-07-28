@@ -4,7 +4,7 @@ import Testing
 
 struct LocalizationTests {
     @Test
-    func managedChargingCopyExistsInEnglishAndKorean() {
+    func managedChargingAndFlowCopyExistsInEnglishAndKorean() {
         let keys = [
             "status.manualLimit.charging",
             "status.manualLimit.reducing",
@@ -21,6 +21,8 @@ struct LocalizationTests {
             "status.subheadline.optimizedCharging.activeFlowUnknown",
             "status.subheadline.manualLimit.transientAssist",
             "status.subheadline.optimizedCharging.transientAssist",
+            "ui.flow.unknown",
+            "ui.flow.independentReadingsNotice",
         ]
 
         for language in [AppLanguage.english, .korean] {

@@ -53,6 +53,15 @@ enum DiagnosticSeverity: String, Codable, Sendable {
     case warning
 }
 
+enum BatteryPowerSource: String, Codable, Sendable {
+    case directTelemetry = "direct_telemetry"
+    case currentAndVoltage = "current_and_voltage"
+
+    var isDerived: Bool {
+        self == .currentAndVoltage
+    }
+}
+
 struct DiagnosticItem: Identifiable, Equatable, Sendable {
     let id = UUID()
     let severity: DiagnosticSeverity
@@ -81,6 +90,12 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
     let batteryVoltageV: Double?
     let batteryCurrentA: Double?
     let batteryPowerW: Double?
+    /// Describes how `batteryPowerW` was obtained without removing the value
+    /// from consumers that cannot derive it independently.
+    ///
+    /// This remains optional so older JSON exports and history rows continue
+    /// to decode as legacy snapshots with unknown provenance.
+    let batteryPowerSource: BatteryPowerSource?
     let adapterDescription: String?
     let adapterMaxPowerW: Double?
     let adapterInputPowerW: Double?
@@ -99,6 +114,10 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
     /// PowerLens strips it before persistence because the first version of this
     /// feature is presentation-only.
     let chargingPolicyStatus: ObservedChargingPolicyStatus?
+
+    var batteryPowerIsDerived: Bool {
+        batteryPowerSource?.isDerived == true
+    }
 
     init(
         id: UUID = UUID(),
@@ -121,6 +140,7 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
         batteryVoltageV: Double?,
         batteryCurrentA: Double?,
         batteryPowerW: Double?,
+        batteryPowerSource: BatteryPowerSource? = nil,
         adapterDescription: String?,
         adapterMaxPowerW: Double?,
         adapterInputPowerW: Double?,
@@ -154,6 +174,7 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
         self.batteryVoltageV = batteryVoltageV
         self.batteryCurrentA = batteryCurrentA
         self.batteryPowerW = batteryPowerW
+        self.batteryPowerSource = batteryPowerSource
         self.adapterDescription = adapterDescription
         self.adapterMaxPowerW = adapterMaxPowerW
         self.adapterInputPowerW = adapterInputPowerW
@@ -192,6 +213,7 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
             batteryVoltageV: batteryVoltageV,
             batteryCurrentA: batteryCurrentA,
             batteryPowerW: batteryPowerW,
+            batteryPowerSource: batteryPowerSource,
             adapterDescription: adapterDescription,
             adapterMaxPowerW: adapterMaxPowerW,
             adapterInputPowerW: adapterInputPowerW,

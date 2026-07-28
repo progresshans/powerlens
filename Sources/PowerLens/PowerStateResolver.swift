@@ -11,9 +11,10 @@ enum ManagedChargingState: Equatable, Sendable {
 
     var suppressesPowerDeliveryWarnings: Bool {
         switch self {
-        case .reducingToLimit, .holdingAtLimit, .optimizedHold:
+        case .reducingToLimit, .holdingAtLimit, .optimizedHold,
+             .optimizedActive:
             true
-        case .chargingToLimit, .limitConfigured, .optimizedCharging, .optimizedActive:
+        case .chargingToLimit, .limitConfigured, .optimizedCharging:
             false
         }
     }
@@ -133,6 +134,85 @@ extension TelemetrySnapshot {
         return nil
     }
 
+    /// Battery power and battery current are sampled through different
+    /// interfaces and may update at different times. Keep the direction useful
+    /// for the live flow diagram, but do not treat a large magnitude mismatch
+    /// as corroboration for a charger warning.
+    var hasConflictingBatteryPowerMeasurements: Bool {
+        // A current-and-voltage value repeats the current signal rather than
+        // providing an independent power sample, so it cannot conflict with
+        // its own source measurement.
+        if batteryPowerSource == .currentAndVoltage {
+            return batteryFlowEvidence == .conflicted
+        }
+
+        guard let batteryPowerW,
+              let batteryCurrentA else {
+            return batteryFlowEvidence == .conflicted
+        }
+
+        guard let batteryVoltageV, batteryVoltageV > 0 else {
+            // Keep the current direction available to the live flow diagram,
+            // but do not let signals that disagree about material battery flow
+            // corroborate a warning when voltage is unavailable and their
+            // magnitudes cannot be compared.
+            let powerShowsMaterialFlow =
+                abs(batteryPowerW)
+                    > PowerStateThresholds.holdBatteryPowerToleranceW
+            let currentShowsMaterialFlow =
+                abs(batteryCurrentA)
+                    > PowerStateThresholds.holdBatteryCurrentToleranceA
+            return powerShowsMaterialFlow != currentShowsMaterialFlow
+                || batteryFlowEvidence == .conflicted
+        }
+
+        let currentDerivedPowerW = -batteryCurrentA * batteryVoltageV
+        let comparisonMagnitude = max(
+            abs(batteryPowerW),
+            abs(currentDerivedPowerW)
+        )
+        guard comparisonMagnitude
+                > PowerStateThresholds.powerCoherenceMinimumMagnitudeW else {
+            return batteryFlowEvidence == .conflicted
+        }
+
+        let allowedDifference = max(
+            PowerStateThresholds.powerCoherenceAbsoluteToleranceW,
+            comparisonMagnitude
+                * PowerStateThresholds.powerCoherenceRelativeTolerance
+        )
+        return abs(batteryPowerW - currentDerivedPowerW) > allowedDifference
+            || batteryFlowEvidence == .conflicted
+    }
+
+    /// Checks whether the independently sampled adapter, battery, and system
+    /// powers can describe the same physical flow within a deliberately wide
+    /// tolerance. A large residual means at least one value is stale, so the
+    /// sample can still drive the live diagram but cannot confirm a warning.
+    var hasConflictingDischargePowerBalance: Bool {
+        guard externalConnected,
+              let adapterInputPowerW,
+              let systemLoadW,
+              let measuredBatteryDischargeW else {
+            return false
+        }
+
+        let representedLoadW = max(
+            adapterInputPowerW + measuredBatteryDischargeW,
+            systemLoadW
+        )
+        let allowedDifference = max(
+            PowerStateThresholds.powerBalanceAbsoluteToleranceW,
+            representedLoadW
+                * PowerStateThresholds.powerBalanceRelativeTolerance
+        )
+        return abs(
+            adapterInputPowerW
+                + measuredBatteryDischargeW
+                - systemLoadW
+        ) > allowedDifference
+    }
+
     var isBatteryChargingForDisplay: Bool {
         batteryFlowEvidence == .charging
     }
@@ -158,7 +238,10 @@ extension TelemetrySnapshot {
         // conservative fallback for material battery assist.
         if batteryFlowEvidence == .unavailable {
             return timeToEmptyMinutes != nil
-                && (hasSlowChargerCondition || hasNegotiatedLowCondition)
+                && (
+                    hasMaterialInputDeficit
+                        || hasLowInputRelativeToAdapterRating
+                )
         }
 
         return false
@@ -256,7 +339,7 @@ extension TelemetrySnapshot {
         return .unknown
     }
 
-    var hasSlowChargerCondition: Bool {
+    var hasMaterialInputDeficit: Bool {
         guard externalConnected,
               let deficit = estimatedPowerDeficitW else { return false }
         return deficit > 5
@@ -269,6 +352,8 @@ extension TelemetrySnapshot {
     var hasClearAdapterCapacityShortfall: Bool {
         guard externalConnected,
               isBatteryDischargingForDisplay,
+              !hasConflictingBatteryPowerMeasurements,
+              !hasConflictingDischargePowerBalance,
               let adapterMaxPowerW,
               let adapterInputPowerW,
               let systemLoadW,
@@ -283,37 +368,30 @@ extension TelemetrySnapshot {
         return hasClearDeficit && adapterIsSaturated
     }
 
-    var hasNegotiatedLowCondition: Bool {
+    /// Observes that current input is unusually low relative to the adapter's
+    /// advertised capacity. This is not proof of a USB-PD negotiation problem:
+    /// macOS demand, conversion losses, and asynchronously updated sensors can
+    /// produce the same relationship.
+    var hasLowInputRelativeToAdapterRating: Bool {
         guard externalConnected,
               let rated = adapterMaxPowerW,
               let input = adapterInputPowerW,
-              let load = systemLoadW,
               rated > 0 else { return false }
 
-        let batteryIsSupportingLoad = batteryPowerW.map { $0 > 2 } ?? false
-        let batteryCurrentIsDischarging = batteryCurrentA.map { $0 < -0.15 } ?? false
-        let loadMeaningfullyExceedsInput = estimatedPowerDeficitW.map {
-            $0 > PowerStateThresholds.negotiatedLowDeficitW
-        } ?? false
-
         return input < rated * 0.55
-            && load > input * 0.85
-            && (
-                batteryIsSupportingLoad
-                    || batteryCurrentIsDischarging
-                    || loadMeaningfullyExceedsInput
-            )
     }
 
     var hasCorroboratedPowerDeliveryShortfall: Bool {
-        guard estimatedPowerDeficitW.map({
-            $0 > PowerStateThresholds.negotiatedLowDeficitW
-        }) == true else {
+        guard !hasConflictingBatteryPowerMeasurements,
+              !hasConflictingDischargePowerBalance,
+              estimatedPowerDeficitW.map({
+                  $0 > PowerStateThresholds.lowInputDeficitW
+              }) == true else {
             return false
         }
 
-        return hasSlowChargerCondition
-            || hasNegotiatedLowCondition
+        return hasMaterialInputDeficit
+            || hasLowInputRelativeToAdapterRating
             || hasClearAdapterCapacityShortfall
     }
 
@@ -347,9 +425,7 @@ extension TelemetrySnapshot {
             if targetPercent < 100,
                isBatteryDischargingForDisplay,
                let batteryLevel,
-               batteryLevel
-                   > Double(targetPercent)
-                       + PowerStateThresholds.manualLimitUpperHoldTolerancePercent {
+               batteryLevel > Double(targetPercent) {
                 return .reducingToLimit(targetPercent: targetPercent)
             }
 
@@ -425,8 +501,13 @@ private enum PowerStateThresholds {
     static let manualLimitUpperHoldTolerancePercent = 1.0
     static let adapterSaturationRatio = 0.8
     static let clearPowerDeficitW = 5.0
-    static let negotiatedLowDeficitW = 2.5
+    static let lowInputDeficitW = 2.5
     static let holdBatteryPowerToleranceW = 4.0
     static let holdBatteryCurrentToleranceA = 0.2
     static let holdBatteryLevelDriftPercent = 1.0
+    static let powerCoherenceMinimumMagnitudeW = 2.0
+    static let powerCoherenceAbsoluteToleranceW = 4.0
+    static let powerCoherenceRelativeTolerance = 0.5
+    static let powerBalanceAbsoluteToleranceW = 5.0
+    static let powerBalanceRelativeTolerance = 0.35
 }

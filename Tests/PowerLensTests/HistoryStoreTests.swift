@@ -22,6 +22,58 @@ struct HistoryStoreTests {
     }
 
     @Test
+    func preservesBatteryPowerValueAndSource() async {
+        let dbURL = makeTemporaryDatabaseURL(
+            name: "battery-power-provenance"
+        )
+        let store = HistoryStore(databaseURL: dbURL)
+        let timestamp = Date(timeIntervalSince1970: 1_775_627_950)
+        let snapshot = makeSnapshot(
+            timestamp: timestamp,
+            batteryPowerW: 10.045,
+            batteryPowerSource: .currentAndVoltage
+        )
+
+        await store.append(snapshot)
+
+        let loaded = await store.loadRecent(
+            since: timestamp.addingTimeInterval(-1)
+        )
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.batteryPowerW == 10.045)
+        #expect(
+            loaded.first?.batteryPowerSource == .currentAndVoltage
+        )
+    }
+
+    @Test
+    func migratesHistoryWithoutBatteryPowerSourceColumn() async throws {
+        let dbURL = makeTemporaryDatabaseURL(
+            name: "battery-power-provenance-migration"
+        )
+        try createLegacyTelemetrySamplesTable(at: dbURL)
+
+        let store = HistoryStore(databaseURL: dbURL)
+        let timestamp = Date(timeIntervalSince1970: 1_775_627_975)
+        await store.append(
+            makeSnapshot(
+                timestamp: timestamp,
+                batteryPowerW: -43.447,
+                batteryPowerSource: .currentAndVoltage
+            )
+        )
+
+        let loaded = await store.loadRecent(
+            since: timestamp.addingTimeInterval(-1)
+        )
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.batteryPowerW == -43.447)
+        #expect(
+            loaded.first?.batteryPowerSource == .currentAndVoltage
+        )
+    }
+
+    @Test
     func reusesReferenceRowsForRepeatedSamples() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "reused-references")
         let store = HistoryStore(databaseURL: dbURL)
@@ -258,6 +310,8 @@ private func makeSnapshot(
     nominalCapacityMah: Int = 5874,
     systemLoadW: Double = 22.36,
     batteryTemperatureC: Double = 29.5,
+    batteryPowerW: Double = 0,
+    batteryPowerSource: BatteryPowerSource? = nil,
     externalConnected: Bool = true,
     isCharging: Bool = false
 ) -> TelemetrySnapshot {
@@ -280,7 +334,8 @@ private func makeSnapshot(
         batteryTemperatureC: batteryTemperatureC,
         batteryVoltageV: 12.38,
         batteryCurrentA: 0.0,
-        batteryPowerW: 0.0,
+        batteryPowerW: batteryPowerW,
+        batteryPowerSource: batteryPowerSource,
         adapterDescription: "PD Charger",
         adapterMaxPowerW: 97,
         adapterInputPowerW: 20.92,
@@ -299,6 +354,48 @@ private func makeTemporaryDatabaseURL(name: String) -> URL {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PowerLensTests", isDirectory: true)
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("\(name)-\(UUID().uuidString).sqlite3")
+}
+
+private func createLegacyTelemetrySamplesTable(at dbURL: URL) throws {
+    var db: OpaquePointer?
+    guard sqlite3_open(dbURL.path, &db) == SQLITE_OK, let db else {
+        throw SQLiteTestError.openFailed
+    }
+
+    defer {
+        sqlite3_close(db)
+    }
+
+    let sql = """
+    CREATE TABLE telemetry_samples (
+        sample_id INTEGER PRIMARY KEY,
+        ts INTEGER NOT NULL,
+        battery_id INTEGER,
+        battery_state_id INTEGER,
+        adapter_id INTEGER,
+        app_id INTEGER,
+        power_source_code INTEGER NOT NULL,
+        thermal_state_code INTEGER NOT NULL,
+        is_charging INTEGER NOT NULL,
+        is_charged INTEGER NOT NULL,
+        external_connected INTEGER NOT NULL,
+        low_power_mode_enabled INTEGER NOT NULL,
+        battery_level_x10 INTEGER,
+        time_to_empty_minutes INTEGER,
+        time_to_full_minutes INTEGER,
+        battery_temperature_c_x100 INTEGER,
+        battery_voltage_mv INTEGER,
+        battery_current_ma INTEGER,
+        battery_power_mw INTEGER,
+        adapter_input_power_mw INTEGER,
+        adapter_voltage_mv INTEGER,
+        adapter_current_ma INTEGER,
+        system_load_mw INTEGER
+    );
+    """
+    guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+        throw SQLiteTestError.stepFailed
+    }
 }
 
 private func tableCount(_ table: String, dbURL: URL) throws -> Int {

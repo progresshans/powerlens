@@ -37,6 +37,12 @@ extension TelemetrySnapshot {
             break
         }
 
+        // Production UI supplies a temporally resolved state. Do not bypass
+        // its grace periods with one raw input/load sample.
+        if resolvedState != nil {
+            return L10n.text("status.externalPowerConnected")
+        }
+
         if let deficit = estimatedPowerDeficitW, deficit > 5 {
             return L10n.text("status.adapterBatteryAssist")
         }
@@ -94,6 +100,28 @@ extension TelemetrySnapshot {
             return L10n.text("status.subheadline.holdingCurrentLevel")
         }
 
+        if let resolvedState {
+            switch resolvedState.powerDeliveryState {
+            case .transientBatteryAssist:
+                return L10n.text(
+                    "status.subheadline.transientBatteryAssist"
+                )
+            case .unknown:
+                return L10n.text("status.subheadline.qualityUnknown")
+            case .normal:
+                switch chargerAdequacy {
+                case .ample, .adequate:
+                    return powerDeliverySubheadline
+                case .insufficient, .constrained, .disconnected, .unknown:
+                    return L10n.text(
+                        "status.subheadline.externalPowerConnected"
+                    )
+                }
+            case .sustainedShortfall:
+                break
+            }
+        }
+
         return powerDeliverySubheadline
     }
 
@@ -140,24 +168,11 @@ extension TelemetrySnapshot {
             return powerDeliverySubheadline
         }
 
-        if confirmedShortfall.isSlowCharger {
-            return L10n.tr(
-                "status.subheadline.deficit",
-                Formatters.power(confirmedShortfall.deficitW)
-            )
-        }
-        if confirmedShortfall.isNegotiatedLow {
-            return L10n.tr(
-                "status.subheadline.inputVsLoad",
-                Formatters.power(
-                    confirmedShortfall.adapterInputPowerW
-                ),
-                Formatters.power(
-                    confirmedShortfall.systemLoadW
-                )
-            )
-        }
-        return L10n.text("status.subheadline.powerLimited")
+        return L10n.tr(
+            "status.subheadline.inputVsLoad",
+            Formatters.power(confirmedShortfall.adapterInputPowerW),
+            Formatters.power(confirmedShortfall.systemLoadW)
+        )
     }
 
     var managedChargingHeadline: String? {
@@ -191,7 +206,9 @@ extension TelemetrySnapshot {
             return L10n.text("status.optimizedCharging.active")
         case .optimizedHold:
             return L10n.text("status.optimizedCharging.holding")
-        case .limitConfigured, .optimizedActive:
+        case .optimizedActive:
+            return L10n.text("status.optimizedCharging.active")
+        case .limitConfigured:
             return nil
         }
     }
@@ -218,7 +235,11 @@ extension TelemetrySnapshot {
             return L10n.text("status.subheadline.optimizedCharging.active")
         case .optimizedHold:
             return L10n.text("status.subheadline.optimizedCharging.holding")
-        case .limitConfigured, .optimizedActive:
+        case .optimizedActive:
+            return L10n.text(
+                "status.subheadline.optimizedCharging.activeFlowUnknown"
+            )
+        case .limitConfigured:
             return nil
         }
     }

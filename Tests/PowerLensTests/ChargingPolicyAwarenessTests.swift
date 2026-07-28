@@ -49,6 +49,22 @@ struct ChargingPolicyAwarenessTests {
         )
     }
 
+    @Test(arguments: [80, 87, 93])
+    func manualLimitReductionIncludesOnePercentAboveTarget(
+        targetPercent: Int
+    ) {
+        let snapshot = managedDischargeSnapshot(
+            batteryLevel: Double(targetPercent + 1),
+            policy: .manualLimit(targetPercent: targetPercent)
+        )
+
+        #expect(
+            snapshot.managedChargingState
+                == .reducingToLimit(targetPercent: targetPercent)
+        )
+        #expect(snapshot.shouldSuppressPowerDeliveryWarnings)
+    }
+
     @Test
     func arbitraryManualLimitIsUsedWhileCharging() {
         let snapshot = makeTelemetrySnapshot(
@@ -361,7 +377,7 @@ struct ChargingPolicyAwarenessTests {
     }
 
     @Test
-    func negotiatedLowSignalsDoNotOverrideManualLimitReduction() {
+    func lowInputRelativeToRatingDoesNotOverrideManualLimitReduction() {
         let snapshot = makeTelemetrySnapshot(
             batteryLevel: 90,
             batteryCurrentA: -1.6,
@@ -372,7 +388,7 @@ struct ChargingPolicyAwarenessTests {
             chargingPolicyStatus: .manualLimit(targetPercent: 80)
         )
 
-        #expect(snapshot.hasNegotiatedLowCondition)
+        #expect(snapshot.hasLowInputRelativeToAdapterRating)
         #expect(!snapshot.hasClearAdapterCapacityShortfall)
         #expect(
             snapshot.managedChargingState
@@ -469,17 +485,23 @@ struct ChargingPolicyAwarenessTests {
     }
 
     @Test
-    func optimizedPolicyDoesNotExplainActiveBatteryDischarge() {
+    func optimizedPolicyShowsManagedStateWithoutAssigningDischargeCause() {
         let snapshot = managedDischargeSnapshot(
             batteryLevel: 76,
             policy: .optimizedCharging
         )
 
         #expect(snapshot.managedChargingState == .optimizedActive)
-        #expect(!snapshot.shouldSuppressPowerDeliveryWarnings)
+        #expect(snapshot.shouldSuppressPowerDeliveryWarnings)
         #expect(
             snapshot.statusHeadline
-                == L10n.text("status.adapterBatteryAssist")
+                == L10n.text("status.optimizedCharging.active")
+        )
+        #expect(
+            snapshot.statusSubheadline
+                == L10n.text(
+                    "status.subheadline.optimizedCharging.activeFlowUnknown"
+                )
         )
         #expect(
             snapshot.managedChargingDiagnosticTitle
