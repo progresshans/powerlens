@@ -447,6 +447,56 @@ struct PowerStateTrackerTests {
     }
 
     @Test
+    func optimizedShortfallWaitsForConfirmedRecoveryWhenCapacityIsMissing() {
+        var tracker = PowerStateTracker(configuration: configuration)
+
+        func snapshot(
+            at seconds: TimeInterval,
+            adapterMaxPowerW: Double?
+        ) -> TelemetrySnapshot {
+            makeTelemetrySnapshot(
+                timestamp: date(seconds),
+                batteryLevel: 76,
+                batteryCurrentA: -1.6,
+                batteryPowerW: 20,
+                adapterInputPowerW: 20,
+                systemLoadW: 40,
+                adapterMaxPowerW: adapterMaxPowerW,
+                chargingPolicyStatus: .optimizedCharging
+            )
+        }
+
+        _ = tracker.resolve(snapshot(at: 0, adapterMaxPowerW: 20))
+        _ = tracker.resolve(snapshot(at: 10, adapterMaxPowerW: 20))
+        let confirmed = tracker.resolve(
+            snapshot(at: 15, adapterMaxPowerW: 20)
+        )
+        let firstUncertain = tracker.resolve(
+            snapshot(at: 18, adapterMaxPowerW: nil)
+        )
+        let beforeRecovery = tracker.resolve(
+            snapshot(at: 23, adapterMaxPowerW: nil)
+        )
+        let recovered = tracker.resolve(
+            snapshot(at: 24, adapterMaxPowerW: nil)
+        )
+
+        #expect(confirmed.powerDeliveryState == .sustainedShortfall)
+        #expect(
+            firstUncertain.powerDeliveryState == .sustainedShortfall
+        )
+        #expect(
+            beforeRecovery.powerDeliveryState == .sustainedShortfall
+        )
+        #expect(
+            firstUncertain.confirmedShortfall
+                == confirmed.confirmedShortfall
+        )
+        #expect(recovered.powerDeliveryState == .normal)
+        #expect(recovered.confirmedShortfall == nil)
+    }
+
+    @Test
     func manualHoldSurvivesAChargingReboundButNotPersistentCharging() {
         var tracker = PowerStateTracker(configuration: configuration)
         _ = tracker.resolve(calmSnapshot(at: 0))

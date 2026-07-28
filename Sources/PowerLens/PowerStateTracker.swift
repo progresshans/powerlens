@@ -175,7 +175,8 @@ struct PowerStateTracker: Sendable {
         }
 
         if stableManagedStateExplainsDischarge,
-           !policySnapshot.hasClearAdapterCapacityShortfall {
+           !policySnapshot.hasClearAdapterCapacityShortfall,
+           deliveryState != .sustainedShortfall {
             deliveryState = .normal
             assistSince = nil
             shortfallEvidenceSince = nil
