@@ -30,7 +30,6 @@ enum HistoryExporter {
         "is_charged",
         "external_connected",
         "battery_power_w",
-        "battery_power_source",
         "adapter_input_power_w",
         "system_load_w",
         "battery_temperature_c",
@@ -40,6 +39,7 @@ enum HistoryExporter {
         "full_charge_capacity_mah",
         "thermal_state",
         "frontmost_app",
+        "battery_power_source",
     ]
 
     static func csv(_ snapshots: [TelemetrySnapshot]) -> String {
@@ -55,7 +55,6 @@ enum HistoryExporter {
                 snapshot.isCharged ? "1" : "0",
                 snapshot.externalConnected ? "1" : "0",
                 numberField(snapshot.batteryPowerW),
-                snapshot.batteryPowerSource?.rawValue ?? "",
                 numberField(snapshot.adapterInputPowerW),
                 numberField(snapshot.systemLoadW),
                 numberField(snapshot.batteryTemperatureC),
@@ -65,6 +64,7 @@ enum HistoryExporter {
                 snapshot.fullChargeCapacityMah.map(String.init) ?? "",
                 escape(snapshot.thermalState),
                 escape(snapshot.frontmostAppName ?? ""),
+                snapshot.batteryPowerSource?.rawValue ?? "",
             ].joined(separator: ",")
         }
 
