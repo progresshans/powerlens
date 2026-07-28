@@ -54,4 +54,27 @@ struct TelemetryDetailRowsTests {
                 )
         )
     }
+
+    @Test
+    func roundedZeroPreservesBatteryPowerProvenance() {
+        let derivedSnapshot = makeTelemetrySnapshot(
+            batteryPowerW: 0.04,
+            batteryPowerSource: .currentAndVoltage
+        )
+        let directSnapshot = makeTelemetrySnapshot(
+            batteryPowerW: 0.04,
+            batteryPowerSource: .directTelemetry
+        )
+        let batteryPowerTitle = L10n.text("ui.detail.batteryPower")
+
+        let derivedValue = TelemetryDetailRows.powerSnapshot(
+            derivedSnapshot
+        ).first { $0.0 == batteryPowerTitle }?.1
+        let directValue = TelemetryDetailRows.powerSnapshot(
+            directSnapshot
+        ).first { $0.0 == batteryPowerTitle }?.1
+
+        #expect(derivedValue == "≈0.0W")
+        #expect(directValue == "0.0W")
+    }
 }

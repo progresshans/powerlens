@@ -17,11 +17,12 @@ enum Formatters {
             return L10n.text("common.none")
         }
 
-        if abs(value) < 0.05 {
-            return power(0)
+        let magnitude = abs(value) < 0.05 ? 0 : abs(value)
+        let formattedPower =
+            "\(isApproximate ? "≈" : "")\(power(magnitude))"
+        guard magnitude > 0 else {
+            return formattedPower
         }
-
-        let formattedPower = "\(isApproximate ? "≈" : "")\(power(abs(value)))"
         if value < 0 {
             return L10n.tr(
                 "format.batteryPower.charging",
