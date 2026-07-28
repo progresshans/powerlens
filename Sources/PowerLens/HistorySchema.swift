@@ -73,6 +73,7 @@ enum HistorySchema {
             adapter_voltage_mv INTEGER,
             adapter_current_ma INTEGER,
             system_load_mw INTEGER,
+            battery_power_source_code INTEGER,
             FOREIGN KEY (battery_id) REFERENCES batteries(battery_id),
             FOREIGN KEY (battery_state_id) REFERENCES battery_states(battery_state_id),
             FOREIGN KEY (adapter_id) REFERENCES adapters(adapter_id),
@@ -118,6 +119,13 @@ enum HistorySchema {
         """
         CREATE INDEX IF NOT EXISTS history_rollups_bucket_idx
         ON history_rollups(bucket_start);
+        """,
+        // Forward-compatibility for databases created before battery power
+        // provenance was stored. The error is harmless (and ignored) when the
+        // column already exists from the CREATE above.
+        """
+        ALTER TABLE telemetry_samples
+        ADD COLUMN battery_power_source_code INTEGER;
         """,
         // Forward-compatibility: add the charge-state aggregate columns to rollup
         // tables created by an earlier prerelease. These error harmlessly (and are

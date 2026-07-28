@@ -9,7 +9,10 @@ enum Formatters {
         number(value, fractionDigits: 1, suffix: "W")
     }
 
-    static func batteryPowerFlow(_ value: Double?) -> String {
+    static func batteryPowerFlow(
+        _ value: Double?,
+        isApproximate: Bool = false
+    ) -> String {
         guard let value else {
             return L10n.text("common.none")
         }
@@ -18,11 +21,18 @@ enum Formatters {
             return power(0)
         }
 
+        let formattedPower = "\(isApproximate ? "≈" : "")\(power(abs(value)))"
         if value < 0 {
-            return L10n.tr("format.batteryPower.charging", power(abs(value)))
+            return L10n.tr(
+                "format.batteryPower.charging",
+                formattedPower
+            )
         }
 
-        return L10n.tr("format.batteryPower.discharging", power(value))
+        return L10n.tr(
+            "format.batteryPower.discharging",
+            formattedPower
+        )
     }
 
     static func voltage(_ value: Double) -> String {

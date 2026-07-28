@@ -33,4 +33,25 @@ struct TelemetryDetailRowsTests {
 
         #expect(powerRows.first { $0.0 == batteryPowerTitle }?.1 == batteryRows.first { $0.0 == batteryPowerTitle }?.1)
     }
+
+    @Test
+    func derivedBatteryPowerIsMarkedAsApproximate() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryPowerW: 10.045,
+            batteryPowerSource: .currentAndVoltage
+        )
+        let batteryPowerTitle = L10n.text("ui.detail.batteryPower")
+
+        let value = TelemetryDetailRows.powerSnapshot(snapshot)
+            .first { $0.0 == batteryPowerTitle }?
+            .1
+
+        #expect(
+            value
+                == L10n.tr(
+                    "format.batteryPower.discharging",
+                    "≈10.0W"
+                )
+        )
+    }
 }

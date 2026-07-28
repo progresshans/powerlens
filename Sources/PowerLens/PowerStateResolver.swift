@@ -139,6 +139,13 @@ extension TelemetrySnapshot {
     /// for the live flow diagram, but do not treat a large magnitude mismatch
     /// as corroboration for a charger warning.
     var hasConflictingBatteryPowerMeasurements: Bool {
+        // A current-and-voltage value repeats the current signal rather than
+        // providing an independent power sample, so it cannot conflict with
+        // its own source measurement.
+        if batteryPowerSource == .currentAndVoltage {
+            return batteryFlowEvidence == .conflicted
+        }
+
         guard let batteryPowerW,
               let batteryCurrentA,
               let batteryVoltageV,

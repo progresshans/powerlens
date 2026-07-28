@@ -35,7 +35,7 @@ struct TelemetrySnapshotMapperTests {
     }
 
     @Test
-    func livePrecisionMapperKeepsCurrentDerivedDischargeOutOfBatteryPower() throws {
+    func livePrecisionMapperPreservesCurrentDerivedDischargeWithItsSource() throws {
         let snapshot = try LivePrecisionTelemetrySnapshotMapper(
             powerSourceInfo: [
                 kIOPSPowerSourceStateKey: kIOPMBatteryPowerKey,
@@ -52,13 +52,15 @@ struct TelemetrySnapshotMapperTests {
         ).snapshot()
 
         #expect(snapshot.batteryCurrentA == -0.82)
-        #expect(snapshot.batteryPowerW == nil)
+        #expect(abs((snapshot.batteryPowerW ?? 0) - 10.045) < 0.001)
+        #expect(snapshot.batteryPowerSource == .currentAndVoltage)
         #expect(
             abs((snapshot.measuredBatteryDischargeW ?? 0) - 10.045)
                 < 0.001
         )
         #expect(!snapshot.isBatteryChargingForDisplay)
         #expect(snapshot.externalPowerState == .onBattery)
+        #expect(snapshot.primaryDisplayedPowerW == snapshot.batteryPowerW)
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .discharging)
@@ -67,7 +69,7 @@ struct TelemetrySnapshotMapperTests {
     }
 
     @Test
-    func livePrecisionMapperKeepsCurrentDerivedChargeOutOfBatteryPower() throws {
+    func livePrecisionMapperPreservesCurrentDerivedChargeWithItsSource() throws {
         let snapshot = try LivePrecisionTelemetrySnapshotMapper(
             powerSourceInfo: [
                 kIOPSPowerSourceStateKey: kIOPMACPowerKey,
@@ -84,7 +86,10 @@ struct TelemetrySnapshotMapperTests {
         ).snapshot()
 
         #expect(snapshot.batteryCurrentA == 3.44)
-        #expect(snapshot.batteryPowerW == nil)
+        #expect(
+            abs((snapshot.batteryPowerW ?? 0) - -43.4472) < 0.001
+        )
+        #expect(snapshot.batteryPowerSource == .currentAndVoltage)
         #expect(
             abs((snapshot.measuredBatteryChargeW ?? 0) - 43.4472)
                 < 0.001
@@ -121,6 +126,7 @@ struct TelemetrySnapshotMapperTests {
         ).snapshot()
 
         #expect(snapshot.batteryPowerW == -12)
+        #expect(snapshot.batteryPowerSource == .directTelemetry)
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .charging)
@@ -151,6 +157,7 @@ struct TelemetrySnapshotMapperTests {
         ).snapshot()
 
         #expect(snapshot.batteryPowerW == -9.8)
+        #expect(snapshot.batteryPowerSource == .directTelemetry)
         #expect(snapshot.adapterInputPowerW == 51.2)
         #expect(snapshot.systemLoadW == 7.4)
     }

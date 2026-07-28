@@ -68,6 +68,14 @@ struct LivePrecisionTelemetrySnapshotMapper {
         let powerSource = TelemetryValueParser.parsePowerSource(powerSourceInfo[kIOPSPowerSourceStateKey] as? String)
         let batteryVoltageV = TelemetryValueParser.doubleValue(batteryRegistry["Voltage"]).map { $0 / 1000 }
         let batteryCurrentA = TelemetryValueParser.doubleValue(batteryRegistry["Amperage"]).map { $0 / 1000 }
+        let batteryPower = resolveBatteryPower(
+            smcPowerW: smcPower?.batteryPowerW,
+            telemetryPowerW: TelemetryValueParser.milliwattsValue(
+                telemetry["BatteryPower"]
+            ),
+            voltageV: batteryVoltageV,
+            currentA: batteryCurrentA
+        )
         let frontmostApp = environment.frontmostApplication
 
         return TelemetrySnapshot(
@@ -97,12 +105,8 @@ struct LivePrecisionTelemetrySnapshotMapper {
             batteryTemperatureC: TelemetryValueParser.doubleValue(batteryRegistry["Temperature"]).map { $0 / 100 },
             batteryVoltageV: batteryVoltageV,
             batteryCurrentA: batteryCurrentA,
-            // Keep this field limited to direct power telemetry. Callers can
-            // derive current × voltage separately without losing provenance.
-            batteryPowerW: smcPower?.batteryPowerW
-                ?? TelemetryValueParser.milliwattsValue(
-                    telemetry["BatteryPower"]
-                ),
+            batteryPowerW: batteryPower.valueW,
+            batteryPowerSource: batteryPower.source,
             adapterDescription: TelemetryValueParser.nonEmptyString(adapterDetails["Description"])
                 ?? TelemetryValueParser.nonEmptyString(batteryRegistry["DeviceName"]),
             adapterMaxPowerW: TelemetryValueParser.doubleValue(adapterDetails["Watts"]),
@@ -118,5 +122,25 @@ struct LivePrecisionTelemetrySnapshotMapper {
             frontmostAppBundleID: frontmostApp?.bundleIdentifier,
             frontmostAppName: frontmostApp?.localizedName
         )
+    }
+
+    private func resolveBatteryPower(
+        smcPowerW: Double?,
+        telemetryPowerW: Double?,
+        voltageV: Double?,
+        currentA: Double?
+    ) -> (valueW: Double?, source: BatteryPowerSource?) {
+        if let directPowerW = smcPowerW ?? telemetryPowerW {
+            return (directPowerW, .directTelemetry)
+        }
+
+        guard let voltageV, let currentA else {
+            return (nil, nil)
+        }
+
+        // AppleSmartBattery amperage is negative while discharging. PowerLens
+        // normalizes battery power to positive = supporting the system and
+        // negative = charging.
+        return (-(currentA * voltageV), .currentAndVoltage)
     }
 }

@@ -393,7 +393,10 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         _ powerW: Double,
         snapshot: TelemetrySnapshot
     ) -> Bool {
-        snapshot.batteryPowerW.map {
+        guard !snapshot.batteryPowerIsDerived else {
+            return false
+        }
+        return snapshot.batteryPowerW.map {
             isApproximatelyEqual(powerW, $0)
         } ?? false
     }
@@ -402,7 +405,10 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         _ powerW: Double,
         snapshot: TelemetrySnapshot
     ) -> Bool {
-        snapshot.batteryPowerW.map {
+        guard !snapshot.batteryPowerIsDerived else {
+            return false
+        }
+        return snapshot.batteryPowerW.map {
             isApproximatelyEqual(powerW, -$0)
         } ?? false
     }
