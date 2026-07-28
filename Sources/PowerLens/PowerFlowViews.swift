@@ -70,6 +70,15 @@ struct PowerFlowCard: View {
                 rows: model.routes,
                 density: density
             )
+
+            if model.usesEstimatedContributions {
+                Label(
+                    L10n.text("ui.flow.estimateNotice"),
+                    systemImage: "info.circle"
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
         }
         .padding(density.cardPadding)
         .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 16, style: .continuous))

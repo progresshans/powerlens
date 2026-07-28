@@ -16,8 +16,9 @@ struct PowerFlowPresentationModelTests {
         #expect(model.externalToSystemPower == 10.8)
         #expect(model.batteryToSystemPower == 0)
         #expect(model.externalToBatteryPower == 0)
+        #expect(model.usesEstimatedContributions)
         #expect(model.routes.map(\.role) == [.input])
-        #expect(model.routes.first?.source.value == "18.6W")
+        #expect(model.routes.first?.source.value == "≈10.8W")
         #expect(model.routes.first?.target.value == "10.8W")
     }
 
@@ -55,6 +56,7 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .holding)
+        #expect(!model.usesEstimatedContributions)
         #expect(model.routes.count == 1)
         #expect(model.routes.first?.role == .input)
         #expect(model.routes.first?.source.value == "11.7W")
@@ -75,6 +77,7 @@ struct PowerFlowPresentationModelTests {
         #expect(model.state == .underpowered)
         #expect(abs(model.externalToSystemPower - 9.1) < 0.0001)
         #expect(abs(model.batteryToSystemPower - 3.8) < 0.0001)
+        #expect(!model.usesEstimatedContributions)
         #expect(model.routes.map(\.role) == [.input, .battery])
         #expect(model.routes[0].source.value == "9.1W")
         #expect(model.routes[1].source.value == "3.8W")
@@ -115,8 +118,9 @@ struct PowerFlowPresentationModelTests {
         #expect(model.state == .holding)
         #expect(model.batteryAssist == 0)
         #expect(model.externalToSystemPower == 38)
+        #expect(model.usesEstimatedContributions)
         #expect(model.routes.map(\.role) == [.input])
-        #expect(model.routes.first?.source.value == "20.0W")
+        #expect(model.routes.first?.source.value == "≈38.0W")
         #expect(model.routes.first?.target.value == "38.0W")
     }
 
@@ -135,13 +139,14 @@ struct PowerFlowPresentationModelTests {
         #expect(model.batteryAssist == 18)
         #expect(model.externalToSystemPower == 20)
         #expect(model.batteryToSystemPower == 18)
+        #expect(model.usesEstimatedContributions)
         #expect(model.routes.map(\.role) == [.input, .battery])
-        #expect(model.routes[0].source.value == "38.0W")
+        #expect(model.routes[0].source.value == "≈20.0W")
         #expect(model.routes[1].source.value == "18.0W")
     }
 
     @Test
-    func materialDischargeCurrentOverridesANearZeroPowerSample() {
+    func materialDischargeCurrentWithNearZeroPowerUsesResidualEstimate() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: -1,
             batteryPowerW: 0.1,
@@ -154,10 +159,12 @@ struct PowerFlowPresentationModelTests {
         #expect(model.state == .underpowered)
         #expect(abs(model.batteryAssist - 12.25) < 0.0001)
         #expect(abs(model.batteryToSystemPower - 12.25) < 0.0001)
+        #expect(model.usesEstimatedContributions)
+        #expect(model.routes[1].source.value == "≈12.2W")
     }
 
     @Test
-    func materialChargeCurrentOverridesANearZeroPowerSample() {
+    func materialChargeCurrentWithNearZeroPowerUsesResidualEstimate() {
         let snapshot = makeTelemetrySnapshot(
             isCharging: true,
             batteryCurrentA: 1,
@@ -171,6 +178,8 @@ struct PowerFlowPresentationModelTests {
         #expect(model.state == .charging)
         #expect(abs(model.chargePower - 12.25) < 0.0001)
         #expect(abs(model.externalToBatteryPower - 12.25) < 0.0001)
+        #expect(model.usesEstimatedContributions)
+        #expect(model.routes[1].target.value == "≈12.2W")
     }
 
     @Test
@@ -189,6 +198,7 @@ struct PowerFlowPresentationModelTests {
         #expect(model.externalToSystemPower == 7.2)
         #expect(model.externalToBatteryPower == 46.4)
         #expect(model.batteryToSystemPower == 0)
+        #expect(!model.usesEstimatedContributions)
         #expect(model.routes.map(\.role) == [.input, .charge])
         #expect(model.routes[0].source.value == "53.6W")
         #expect(model.routes[1].source.value == "53.6W")
@@ -214,8 +224,55 @@ struct PowerFlowPresentationModelTests {
         #expect(model.state == .discharging)
         #expect(model.inputPower == 0)
         #expect(model.batteryToSystemPower == 9.1)
+        #expect(!model.usesEstimatedContributions)
         #expect(model.routes.map(\.role) == [.battery])
         #expect(model.routes.first?.source.value == "9.1W")
         #expect(model.routes.first?.target.value == "9.1W")
+    }
+
+    @Test
+    func inconsistentBatterySensorsUseABalancedEstimatedAssist() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryCurrentA: -2.75,
+            batteryPowerW: 0,
+            adapterInputPowerW: 11.5,
+            systemLoadW: 16.1
+        )
+
+        let model = PowerFlowPresentationModel(snapshot: snapshot)
+
+        #expect(snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(model.state == .underpowered)
+        #expect(abs(model.externalToSystemPower - 11.5) < 0.0001)
+        #expect(abs(model.batteryToSystemPower - 4.6) < 0.0001)
+        #expect(
+            abs(
+                model.externalToSystemPower
+                    + model.batteryToSystemPower
+                    - model.loadPower
+            ) < 0.0001
+        )
+        #expect(model.usesEstimatedContributions)
+        #expect(model.routes[0].source.value == "11.5W")
+        #expect(model.routes[1].source.value == "≈4.6W")
+        #expect(model.routes[1].target.value == "16.1W")
+    }
+
+    @Test
+    func impossibleCurrentOnlyBalanceAlsoUsesTheResidualEstimate() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryCurrentA: -2.75,
+            batteryPowerW: nil,
+            adapterInputPowerW: 11.5,
+            systemLoadW: 16.1
+        )
+
+        let model = PowerFlowPresentationModel(snapshot: snapshot)
+
+        #expect(!snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(snapshot.hasConflictingDischargePowerBalance)
+        #expect(abs(model.batteryToSystemPower - 4.6) < 0.0001)
+        #expect(model.routes[1].source.value == "≈4.6W")
+        #expect(model.usesEstimatedContributions)
     }
 }

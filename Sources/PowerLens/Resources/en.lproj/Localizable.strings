@@ -109,6 +109,8 @@
 "status.subheadline.currentChargerSufficient" = "The current charger looks sufficient for this workload.";
 "status.subheadline.batteryOnly" = "The Mac is drawing power only from the battery.";
 "status.subheadline.qualityUnknown" = "Power flow is readable, but adapter quality is not fully known yet.";
+"status.subheadline.externalPowerConnected" = "External power is connected while PowerLens checks whether the observed imbalance persists.";
+"status.subheadline.transientBatteryAssist" = "The battery is briefly assisting while PowerLens waits for a stable power-flow reading.";
 "status.subheadline.manualLimit.charging" = "macOS is charging the battery to the selected charge limit.";
 "status.subheadline.manualLimit.reducing" = "The adapter is connected while macOS lets the battery move toward the selected charge limit.";
 "status.subheadline.manualLimit.holding" = "macOS has paused battery charging at the selected charge limit.";
@@ -119,10 +121,8 @@
 "status.subheadline.manualLimit.transientAssist" = "The battery is briefly helping while the charge limit remains active.";
 "status.subheadline.optimizedCharging.transientAssist" = "The battery is briefly helping while Optimized Battery Charging remains active.";
 
-"diag.slowCharger.title" = "Slow Charger Detected";
-"diag.slowCharger.message" = "Incoming power is lower than system draw by about %@. Your Mac may still drain on wall power.";
-"diag.negotiatedLow.title" = "Negotiated Power Looks Low";
-"diag.negotiatedLow.message" = "The adapter is rated for %@, but the Mac is only receiving about %@. A dock, cable, or display path may be limiting throughput.";
+"diag.powerDeliveryShortfall.title" = "External Power Is Not Covering Current Load";
+"diag.powerDeliveryShortfall.message" = "External input is %@ while system load is %@ and the battery is still assisting. This describes the observed flow; it does not identify the adapter, cable, or dock as the cause.";
 "diag.temperatureHigh.title" = "Battery Temperature Elevated";
 "diag.temperatureHigh.message" = "Battery temperature is %@. Thermal conditions can slow charging or reduce headroom.";
 "diag.healthWear.title" = "Battery Wear Is Noticeable";
@@ -185,6 +185,7 @@
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
 "ui.flow.batteryOnlyDetail" = "System load is being covered only by battery power.";
 "ui.flow.balanced" = "Input power and system load are nearly balanced right now.";
+"ui.flow.estimateNotice" = "Flow contributions are estimated from sensors that update at different times.";
 "ui.highEnergyApp.label" = "High Energy Usage";
 "ui.highEnergyApp.unknown" = "Unknown App";
 

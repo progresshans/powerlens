@@ -17,21 +17,13 @@ extension TelemetrySnapshot {
 
         if shouldShowPowerWarnings {
             if let confirmedShortfall = resolvedState?.confirmedShortfall {
-                if let warning = slowChargerDiagnostic(
-                    for: confirmedShortfall
-                ) {
-                    results.append(warning)
-                }
-                if let warning = negotiatedLowDiagnostic(
+                if let warning = powerDeliveryShortfallDiagnostic(
                     for: confirmedShortfall
                 ) {
                     results.append(warning)
                 }
             } else {
-                if let warning = slowChargerDiagnostic {
-                    results.append(warning)
-                }
-                if let warning = negotiatedLowDiagnostic {
+                if let warning = powerDeliveryShortfallDiagnostic {
                     results.append(warning)
                 }
             }
@@ -88,37 +80,6 @@ extension TelemetrySnapshot {
         return Self.sortedBySeverity(results)
     }
 
-    static func stableDiagnostics(for recentSnapshots: [TelemetrySnapshot], requiredConsecutiveSamples: Int = 3) -> [DiagnosticItem] {
-        guard let current = recentSnapshots.last else {
-            return []
-        }
-
-        var results = current.diagnostics.filter { !Self.powerDiagnosticTitles.contains($0.title) && $0.title != L10n.text("diag.healthy.title") }
-        let stableWindow = Array(recentSnapshots.suffix(requiredConsecutiveSamples))
-        let stableHoldDetected = stableExternalPowerState(
-            for: recentSnapshots,
-            requiredConsecutiveSamples: requiredConsecutiveSamples
-        ) == .holding
-
-        if stableWindow.count >= requiredConsecutiveSamples, !stableHoldDetected {
-            if stableWindow.allSatisfy({ $0.slowChargerDiagnostic != nil && !$0.shouldSuppressPowerDeliveryWarnings }),
-               let warning = current.slowChargerDiagnostic {
-                results.append(warning)
-            }
-
-            if stableWindow.allSatisfy({ $0.negotiatedLowDiagnostic != nil && !$0.shouldSuppressPowerDeliveryWarnings }),
-               let warning = current.negotiatedLowDiagnostic {
-                results.append(warning)
-            }
-        }
-
-        if results.isEmpty {
-            results.append(current.healthyDiagnostic)
-        }
-
-        return Self.sortedBySeverity(results)
-    }
-
     private static func sortedBySeverity(_ diagnostics: [DiagnosticItem]) -> [DiagnosticItem] {
         diagnostics.enumerated()
             .sorted { lhs, rhs in
@@ -168,65 +129,35 @@ extension TelemetrySnapshot {
         )
     }
 
-    private var slowChargerDiagnostic: DiagnosticItem? {
-        guard hasSlowChargerCondition,
-              let deficit = estimatedPowerDeficitW else {
+    private var powerDeliveryShortfallDiagnostic: DiagnosticItem? {
+        guard hasMaterialBatteryAssist,
+              hasCorroboratedPowerDeliveryShortfall,
+              let input = adapterInputPowerW,
+              let load = systemLoadW else {
             return nil
         }
 
         return DiagnosticItem(
             severity: .warning,
-            title: L10n.text("diag.slowCharger.title"),
-            message: L10n.tr("diag.slowCharger.message", Formatters.power(deficit))
-        )
-    }
-
-    private var negotiatedLowDiagnostic: DiagnosticItem? {
-        guard hasNegotiatedLowCondition,
-              let rated = adapterMaxPowerW,
-              let input = adapterInputPowerW else {
-            return nil
-        }
-
-        return DiagnosticItem(
-            severity: .caution,
-            title: L10n.text("diag.negotiatedLow.title"),
-            message: L10n.tr("diag.negotiatedLow.message", Formatters.power(rated), Formatters.power(input))
-        )
-    }
-
-    private func slowChargerDiagnostic(
-        for evidence: ConfirmedPowerDeliveryShortfall
-    ) -> DiagnosticItem? {
-        guard evidence.isSlowCharger else {
-            return nil
-        }
-
-        return DiagnosticItem(
-            severity: .warning,
-            title: L10n.text("diag.slowCharger.title"),
+            title: L10n.text("diag.powerDeliveryShortfall.title"),
             message: L10n.tr(
-                "diag.slowCharger.message",
-                Formatters.power(evidence.deficitW)
+                "diag.powerDeliveryShortfall.message",
+                Formatters.power(input),
+                Formatters.power(load)
             )
         )
     }
 
-    private func negotiatedLowDiagnostic(
+    private func powerDeliveryShortfallDiagnostic(
         for evidence: ConfirmedPowerDeliveryShortfall
     ) -> DiagnosticItem? {
-        guard evidence.isNegotiatedLow,
-              let adapterMaxPowerW = evidence.adapterMaxPowerW else {
-            return nil
-        }
-
         return DiagnosticItem(
-            severity: .caution,
-            title: L10n.text("diag.negotiatedLow.title"),
+            severity: .warning,
+            title: L10n.text("diag.powerDeliveryShortfall.title"),
             message: L10n.tr(
-                "diag.negotiatedLow.message",
-                Formatters.power(adapterMaxPowerW),
-                Formatters.power(evidence.adapterInputPowerW)
+                "diag.powerDeliveryShortfall.message",
+                Formatters.power(evidence.adapterInputPowerW),
+                Formatters.power(evidence.systemLoadW)
             )
         )
     }
@@ -241,8 +172,7 @@ extension TelemetrySnapshot {
 
     static var powerDiagnosticTitles: Set<String> {
         [
-            L10n.text("diag.slowCharger.title"),
-            L10n.text("diag.negotiatedLow.title"),
+            L10n.text("diag.powerDeliveryShortfall.title"),
         ]
     }
 }

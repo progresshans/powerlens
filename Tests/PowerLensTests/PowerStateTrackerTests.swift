@@ -51,7 +51,7 @@ struct PowerStateTrackerTests {
     }
 
     @Test
-    func manualHoldSurvivesASingleTransientAssist() {
+    func manualHoldSurvivesASingleOnePercentReductionSample() {
         var tracker = PowerStateTracker(configuration: configuration)
         _ = tracker.resolve(calmSnapshot(at: 0))
         let established = tracker.resolve(calmSnapshot(at: 12))
@@ -75,7 +75,7 @@ struct PowerStateTrackerTests {
             transient.managedChargingState
                 == .holdingAtLimit(targetPercent: 80)
         )
-        #expect(transient.powerDeliveryState == .transientBatteryAssist)
+        #expect(transient.powerDeliveryState == .normal)
         #expect(transient.externalPowerState == .holding)
         #expect(
             recovered.managedChargingState
@@ -107,18 +107,42 @@ struct PowerStateTrackerTests {
         #expect(
             snapshot.statusSubheadline(resolvedState: sustained)
                 == L10n.tr(
-                    "status.subheadline.deficit",
-                    Formatters.power(18)
+                    "status.subheadline.inputVsLoad",
+                    Formatters.power(20),
+                    Formatters.power(38)
                 )
         )
     }
 
     @Test
-    func confirmedNegotiatedShortfallTakesPriorityOverNeutralPolicyState() {
+    func transientAssistDoesNotBypassHeadlineStabilization() {
         var tracker = PowerStateTracker(configuration: configuration)
-        _ = tracker.resolve(negotiatedLowAssistSnapshot(at: 0))
-        _ = tracker.resolve(negotiatedLowAssistSnapshot(at: 10))
-        let snapshot = negotiatedLowAssistSnapshot(at: 15)
+        let snapshot = assistSnapshot(
+            at: 0,
+            batteryLevel: 70,
+            policy: .manualLimit(targetPercent: 80)
+        )
+        let resolved = tracker.resolve(snapshot)
+
+        #expect(resolved.powerDeliveryState == .transientBatteryAssist)
+        #expect(
+            snapshot.statusHeadline(resolvedState: resolved)
+                == L10n.text("status.externalPowerConnected")
+        )
+        #expect(
+            snapshot.statusSubheadline(resolvedState: resolved)
+                == L10n.text(
+                    "status.subheadline.transientBatteryAssist"
+                )
+        )
+    }
+
+    @Test
+    func confirmedModestShortfallTakesPriorityOverNeutralPolicyState() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        _ = tracker.resolve(modestShortfallSnapshot(at: 0))
+        _ = tracker.resolve(modestShortfallSnapshot(at: 10))
+        let snapshot = modestShortfallSnapshot(at: 15)
         let sustained = tracker.resolve(snapshot)
 
         #expect(sustained.powerDeliveryState == .sustainedShortfall)
@@ -188,6 +212,144 @@ struct PowerStateTrackerTests {
         #expect(confirmed.powerDeliveryState == .normal)
     }
 
+    @Test(arguments: [80, 87, 93])
+    func reductionPersistsThroughTheSelectedTargetBoundary(
+        targetPercent: Int
+    ) {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let policy = ObservedChargingPolicyStatus.manualLimit(
+            targetPercent: targetPercent
+        )
+
+        _ = tracker.resolve(
+            assistSnapshot(
+                at: 0,
+                batteryLevel: Double(targetPercent + 2),
+                policy: policy
+            )
+        )
+        let established = tracker.resolve(
+            assistSnapshot(
+                at: 15,
+                batteryLevel: Double(targetPercent + 2),
+                policy: policy
+            )
+        )
+        let onePercentAbove = tracker.resolve(
+            assistSnapshot(
+                at: 18,
+                batteryLevel: Double(targetPercent + 1),
+                policy: policy
+            )
+        )
+        let reachedTarget = tracker.resolve(
+            assistSnapshot(
+                at: 21,
+                batteryLevel: Double(targetPercent),
+                policy: policy
+            )
+        )
+        let settling = tracker.resolve(
+            assistSnapshot(
+                at: 35,
+                batteryLevel: Double(targetPercent),
+                policy: policy
+            )
+        )
+        let settledWithoutHold = tracker.resolve(
+            assistSnapshot(
+                at: 36,
+                batteryLevel: Double(targetPercent),
+                policy: policy
+            )
+        )
+
+        for resolved in [
+            established,
+            onePercentAbove,
+            reachedTarget,
+            settling,
+        ] {
+            #expect(
+                resolved.managedChargingState
+                    == .reducingToLimit(targetPercent: targetPercent)
+            )
+            #expect(resolved.powerDeliveryState == .normal)
+        }
+        #expect(
+            settledWithoutHold.managedChargingState
+                == .limitConfigured(targetPercent: targetPercent)
+        )
+        #expect(settledWithoutHold.powerDeliveryState == .normal)
+    }
+
+    @Test
+    func reductionTransitionsToHoldAfterTargetFlowBecomesCalm() {
+        var tracker = PowerStateTracker(configuration: configuration)
+
+        _ = tracker.resolve(
+            assistSnapshot(at: 0, batteryLevel: 82)
+        )
+        _ = tracker.resolve(
+            assistSnapshot(at: 15, batteryLevel: 82)
+        )
+        let reachedTarget = tracker.resolve(
+            calmSnapshot(at: 18, batteryLevel: 80)
+        )
+        let holding = tracker.resolve(
+            calmSnapshot(at: 30, batteryLevel: 80)
+        )
+
+        #expect(
+            reachedTarget.managedChargingState
+                == .reducingToLimit(targetPercent: 80)
+        )
+        #expect(
+            holding.managedChargingState
+                == .holdingAtLimit(targetPercent: 80)
+        )
+        #expect(holding.externalPowerState == .holding)
+    }
+
+    @Test
+    func inconsistentBatterySensorsCannotConfirmAChargerWarning() {
+        var tracker = PowerStateTracker(configuration: configuration)
+
+        func inconsistentSnapshot(at seconds: TimeInterval)
+            -> TelemetrySnapshot {
+            makeTelemetrySnapshot(
+                timestamp: date(seconds),
+                batteryLevel: 80,
+                batteryCurrentA: -2.75,
+                batteryPowerW: 0,
+                adapterInputPowerW: 11.5,
+                systemLoadW: 16.1,
+                adapterMaxPowerW: 100,
+                chargingPolicyStatus: .manualLimit(targetPercent: 80)
+            )
+        }
+
+        _ = tracker.resolve(inconsistentSnapshot(at: 0))
+        _ = tracker.resolve(inconsistentSnapshot(at: 10))
+        let snapshot = inconsistentSnapshot(at: 15)
+        let resolved = tracker.resolve(snapshot)
+        let diagnostics = snapshot.diagnostics(resolvedState: resolved)
+
+        #expect(snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(!snapshot.hasCorroboratedPowerDeliveryShortfall)
+        #expect(resolved.powerDeliveryState == .unknown)
+        #expect(resolved.confirmedShortfall == nil)
+        #expect(
+            snapshot.statusHeadline(resolvedState: resolved)
+                == L10n.text("status.externalPowerConnected")
+        )
+        #expect(
+            !diagnostics.contains {
+                TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
+            }
+        )
+    }
+
     @Test
     func confirmedAdapterShortfallIsNotCalledLimitReduction() {
         var tracker = PowerStateTracker(configuration: configuration)
@@ -230,6 +392,58 @@ struct PowerStateTrackerTests {
                     "status.subheadline.optimizedCharging.transientAssist"
                 )
         )
+    }
+
+    @Test
+    func optimizedActiveDoesNotBecomeAShortfallWithoutClearEvidence() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let policy = ObservedChargingPolicyStatus.optimizedCharging
+
+        _ = tracker.resolve(assistSnapshot(at: 0, policy: policy))
+        _ = tracker.resolve(assistSnapshot(at: 10, policy: policy))
+        let snapshot = assistSnapshot(at: 15, policy: policy)
+        let resolved = tracker.resolve(snapshot)
+        let diagnostics = snapshot.diagnostics(resolvedState: resolved)
+
+        #expect(resolved.managedChargingState == .optimizedActive)
+        #expect(resolved.powerDeliveryState == .normal)
+        #expect(resolved.confirmedShortfall == nil)
+        #expect(
+            snapshot.statusHeadline(resolvedState: resolved)
+                == L10n.text("status.optimizedCharging.active")
+        )
+        #expect(
+            !diagnostics.contains {
+                TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
+            }
+        )
+    }
+
+    @Test
+    func clearAdapterSaturationCanCoexistWithOptimizedCharging() {
+        var tracker = PowerStateTracker(configuration: configuration)
+
+        func saturatedSnapshot(at seconds: TimeInterval)
+            -> TelemetrySnapshot {
+            makeTelemetrySnapshot(
+                timestamp: date(seconds),
+                batteryLevel: 76,
+                batteryCurrentA: -1.6,
+                batteryPowerW: 20,
+                adapterInputPowerW: 20,
+                systemLoadW: 40,
+                adapterMaxPowerW: 20,
+                chargingPolicyStatus: .optimizedCharging
+            )
+        }
+
+        _ = tracker.resolve(saturatedSnapshot(at: 0))
+        _ = tracker.resolve(saturatedSnapshot(at: 10))
+        let resolved = tracker.resolve(saturatedSnapshot(at: 15))
+
+        #expect(resolved.managedChargingState == .optimizedActive)
+        #expect(resolved.powerDeliveryState == .sustainedShortfall)
+        #expect(resolved.confirmedShortfall != nil)
     }
 
     @Test
@@ -314,13 +528,15 @@ struct PowerStateTrackerTests {
             firstCalmSnapshot.statusSubheadline(
                 resolvedState: firstCalm
             ) == L10n.tr(
-                "status.subheadline.deficit",
-                Formatters.power(18)
+                "status.subheadline.inputVsLoad",
+                Formatters.power(20),
+                Formatters.power(38)
             )
         )
         #expect(
             firstCalmDiagnostics.contains {
-                $0.title == L10n.text("diag.slowCharger.title")
+                $0.title
+                    == L10n.text("diag.powerDeliveryShortfall.title")
             }
         )
         #expect(
@@ -615,7 +831,7 @@ struct PowerStateTrackerTests {
         )
     }
 
-    private func negotiatedLowAssistSnapshot(
+    private func modestShortfallSnapshot(
         at seconds: TimeInterval
     ) -> TelemetrySnapshot {
         makeTelemetrySnapshot(

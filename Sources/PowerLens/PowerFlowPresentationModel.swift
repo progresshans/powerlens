@@ -59,6 +59,11 @@ struct PowerFlowRouteModel: Equatable, Sendable {
 }
 
 struct PowerFlowPresentationModel: Equatable, Sendable {
+    private struct FlowPowerEstimate {
+        let value: Double
+        let isEstimated: Bool
+    }
+
     let state: PowerFlowDiagramState
     let statusTitle: String
     let inputPower: Double
@@ -68,6 +73,7 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
     let externalToSystemPower: Double
     let externalToBatteryPower: Double
     let batteryToSystemPower: Double
+    let usesEstimatedContributions: Bool
     let routes: [PowerFlowRouteModel]
 
     init(snapshot: TelemetrySnapshot) {
@@ -79,13 +85,20 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             inferredBatteryAssist: inferredBatteryAssist
         )
         let batteryAssist = loadPower > 0
-            ? min(resolvedBatteryAssist, loadPower)
-            : resolvedBatteryAssist
+            ? min(resolvedBatteryAssist.value, loadPower)
+            : resolvedBatteryAssist.value
+        let batteryAssistIsEstimated =
+            resolvedBatteryAssist.isEstimated
+                || !Self.isApproximatelyEqual(
+                    batteryAssist,
+                    resolvedBatteryAssist.value
+                )
         let inferredChargePower = max(inputPower - loadPower, 0)
-        let chargePower = Self.resolveChargePower(
+        let resolvedChargePower = Self.resolveChargePower(
             snapshot: snapshot,
             inferredChargePower: inferredChargePower
         )
+        let chargePower = resolvedChargePower.value
         let state = Self.resolveState(
             snapshot: snapshot,
             batteryAssist: batteryAssist,
@@ -106,6 +119,43 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             loadPower: loadPower,
             batteryAssist: batteryAssist
         )
+        let diagramInputPower: Double?
+        switch state {
+        case .underpowered, .holding, .directPower:
+            diagramInputPower = snapshot.systemLoadW == nil
+                ? snapshot.adapterInputPowerW
+                : externalToSystemPower
+        case .charging:
+            diagramInputPower = snapshot.systemLoadW == nil
+                ? snapshot.adapterInputPowerW
+                : externalToSystemPower + externalToBatteryPower
+        case .discharging:
+            diagramInputPower = nil
+        }
+        let inputContributionIsEstimated = Self.isEstimatedContribution(
+            diagramInputPower,
+            comparedWith: snapshot.adapterInputPowerW
+        )
+        let batteryContributionIsEstimated: Bool
+        switch state {
+        case .underpowered:
+            batteryContributionIsEstimated = batteryAssistIsEstimated
+        case .discharging:
+            batteryContributionIsEstimated =
+                snapshot.hasConflictingBatteryPowerMeasurements
+                    || Self.isEstimatedContribution(
+                        batteryToSystemPower,
+                        comparedWith: snapshot.measuredBatteryDischargeW
+                    )
+        case .holding, .directPower, .charging:
+            batteryContributionIsEstimated = false
+        }
+        let chargeContributionIsEstimated =
+            state == .charging && resolvedChargePower.isEstimated
+        let usesEstimatedContributions =
+            inputContributionIsEstimated
+                || batteryContributionIsEstimated
+                || chargeContributionIsEstimated
 
         self.state = state
         // The flow badge describes the latest physical route only. Managed
@@ -118,12 +168,17 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         self.externalToSystemPower = externalToSystemPower
         self.externalToBatteryPower = externalToBatteryPower
         self.batteryToSystemPower = batteryToSystemPower
+        self.usesEstimatedContributions = usesEstimatedContributions
         self.routes = Self.routes(
             state: state,
             snapshot: snapshot,
-            loadPower: loadPower,
+            diagramInputPower: diagramInputPower,
+            inputContributionIsEstimated: inputContributionIsEstimated,
             batteryToSystemPower: batteryToSystemPower,
-            externalToBatteryPower: externalToBatteryPower
+            batteryContributionIsEstimated:
+                batteryContributionIsEstimated,
+            externalToBatteryPower: externalToBatteryPower,
+            chargeContributionIsEstimated: chargeContributionIsEstimated
         )
     }
 
@@ -154,37 +209,69 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
     private static func resolveBatteryAssist(
         snapshot: TelemetrySnapshot,
         inferredBatteryAssist: Double
-    ) -> Double {
+    ) -> FlowPowerEstimate {
         switch snapshot.batteryFlowEvidence {
         case .discharging:
+            if snapshot.hasConflictingBatteryPowerMeasurements
+                || snapshot.hasConflictingDischargePowerBalance {
+                return FlowPowerEstimate(
+                    value: inferredBatteryAssist,
+                    isEstimated: true
+                )
+            }
             if let measuredBatteryDischargeW =
                 snapshot.measuredBatteryDischargeW {
-                return measuredBatteryDischargeW
+                return FlowPowerEstimate(
+                    value: measuredBatteryDischargeW,
+                    isEstimated: false
+                )
             }
-            return inferredBatteryAssist
+            return FlowPowerEstimate(
+                value: inferredBatteryAssist,
+                isEstimated: true
+            )
         case .unavailable:
             // Compatible telemetry has no direct battery-flow measurements,
             // so retain the input/load fallback.
-            return inferredBatteryAssist
+            return FlowPowerEstimate(
+                value: inferredBatteryAssist,
+                isEstimated: true
+            )
         case .charging, .calm, .conflicted:
             // Direct measurements take precedence over a non-atomic
             // input/load difference.
-            return 0
+            return FlowPowerEstimate(
+                value: 0,
+                isEstimated: snapshot.batteryFlowEvidence == .conflicted
+            )
         }
     }
 
     private static func resolveChargePower(
         snapshot: TelemetrySnapshot,
         inferredChargePower: Double
-    ) -> Double {
+    ) -> FlowPowerEstimate {
         guard snapshot.batteryFlowEvidence == .charging else {
-            return 0
+            return FlowPowerEstimate(value: 0, isEstimated: false)
+        }
+
+        if snapshot.hasConflictingBatteryPowerMeasurements {
+            return FlowPowerEstimate(
+                value: inferredChargePower,
+                isEstimated: true
+            )
         }
 
         if let measuredBatteryChargeW = snapshot.measuredBatteryChargeW {
-            return measuredBatteryChargeW
+            return FlowPowerEstimate(
+                value: measuredBatteryChargeW,
+                isEstimated: false
+            )
         }
-        return inferredChargePower
+        return FlowPowerEstimate(
+            value: inferredChargePower,
+            isEstimated: true
+        )
     }
 
     private static func batteryToSystemPower(
@@ -205,20 +292,29 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
     private static func routes(
         state: PowerFlowDiagramState,
         snapshot: TelemetrySnapshot,
-        loadPower: Double,
+        diagramInputPower: Double?,
+        inputContributionIsEstimated: Bool,
         batteryToSystemPower: Double,
-        externalToBatteryPower: Double
+        batteryContributionIsEstimated: Bool,
+        externalToBatteryPower: Double,
+        chargeContributionIsEstimated: Bool
     ) -> [PowerFlowRouteModel] {
         switch state {
         case .underpowered:
             return [
                 PowerFlowRouteModel(
-                    source: inputEndpoint(snapshot),
+                    source: inputEndpoint(
+                        value: diagramInputPower,
+                        isEstimated: inputContributionIsEstimated
+                    ),
                     target: systemEndpoint(snapshot),
                     role: .input
                 ),
                 PowerFlowRouteModel(
-                    source: batteryEndpoint(value: Formatters.power(batteryToSystemPower)),
+                    source: batteryEndpoint(
+                        value: batteryToSystemPower,
+                        isEstimated: batteryContributionIsEstimated
+                    ),
                     target: systemEndpoint(snapshot),
                     role: .battery
                 ),
@@ -226,28 +322,43 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         case .discharging:
             return [
                 PowerFlowRouteModel(
-                    source: batteryEndpoint(value: Formatters.power(loadPower)),
-                    target: systemEndpoint(value: Formatters.power(loadPower)),
+                    source: batteryEndpoint(
+                        value: batteryToSystemPower,
+                        isEstimated: batteryContributionIsEstimated
+                    ),
+                    target: systemEndpoint(snapshot),
                     role: .battery
                 )
             ]
         case .charging:
             return [
                 PowerFlowRouteModel(
-                    source: inputEndpoint(snapshot),
+                    source: inputEndpoint(
+                        value: diagramInputPower,
+                        isEstimated: inputContributionIsEstimated
+                    ),
                     target: systemEndpoint(snapshot),
                     role: .input
                 ),
                 PowerFlowRouteModel(
-                    source: inputEndpoint(snapshot),
-                    target: batteryChargeEndpoint(value: Formatters.power(externalToBatteryPower)),
+                    source: inputEndpoint(
+                        value: diagramInputPower,
+                        isEstimated: inputContributionIsEstimated
+                    ),
+                    target: batteryChargeEndpoint(
+                        value: externalToBatteryPower,
+                        isEstimated: chargeContributionIsEstimated
+                    ),
                     role: .charge
                 ),
             ]
         case .holding, .directPower:
             return [
                 PowerFlowRouteModel(
-                    source: inputEndpoint(snapshot),
+                    source: inputEndpoint(
+                        value: diagramInputPower,
+                        isEstimated: inputContributionIsEstimated
+                    ),
                     target: systemEndpoint(snapshot),
                     role: .input
                 )
@@ -256,16 +367,15 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
     }
 
     private static func inputEndpoint(
-        _ snapshot: TelemetrySnapshot
+        value: Double?,
+        isEstimated: Bool
     ) -> PowerFlowEndpointModel {
-        // Endpoint cards stay aligned with the raw dashboard metrics. The
-        // battery-flow direction can be more trustworthy than a non-atomic
-        // input/load pair, but we must not fabricate an exact adapter reading
-        // merely to make those independently sampled values add up.
         PowerFlowEndpointModel(
             title: L10n.text("ui.metric.input"),
-            value: snapshot.adapterInputPowerW.map(Formatters.power)
-                ?? L10n.text("common.none"),
+            value: formattedContribution(
+                value,
+                isEstimated: isEstimated
+            ),
             systemImage: "powerplug.fill",
             role: .input
         )
@@ -280,30 +390,64 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         )
     }
 
-    private static func systemEndpoint(value: String) -> PowerFlowEndpointModel {
-        PowerFlowEndpointModel(
-            title: L10n.text("ui.metric.systemLoad"),
-            value: value,
-            systemImage: "waveform.path.ecg",
-            role: .system
-        )
-    }
-
-    private static func batteryEndpoint(value: String) -> PowerFlowEndpointModel {
+    private static func batteryEndpoint(
+        value: Double,
+        isEstimated: Bool
+    ) -> PowerFlowEndpointModel {
         PowerFlowEndpointModel(
             title: L10n.text("ui.metric.battery"),
-            value: value,
+            value: formattedContribution(
+                value,
+                isEstimated: isEstimated
+            ),
             systemImage: "battery.100",
             role: .battery
         )
     }
 
-    private static func batteryChargeEndpoint(value: String) -> PowerFlowEndpointModel {
+    private static func batteryChargeEndpoint(
+        value: Double,
+        isEstimated: Bool
+    ) -> PowerFlowEndpointModel {
         PowerFlowEndpointModel(
             title: L10n.text("ui.flow.charging"),
-            value: value,
+            value: formattedContribution(
+                value,
+                isEstimated: isEstimated
+            ),
             systemImage: "battery.100",
             role: .charge
         )
+    }
+
+    private static func formattedContribution(
+        _ value: Double?,
+        isEstimated: Bool
+    ) -> String {
+        guard let value else {
+            return L10n.text("common.none")
+        }
+        let formatted = Formatters.power(value)
+        return isEstimated ? "≈\(formatted)" : formatted
+    }
+
+    private static func isEstimatedContribution(
+        _ contribution: Double?,
+        comparedWith measurement: Double?
+    ) -> Bool {
+        guard let contribution else {
+            return false
+        }
+        guard let measurement else {
+            return true
+        }
+        return !isApproximatelyEqual(contribution, measurement)
+    }
+
+    private static func isApproximatelyEqual(
+        _ lhs: Double,
+        _ rhs: Double
+    ) -> Bool {
+        abs(lhs - rhs) <= 0.75
     }
 }

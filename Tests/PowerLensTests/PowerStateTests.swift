@@ -59,7 +59,7 @@ struct PowerStateTests {
     }
 
     @Test
-    func negotiatedLowConditionTreatsPositiveBatteryPowerAsBatteryAssist() {
+    func lowInputRelativeToRatingIsObservedWithoutInferringItsCause() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: nil,
             batteryPowerW: 3.0,
@@ -68,20 +68,34 @@ struct PowerStateTests {
             adapterMaxPowerW: 97
         )
 
-        #expect(snapshot.hasNegotiatedLowCondition)
+        #expect(snapshot.hasLowInputRelativeToAdapterRating)
     }
 
     @Test
-    func negotiatedLowConditionDoesNotTreatChargingPowerAsBatteryAssist() {
+    func highInputRelativeToRatingIsNotCalledLowInput() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: nil,
             batteryPowerW: -3.0,
-            adapterInputPowerW: 20,
-            systemLoadW: 21,
+            adapterInputPowerW: 60,
+            systemLoadW: 61,
             adapterMaxPowerW: 97
         )
 
-        #expect(!snapshot.hasNegotiatedLowCondition)
+        #expect(!snapshot.hasLowInputRelativeToAdapterRating)
+    }
+
+    @Test
+    func impossibleCurrentOnlyPowerBalanceCannotCorroborateAShortfall() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryCurrentA: -2.75,
+            batteryPowerW: nil,
+            adapterInputPowerW: 11.5,
+            systemLoadW: 16.1,
+            adapterMaxPowerW: 100
+        )
+
+        #expect(snapshot.hasConflictingDischargePowerBalance)
+        #expect(!snapshot.hasCorroboratedPowerDeliveryShortfall)
     }
 
     @Test
@@ -99,6 +113,6 @@ struct PowerStateTests {
         #expect(!snapshot.isHoldingBatteryLevelCandidate)
         #expect(snapshot.externalPowerState == .connected)
         #expect(!snapshot.shouldSuppressPowerDeliveryWarnings)
-        #expect(snapshot.hasSlowChargerCondition)
+        #expect(snapshot.hasMaterialInputDeficit)
     }
 }
