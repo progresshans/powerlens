@@ -151,20 +151,23 @@ struct PowerStateTracker: Sendable {
         let flow = policySnapshot.batteryFlowEvidence
         let instantaneousManagedState =
             policySnapshot.managedChargingState
+
+        // Stabilize the policy explanation before evaluating delivery. This
+        // keeps `updateDeliveryState` as the single owner of delivery-state
+        // transitions, including both confirmation and recovery hysteresis.
+        updateManagedState(
+            candidate: instantaneousManagedState,
+            effectivePolicy: effectivePolicy,
+            at: timestamp
+        )
         let managedDischargeContext = isManagedDischargeContext(
             snapshot: policySnapshot,
             instantaneousState: instantaneousManagedState
         )
-
         updateDeliveryState(
             snapshot: policySnapshot,
             flow: flow,
             managedDischargeContext: managedDischargeContext,
-            at: timestamp
-        )
-        updateManagedState(
-            candidate: instantaneousManagedState,
-            effectivePolicy: effectivePolicy,
             at: timestamp
         )
 
@@ -172,17 +175,6 @@ struct PowerStateTracker: Sendable {
            deliveryState == .sustainedShortfall {
             stableManagedState = fallbackManagedState(for: effectivePolicy)
             clearManagedCandidate()
-        }
-
-        if stableManagedStateExplainsDischarge,
-           !policySnapshot.hasClearAdapterCapacityShortfall,
-           deliveryState != .sustainedShortfall {
-            deliveryState = .normal
-            assistSince = nil
-            shortfallEvidenceSince = nil
-            recoverySince = nil
-            uncertainSince = nil
-            confirmedShortfall = nil
         }
 
         let externalPowerState = resolveExternalPowerState(
@@ -447,16 +439,6 @@ struct PowerStateTracker: Sendable {
             return false
         }
         return !snapshot.hasClearAdapterCapacityShortfall
-    }
-
-    private var stableManagedStateExplainsDischarge: Bool {
-        switch stableManagedState {
-        case .reducingToLimit, .optimizedActive:
-            true
-        case .chargingToLimit, .holdingAtLimit, .limitConfigured,
-             .optimizedCharging, .optimizedHold, nil:
-            false
-        }
     }
 
     private mutating func updateManagedState(

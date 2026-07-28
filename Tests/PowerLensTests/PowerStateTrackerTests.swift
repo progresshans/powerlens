@@ -280,7 +280,11 @@ struct PowerStateTrackerTests {
             settledWithoutHold.managedChargingState
                 == .limitConfigured(targetPercent: targetPercent)
         )
-        #expect(settledWithoutHold.powerDeliveryState == .normal)
+        #expect(
+            settledWithoutHold.powerDeliveryState
+                == .transientBatteryAssist
+        )
+        #expect(settledWithoutHold.confirmedShortfall == nil)
     }
 
     @Test
@@ -417,6 +421,33 @@ struct PowerStateTrackerTests {
                 TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
             }
         )
+    }
+
+    @Test
+    func optimizedManagementWinsAtItsConfirmationBoundary() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let policy = ObservedChargingPolicyStatus.optimizedCharging
+
+        _ = tracker.resolve(calmSnapshot(at: 0, policy: policy))
+        let holding = tracker.resolve(
+            calmSnapshot(at: 12, policy: policy)
+        )
+        let firstAssist = tracker.resolve(
+            assistSnapshot(at: 15, policy: policy)
+        )
+        _ = tracker.resolve(assistSnapshot(at: 24, policy: policy))
+        let boundary = tracker.resolve(
+            assistSnapshot(at: 30, policy: policy)
+        )
+
+        #expect(holding.managedChargingState == .optimizedHold)
+        #expect(
+            firstAssist.powerDeliveryState
+                == .transientBatteryAssist
+        )
+        #expect(boundary.managedChargingState == .optimizedActive)
+        #expect(boundary.powerDeliveryState == .normal)
+        #expect(boundary.confirmedShortfall == nil)
     }
 
     @Test
