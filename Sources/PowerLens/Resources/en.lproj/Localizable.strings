@@ -180,12 +180,13 @@
 "ui.flow.holding" = "Holding";
 "ui.flow.directPower" = "System Covered";
 "ui.flow.batteryOnly" = "Battery Power";
+"ui.flow.unknown" = "Flow Updating";
 "ui.flow.batteryAssistDetail" = "The battery can assist transient load even while an adapter is connected.";
 "ui.flow.chargingDetail" = "The adapter is covering system load and sending remaining power into the battery.";
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
 "ui.flow.batteryOnlyDetail" = "System load is being covered only by battery power.";
 "ui.flow.balanced" = "Input power and system load are nearly balanced right now.";
-"ui.flow.estimateNotice" = "Flow contributions are estimated from sensors that update at different times.";
+"ui.flow.independentReadingsNotice" = "Sensor readings update independently, so totals may differ. ≈ marks a value derived from other readings.";
 "ui.highEnergyApp.label" = "High Energy Usage";
 "ui.highEnergyApp.unknown" = "Unknown App";
 

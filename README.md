@@ -64,8 +64,9 @@ The popover is the fast check: battery level, power-flow diagram, diagnostics,
 high-energy app, battery snapshot, and raw power details. The flow diagram
 distinguishes adapter-only power, battery-only power, battery assist, charging,
 and holding-current states. When independently sampled sensors do not line up,
-the diagram keeps its additive layout and marks balanced contribution estimates
-with `≈`; raw readings remain available in Power Details.
+the diagram keeps its additive layout and preserves the observed readings
+instead of forcing the totals to balance. It discloses the timing mismatch and
+marks values derived from other readings with `≈`.
 
 ### Dashboard
 

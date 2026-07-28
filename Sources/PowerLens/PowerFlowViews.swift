@@ -71,9 +71,9 @@ struct PowerFlowCard: View {
                 density: density
             )
 
-            if model.usesEstimatedContributions {
+            if model.showsIndependentReadingsNotice {
                 Label(
-                    L10n.text("ui.flow.estimateNotice"),
+                    L10n.text("ui.flow.independentReadingsNotice"),
                     systemImage: "info.circle"
                 )
                 .font(.caption2)
