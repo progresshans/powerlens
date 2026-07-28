@@ -99,6 +99,43 @@ struct PowerStateTests {
     }
 
     @Test
+    func missingVoltageMakesMateriallyMismatchedBatterySignalsUncorroborated() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryVoltageV: nil,
+            batteryCurrentA: -2.75,
+            batteryPowerW: 0,
+            batteryPowerSource: .directTelemetry,
+            adapterInputPowerW: 11.5,
+            systemLoadW: 16.1,
+            adapterMaxPowerW: 100
+        )
+
+        #expect(snapshot.batteryFlowEvidence == .discharging)
+        #expect(snapshot.measuredBatteryDischargeW == nil)
+        #expect(snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(!snapshot.hasCorroboratedPowerDeliveryShortfall)
+    }
+
+    @Test
+    func missingVoltageKeepsCoherentDirectBatteryPowerCorroborated() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryVoltageV: nil,
+            batteryCurrentA: -1.5,
+            batteryPowerW: 18,
+            batteryPowerSource: .directTelemetry,
+            adapterInputPowerW: 20,
+            systemLoadW: 38,
+            adapterMaxPowerW: 20
+        )
+
+        #expect(snapshot.batteryFlowEvidence == .discharging)
+        #expect(snapshot.measuredBatteryDischargeW == 18)
+        #expect(!snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(!snapshot.hasConflictingDischargePowerBalance)
+        #expect(snapshot.hasCorroboratedPowerDeliveryShortfall)
+    }
+
+    @Test
     func highBatteryAssistIsNotTreatedAsHoldingBatteryLevel() {
         let snapshot = makeTelemetrySnapshot(
             batteryLevel: 100,

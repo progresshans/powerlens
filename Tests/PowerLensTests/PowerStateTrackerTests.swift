@@ -315,8 +315,10 @@ struct PowerStateTrackerTests {
         #expect(holding.externalPowerState == .holding)
     }
 
-    @Test
-    func inconsistentBatterySensorsCannotConfirmAChargerWarning() {
+    @Test(arguments: [Double?.some(12.25), nil])
+    func inconsistentBatterySensorsCannotConfirmAChargerWarning(
+        batteryVoltageV: Double?
+    ) {
         var tracker = PowerStateTracker(configuration: configuration)
 
         func inconsistentSnapshot(at seconds: TimeInterval)
@@ -324,8 +326,10 @@ struct PowerStateTrackerTests {
             makeTelemetrySnapshot(
                 timestamp: date(seconds),
                 batteryLevel: 80,
+                batteryVoltageV: batteryVoltageV,
                 batteryCurrentA: -2.75,
                 batteryPowerW: 0,
+                batteryPowerSource: .directTelemetry,
                 adapterInputPowerW: 11.5,
                 systemLoadW: 16.1,
                 adapterMaxPowerW: 100,
@@ -341,6 +345,7 @@ struct PowerStateTrackerTests {
 
         #expect(snapshot.hasConflictingBatteryPowerMeasurements)
         #expect(!snapshot.hasCorroboratedPowerDeliveryShortfall)
+        #expect(resolved.batteryFlowEvidence == .discharging)
         #expect(resolved.powerDeliveryState == .unknown)
         #expect(resolved.confirmedShortfall == nil)
         #expect(

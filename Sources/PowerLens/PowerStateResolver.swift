@@ -147,10 +147,23 @@ extension TelemetrySnapshot {
         }
 
         guard let batteryPowerW,
-              let batteryCurrentA,
-              let batteryVoltageV,
-              batteryVoltageV > 0 else {
+              let batteryCurrentA else {
             return batteryFlowEvidence == .conflicted
+        }
+
+        guard let batteryVoltageV, batteryVoltageV > 0 else {
+            // Keep the current direction available to the live flow diagram,
+            // but do not let signals that disagree about material battery flow
+            // corroborate a warning when voltage is unavailable and their
+            // magnitudes cannot be compared.
+            let powerShowsMaterialFlow =
+                abs(batteryPowerW)
+                    > PowerStateThresholds.holdBatteryPowerToleranceW
+            let currentShowsMaterialFlow =
+                abs(batteryCurrentA)
+                    > PowerStateThresholds.holdBatteryCurrentToleranceA
+            return powerShowsMaterialFlow != currentShowsMaterialFlow
+                || batteryFlowEvidence == .conflicted
         }
 
         let currentDerivedPowerW = -batteryCurrentA * batteryVoltageV
