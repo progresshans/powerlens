@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a focused improvement to PowerLens.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What power or battery question is difficult to answer today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe what PowerLens should show or do.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or alternatives
+      description: Include relevant macOS behavior, sensor limitations, or alternatives considered.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Data and platform impact
+      options:
+        - label: This may require storing new local data.
+        - label: This may require a new network request.
+        - label: This may depend on an unsupported/private macOS interface.

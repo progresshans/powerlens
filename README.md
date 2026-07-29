@@ -104,17 +104,20 @@ Recent telemetry is stored locally in a SQLite history, so PowerLens can show
 trends and comparisons without sending your data anywhere. The Insights view
 offers selectable time ranges (24 hours, 7 days, 30 days, or all), summary
 statistics, interactive charts you can scrub, and a long-term battery health and
-charge-cycle trend. Old samples are pruned automatically so the database stays
-bounded, and you can export the history as CSV or JSON.
+charge-cycle trend. You choose how long minute-level samples remain. Older
+samples can be rolled up hourly or daily; choosing **Don't keep** also removes
+older rollups and battery-health and cycle history outside the full-detail
+window, plus app, adapter, and battery metadata that retained samples no longer
+reference. PowerLens asks for confirmation before applying this irreversible
+change.
+Hourly or daily rollups retain battery-health states for the long-term health
+trend. You can export retained raw history as CSV or JSON.
 
 ## Requirements
 
 - A Mac with Apple silicon (M1 or later). Intel Macs are not supported.
-- macOS 13.0 or later.
+- macOS 26.0 or later.
 - Tested environment: macOS 26.
-- Release validation currently focuses on macOS 26. PowerLens may run on
-  earlier target-supported versions, but behavior can vary by macOS release and
-  hardware model.
 - A battery-equipped Mac for battery telemetry.
 - Xcode command line tools or Xcode for building from source.
 
@@ -163,6 +166,17 @@ the script.
 
 Release packaging notes for maintainers live in
 [Packaging/README.md](Packaging/README.md).
+
+## Contributing and Security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+Ordinary changes target `develop`; maintainers promote reviewed releases from
+`develop` to `main` before creating a version tag.
+
+Report suspected vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/progresshans/powerlens/security/advisories/new)
+instead of opening a public issue. The response process is documented in
+[SECURITY.md](SECURITY.md).
 
 ## Privacy
 
