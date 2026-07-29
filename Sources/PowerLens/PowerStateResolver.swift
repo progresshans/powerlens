@@ -2,6 +2,8 @@ import Foundation
 
 enum ManagedChargingState: Equatable, Sendable {
     case chargingToLimit(targetPercent: Int)
+    case chargingBeyondLimit(targetPercent: Int)
+    case aboveConfiguredLimit(targetPercent: Int)
     case reducingToLimit(targetPercent: Int)
     case holdingAtLimit(targetPercent: Int)
     case limitConfigured(targetPercent: Int)
@@ -14,7 +16,8 @@ enum ManagedChargingState: Equatable, Sendable {
         case .reducingToLimit, .holdingAtLimit, .optimizedHold,
              .optimizedActive:
             true
-        case .chargingToLimit, .limitConfigured, .optimizedCharging:
+        case .chargingToLimit, .chargingBeyondLimit,
+             .aboveConfiguredLimit, .limitConfigured, .optimizedCharging:
             false
         }
     }
@@ -23,8 +26,20 @@ enum ManagedChargingState: Equatable, Sendable {
         switch self {
         case .holdingAtLimit, .optimizedHold:
             true
-        case .chargingToLimit, .reducingToLimit, .limitConfigured,
+        case .chargingToLimit, .chargingBeyondLimit,
+             .aboveConfiguredLimit, .reducingToLimit, .limitConfigured,
              .optimizedCharging, .optimizedActive:
+            false
+        }
+    }
+
+    var isAboveSelectedLimit: Bool {
+        switch self {
+        case .chargingBeyondLimit, .aboveConfiguredLimit:
+            true
+        case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
+             .limitConfigured, .optimizedCharging, .optimizedHold,
+             .optimizedActive:
             false
         }
     }
@@ -413,9 +428,26 @@ extension TelemetrySnapshot {
                 $0 <= Double(targetPercent)
                     + PowerStateThresholds.manualLimitUpperHoldTolerancePercent
             } ?? false
+            let isAboveSelectedLimit = targetPercent < 100
+                && (batteryLevel.map {
+                    $0 > Double(targetPercent)
+                        + PowerStateThresholds
+                            .manualLimitUpperHoldTolerancePercent
+                } ?? false)
 
-            if isBatteryChargingForDisplay, isAtOrBelowSelectedLimit {
-                return .chargingToLimit(targetPercent: targetPercent)
+            // The policy reader proves that a limit is configured, not that
+            // macOS is enforcing it in this sample. Describe the observed
+            // level and physical flow without guessing whether calibration or
+            // an explicit "Charge to Full Now" request caused the override.
+            if isBatteryChargingForDisplay {
+                if isAtOrBelowSelectedLimit {
+                    return .chargingToLimit(targetPercent: targetPercent)
+                }
+                if isAboveSelectedLimit {
+                    return .chargingBeyondLimit(
+                        targetPercent: targetPercent
+                    )
+                }
             }
 
             if hasClearAdapterCapacityShortfall {
@@ -441,6 +473,12 @@ extension TelemetrySnapshot {
                     || canInferManualLimitHoldWithoutBatteryFlowMeasurements
             ), isNearSelectedLimit {
                 return .holdingAtLimit(targetPercent: targetPercent)
+            }
+
+            if isAboveSelectedLimit {
+                return .aboveConfiguredLimit(
+                    targetPercent: targetPercent
+                )
             }
 
             return .limitConfigured(targetPercent: targetPercent)

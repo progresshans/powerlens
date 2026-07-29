@@ -46,6 +46,23 @@ telemetry samples, and the frontmost high energy usage app name/bundle
 identifier. This data stays on the Mac unless you manually share, back up, or
 sync that directory.
 
+The History settings control retention:
+
+- full-detail telemetry samples remain for the selected window
+- hourly or daily long-term storage replaces expired samples with aggregate
+  power data, removes unreferenced app and adapter rows, and retains
+  battery-health states for the long-term health trend; the battery serial
+  number or hardware battery identifier remains in the local history database
+  for as long as those states are retained
+- **Don't keep** deletes expired samples and rollups, then removes app, adapter,
+  battery-state, and battery rows that no retained sample still references
+- **Forever** keeps full-detail samples and does not run retention pruning
+
+Confirming a retention change schedules a purge immediately. This removes the
+affected records from PowerLens, but it is not an immediate secure-erase
+operation: SQLite may keep freed pages until its incremental vacuum reclaims
+them.
+
 ## Delete Local Data
 
 To remove PowerLens local data:

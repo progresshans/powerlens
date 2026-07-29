@@ -227,7 +227,7 @@ struct ChargingPolicyAwarenessTests {
     }
 
     @Test
-    func manualLimitHoldUsesFivePercentLowerAndOnePercentUpperRange() {
+    func manualLimitHoldUsesToleranceAndReportsLevelsBeyondIt() {
         let lowerBoundary = calmSnapshot(
             batteryLevel: 80,
             targetPercent: 85
@@ -259,7 +259,7 @@ struct ChargingPolicyAwarenessTests {
         )
         #expect(
             aboveRange.managedChargingState
-                == .limitConfigured(targetPercent: 85)
+                == .aboveConfiguredLimit(targetPercent: 85)
         )
     }
 
@@ -318,33 +318,156 @@ struct ChargingPolicyAwarenessTests {
     }
 
     @Test
-    func chargingAboveManualLimitIsNotAttributedToTheLimit() {
+    func chargingAboveManualLimitReportsObservedFlowWithoutTargetClaim() {
         let snapshot = makeTelemetrySnapshot(
-            batteryLevel: 90,
+            batteryLevel: 99,
             isCharging: true,
-            timeToFullMinutes: 20,
-            batteryCurrentA: 1,
-            batteryPowerW: -12,
-            adapterInputPowerW: 22,
-            systemLoadW: 10,
+            timeToFullMinutes: 0,
+            batteryCurrentA: 0.74,
+            batteryPowerW: -9.4,
+            adapterInputPowerW: 20.5,
+            systemLoadW: 10.4,
             chargingPolicyStatus: .manualLimit(targetPercent: 80)
         )
 
         #expect(
             snapshot.managedChargingState
-                == .limitConfigured(targetPercent: 80)
+                == .chargingBeyondLimit(targetPercent: 80)
         )
         #expect(
             snapshot.statusHeadline
-                == L10n.text("status.chargingFromExternalPower")
+                == L10n.tr(
+                    "status.manualLimit.chargingBeyond",
+                    Formatters.percent(80)
+                )
         )
         #expect(
             snapshot.statusSubheadline
-                != L10n.text("status.subheadline.manualLimit.charging")
+                == L10n.text(
+                    "status.subheadline.manualLimit.chargingBeyond"
+                )
+        )
+        #expect(!snapshot.shouldSuppressPowerDeliveryWarnings)
+        #expect(
+            snapshot.managedChargingDiagnosticTitle
+                == snapshot.statusHeadline
         )
         #expect(
-            PowerFlowPresentationModel(snapshot: snapshot).statusTitle
-                == L10n.text("ui.flow.charging")
+            snapshot.managedChargingDiagnosticMessage
+                == L10n.text(
+                    "diag.manualLimit.chargingBeyond.message"
+                )
+        )
+
+        let flow = PowerFlowPresentationModel(snapshot: snapshot)
+        #expect(flow.state == .charging)
+        #expect(flow.routes.map(\.role) == [.input, .charge])
+        #expect(flow.statusTitle == L10n.text("ui.flow.charging"))
+    }
+
+    @Test
+    func measuredChargeDetectsLimitOverrideWhenSystemFlagLags() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 99,
+            isCharging: false,
+            batteryCurrentA: 0.74,
+            batteryPowerW: -9.4,
+            adapterInputPowerW: 20.5,
+            systemLoadW: 10.4,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+
+        #expect(snapshot.batteryFlowEvidence == .charging)
+        #expect(
+            snapshot.managedChargingState
+                == .chargingBeyondLimit(targetPercent: 80)
+        )
+    }
+
+    @Test
+    func measuredDischargeRejectsStaleChargingFlagAboveLimit() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 99,
+            isCharging: true,
+            timeToFullMinutes: 10,
+            batteryCurrentA: -0.74,
+            batteryPowerW: 9.4,
+            adapterInputPowerW: 20.5,
+            systemLoadW: 29.9,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+
+        #expect(snapshot.batteryFlowEvidence == .discharging)
+        #expect(
+            snapshot.managedChargingState
+                == .reducingToLimit(targetPercent: 80)
+        )
+        #expect(
+            snapshot.statusHeadline
+                == L10n.tr(
+                    "status.manualLimit.reducing",
+                    Formatters.percent(80)
+                )
+        )
+    }
+
+    @Test
+    func hundredPercentLimitNeverClaimsATemporaryOverride() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 100,
+            isCharging: true,
+            batteryCurrentA: 0.5,
+            batteryPowerW: -6,
+            adapterInputPowerW: 16,
+            systemLoadW: 10,
+            chargingPolicyStatus: .manualLimit(targetPercent: 100)
+        )
+
+        #expect(
+            snapshot.managedChargingState
+                == .chargingToLimit(targetPercent: 100)
+        )
+    }
+
+    @Test
+    func fullBatteryAboveManualLimitKeepsAContextualExplanation() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 100,
+            isCharging: false,
+            isCharged: true,
+            batteryCurrentA: 0,
+            batteryPowerW: 0,
+            adapterInputPowerW: 10.4,
+            systemLoadW: 10.4,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+
+        #expect(
+            snapshot.managedChargingState
+                == .aboveConfiguredLimit(targetPercent: 80)
+        )
+        #expect(
+            snapshot.statusHeadline
+                == L10n.tr(
+                    "status.manualLimit.above",
+                    Formatters.percent(80)
+                )
+        )
+        #expect(
+            snapshot.statusSubheadline
+                == L10n.text("status.subheadline.manualLimit.above")
+        )
+        #expect(
+            snapshot.managedChargingState?
+                .suppressesPowerDeliveryWarnings == false
+        )
+        #expect(
+            snapshot.managedChargingDiagnosticTitle
+                == snapshot.statusHeadline
+        )
+        #expect(
+            snapshot.managedChargingDiagnosticMessage
+                == L10n.text("diag.manualLimit.above.message")
         )
     }
 

@@ -49,6 +49,40 @@ struct AppPreferencesTests {
     }
 
     @Test
+    func longTermHistoryRequiresConfirmationOnlyWhenDiscardingRetainedData() {
+        #expect(
+            LongTermResolution.requiresDestructiveConfirmation(
+                from: .hourly,
+                to: .off
+            )
+        )
+        #expect(
+            LongTermResolution.requiresDestructiveConfirmation(
+                from: .daily,
+                to: .off
+            )
+        )
+        #expect(
+            !LongTermResolution.requiresDestructiveConfirmation(
+                from: .hourly,
+                to: .daily
+            )
+        )
+        #expect(
+            !LongTermResolution.requiresDestructiveConfirmation(
+                from: .off,
+                to: .daily
+            )
+        )
+        #expect(
+            !LongTermResolution.requiresDestructiveConfirmation(
+                from: .off,
+                to: .off
+            )
+        )
+    }
+
+    @Test
     func updateChannelDefaultsToStable() {
         let defaults = UserDefaults.standard
         let previousValue = defaults.object(forKey: UpdateChannelPreference.storageKey)

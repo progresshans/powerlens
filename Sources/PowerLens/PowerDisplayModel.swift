@@ -82,8 +82,10 @@ extension TelemetrySnapshot {
                 return L10n.text(
                     "status.subheadline.optimizedCharging.transientAssist"
                 )
-            case .chargingToLimit, .reducingToLimit, .limitConfigured,
-                 .optimizedCharging, .optimizedActive, nil:
+            case .chargingToLimit, .chargingBeyondLimit,
+                 .aboveConfiguredLimit, .reducingToLimit,
+                 .limitConfigured, .optimizedCharging, .optimizedActive,
+                 nil:
                 break
             }
         }
@@ -192,6 +194,16 @@ extension TelemetrySnapshot {
                 "status.manualLimit.charging",
                 Formatters.percent(Double(targetPercent))
             )
+        case let .chargingBeyondLimit(targetPercent):
+            return L10n.tr(
+                "status.manualLimit.chargingBeyond",
+                Formatters.percent(Double(targetPercent))
+            )
+        case let .aboveConfiguredLimit(targetPercent):
+            return L10n.tr(
+                "status.manualLimit.above",
+                Formatters.percent(Double(targetPercent))
+            )
         case let .reducingToLimit(targetPercent):
             return L10n.tr(
                 "status.manualLimit.reducing",
@@ -227,6 +239,12 @@ extension TelemetrySnapshot {
         switch managedChargingState {
         case .chargingToLimit:
             return L10n.text("status.subheadline.manualLimit.charging")
+        case .chargingBeyondLimit:
+            return L10n.text(
+                "status.subheadline.manualLimit.chargingBeyond"
+            )
+        case .aboveConfiguredLimit:
+            return L10n.text("status.subheadline.manualLimit.above")
         case .reducingToLimit:
             return L10n.text("status.subheadline.manualLimit.reducing")
         case .holdingAtLimit:
@@ -263,7 +281,8 @@ extension TelemetrySnapshot {
             )
         case .optimizedActive:
             return L10n.text("status.optimizedCharging.active")
-        case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
+        case .chargingToLimit, .chargingBeyondLimit,
+             .aboveConfiguredLimit, .reducingToLimit, .holdingAtLimit,
              .optimizedCharging, .optimizedHold:
             return managedChargingHeadline(for: managedChargingState)
         }
@@ -283,6 +302,12 @@ extension TelemetrySnapshot {
         switch managedChargingState {
         case .limitConfigured:
             return L10n.text("status.subheadline.manualLimit.active")
+        case .chargingBeyondLimit:
+            return L10n.text(
+                "diag.manualLimit.chargingBeyond.message"
+            )
+        case .aboveConfiguredLimit:
+            return L10n.text("diag.manualLimit.above.message")
         case .optimizedActive:
             return L10n.text(
                 "status.subheadline.optimizedCharging.activeFlowUnknown"

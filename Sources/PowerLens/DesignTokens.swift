@@ -20,9 +20,9 @@ enum CornerRadius {
     static let xLarge: CGFloat = 22
 }
 
-/// A consistent card surface. Adopts Liquid Glass on macOS 26+, and falls back
-/// to a layered material on earlier systems down to the macOS 13 deployment
-/// target. Use this instead of ad-hoc `.quaternary.opacity(...)` backgrounds.
+/// A consistent card surface. Adopts Liquid Glass when available and retains a
+/// defensive layered-material fallback. Use this instead of ad-hoc
+/// `.quaternary.opacity(...)` backgrounds.
 struct CardSurface: ViewModifier {
     var cornerRadius: CGFloat = CornerRadius.large
 

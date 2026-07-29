@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(RawHistoryWindow.storageKey) private var rawHistoryWindow = RawHistoryWindow.defaultValue
     @AppStorage(LongTermResolution.storageKey) private var longTermResolution = LongTermResolution.defaultValue
     @SceneStorage("settings.selectedPane") private var selectedPaneRaw = SettingsPane.general.rawValue
+    @State private var isConfirmingLongTermHistoryDiscard = false
 
     private var selectedPane: SettingsPane {
         SettingsPane(rawValue: selectedPaneRaw) ?? .general
@@ -36,11 +37,31 @@ struct SettingsView: View {
         .onAppear {
             launchAtLoginController.refresh()
         }
-        .onChange(of: telemetryEnginePreference) { _ in
+        .onChange(of: telemetryEnginePreference) {
             store.refreshNow()
         }
-        .onChange(of: updateChannel) { _ in
+        .onChange(of: updateChannel) {
             softwareUpdateController.updateChannelPreferenceChanged()
+        }
+        .onChange(of: rawHistoryWindow) {
+            store.historyRetentionPreferencesChanged()
+        }
+        .onChange(of: longTermResolution) {
+            store.historyRetentionPreferencesChanged()
+        }
+        .alert(
+            L10n.text("history.longTerm.off.confirm.title"),
+            isPresented: $isConfirmingLongTermHistoryDiscard
+        ) {
+            Button(L10n.text("common.cancel"), role: .cancel) {}
+            Button(
+                L10n.text("history.longTerm.off.confirm.action"),
+                role: .destructive
+            ) {
+                longTermResolution = LongTermResolution.off.rawValue
+            }
+        } message: {
+            Text(longTermHistoryDiscardMessage)
         }
     }
 
@@ -96,8 +117,8 @@ struct SettingsView: View {
         Section {
             LabeledContent {
                 HStack(spacing: 8) {
-                    LiveDot()
-                    StatusChip(text: store.activeTelemetryEngine.displayName)
+                    LiveDot(color: telemetryStatusColor)
+                    StatusChip(text: telemetryStatusChipText)
                 }
             } label: {
                 rowLabel(L10n.text("settings.telemetry.status"), store.telemetryStatusText)
@@ -125,6 +146,18 @@ struct SettingsView: View {
     private var historySection: some View {
         Section {
             LabeledContent {
+                HStack(spacing: 8) {
+                    LiveDot(color: historyStatusColor)
+                    StatusChip(text: historyStatusChipText)
+                }
+            } label: {
+                rowLabel(
+                    L10n.text("history.status.title"),
+                    historyStatusDetailText
+                )
+            }
+
+            LabeledContent {
                 Picker(L10n.text("history.rawWindow.title"), selection: $rawHistoryWindow) {
                     ForEach(RawHistoryWindow.allCases) { window in
                         Text(window.title).tag(window.rawValue)
@@ -136,7 +169,7 @@ struct SettingsView: View {
             }
 
             LabeledContent {
-                Picker(L10n.text("history.longTerm.title"), selection: $longTermResolution) {
+                Picker(L10n.text("history.longTerm.title"), selection: longTermResolutionBinding) {
                     ForEach(LongTermResolution.allCases) { resolution in
                         Text(resolution.title).tag(resolution.rawValue)
                     }
@@ -144,7 +177,10 @@ struct SettingsView: View {
                 .labelsHidden()
                 .disabled(rawHistoryWindow == RawHistoryWindow.forever.rawValue)
             } label: {
-                rowLabel(L10n.text("history.longTerm.title"), L10n.text("history.longTerm.detail"))
+                rowLabel(
+                    L10n.text("history.longTerm.title"),
+                    longTermHistoryDetail
+                )
             }
         }
     }
@@ -244,6 +280,99 @@ struct SettingsView: View {
             get: { softwareUpdateController.automaticallyChecksForUpdates },
             set: { softwareUpdateController.automaticallyChecksForUpdates = $0 }
         )
+    }
+
+    private var longTermResolutionBinding: Binding<String> {
+        Binding(
+            get: { longTermResolution },
+            set: { proposedRawValue in
+                guard let proposed = LongTermResolution(rawValue: proposedRawValue) else {
+                    return
+                }
+                let current = LongTermResolution(rawValue: longTermResolution) ?? .daily
+
+                if LongTermResolution.requiresDestructiveConfirmation(
+                    from: current,
+                    to: proposed
+                ) {
+                    isConfirmingLongTermHistoryDiscard = true
+                    return
+                }
+
+                longTermResolution = proposed.rawValue
+            }
+        )
+    }
+
+    private var telemetryStatusChipText: String {
+        switch store.telemetryHealth {
+        case .waiting:
+            L10n.text("telemetry.live.waiting")
+        case .live:
+            store.activeTelemetryEngine.displayName
+        case .delayed:
+            L10n.text("telemetry.delayed")
+        case .unavailable:
+            L10n.text("telemetry.unavailable")
+        }
+    }
+
+    private var telemetryStatusColor: Color {
+        switch store.telemetryHealth {
+        case .waiting:
+            .gray
+        case .live:
+            .green
+        case .delayed:
+            .orange
+        case .unavailable:
+            .red
+        }
+    }
+
+    private var historyStatusChipText: String {
+        switch store.historyHealth {
+        case .checking:
+            L10n.text("history.status.checking")
+        case .available:
+            L10n.text("history.status.available")
+        case .degraded:
+            L10n.text("history.status.degraded")
+        }
+    }
+
+    private var historyStatusDetailText: String {
+        switch store.historyHealth {
+        case .checking:
+            L10n.text("history.status.checking.detail")
+        case .available:
+            L10n.text("history.status.available.detail")
+        case .degraded:
+            L10n.text("history.status.degraded.detail")
+        }
+    }
+
+    private var historyStatusColor: Color {
+        switch store.historyHealth {
+        case .checking:
+            .gray
+        case .available:
+            .green
+        case .degraded:
+            .red
+        }
+    }
+
+    private var longTermHistoryDetail: String {
+        if longTermResolution == LongTermResolution.off.rawValue {
+            return L10n.text("history.longTerm.off.detail")
+        }
+        return L10n.text("history.longTerm.detail")
+    }
+
+    private var longTermHistoryDiscardMessage: String {
+        let window = RawHistoryWindow(rawValue: rawHistoryWindow) ?? .days90
+        return L10n.tr("history.longTerm.off.confirm.message", window.title)
     }
 
     @ViewBuilder
