@@ -23,6 +23,8 @@ PowerLens uses `feature -> develop -> main -> tag` as its normal promotion path.
 
 - Open ordinary feature, bug-fix, documentation, and dependency pull requests
   against `develop`.
+- Merging a reviewed pull request into `develop` automatically publishes a
+  numbered alpha release for integration testing.
 - Treat `main` as the stable branch. Do not send ordinary feature work directly
   to `main`.
 - A maintainer promotes `develop` to `main` through a reviewed pull request.

@@ -1,7 +1,8 @@
 # PowerLens Release Checklist
 
-Use this checklist for stable and alpha releases. A release must be deliberate:
-ordinary branch pushes do not publish software.
+Use this checklist for stable and alpha releases. Merging a reviewed pull
+request into `develop` automatically publishes a numbered alpha release.
+Stable releases and any manually initiated alpha release remain deliberate.
 
 ## Code and Metadata
 
@@ -45,8 +46,12 @@ ordinary branch pushes do not publish software.
 
 ## Publication
 
-- [ ] Push an explicit `v<version>` or `v<version>-alpha.<n>` tag, or manually
-      dispatch the release workflow with the matching channel.
+- [ ] For an automatic alpha, merge the reviewed commit into `develop` and
+      confirm the workflow selected the expected base version and run-number
+      suffix.
+- [ ] For a stable or manually initiated alpha, push an explicit `v<version>` or
+      `v<version>-alpha.<n>` tag, or manually dispatch the workflow with the
+      matching channel.
 - [ ] Approve the protected `release` environment only after reviewing the
       commit, version, generated notes, and CI result.
 - [ ] Verify the GitHub Release body contains the intended CHANGELOG section.

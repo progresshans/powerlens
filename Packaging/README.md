@@ -133,7 +133,7 @@ PowerLens has two workflow layers:
   - performs an ad-hoc package smoke build without notarization and verifies
     that the PowerLens executable is exactly arm64
 - `.github/workflows/release.yml`
-  - runs on `v*` tags or an explicit manual dispatch
+  - runs on pushes to `develop`, `v*` tags, or an explicit manual dispatch
   - runs on an Apple silicon runner
   - builds an arm64 executable, then signs, notarizes, and packages the app
   - verifies that the packaged PowerLens executable is exactly arm64
@@ -141,10 +141,16 @@ PowerLens has two workflow layers:
   - regenerates the stable or alpha Sparkle appcast
   - deploys the appcast site through GitHub Pages Actions
 
+Merging a reviewed change into `develop` automatically publishes a numbered
+alpha release. The base version comes from the optional
+`POWERLENS_ALPHA_BASE_VERSION` repository variable or, when it is unset, the
+next patch after the latest stable tag. The workflow run number becomes the
+alpha suffix.
+
 Stable releases should normally be published by pushing a version tag such as
-`v0.9.3`. Alpha releases use an explicit tag such as `v0.9.3-alpha.1`.
-Maintainers can also manually dispatch the workflow with the same version and
-channel. Ordinary branch pushes never publish a release.
+`v0.9.3`. Maintainers can also publish an explicit alpha tag such as
+`v0.9.3-alpha.1`, or manually dispatch the workflow with a matching version and
+channel. Branch pushes other than `develop` do not publish a release.
 
 Release notes are generated from the matching version section in
 `CHANGELOG.md`. Stable versions require an exact, non-empty version section.

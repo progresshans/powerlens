@@ -2,6 +2,8 @@ name: Publish Release
 
 on:
   push:
+    branches:
+      - develop
     tags:
       - "v*"
   workflow_dispatch:
@@ -57,8 +59,33 @@ jobs:
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
+          ALPHA_BASE_VERSION: ${{ vars.POWERLENS_ALPHA_BASE_VERSION }}
         run: |
           set -euo pipefail
+
+          next_patch_alpha_base_version() {
+            local latest_stable_tag
+            latest_stable_tag="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+
+            if [[ -z "$latest_stable_tag" ]]; then
+              echo "0.1.0"
+              return
+            fi
+
+            local stable_version="${latest_stable_tag#v}"
+            local major minor patch
+            IFS=. read -r major minor patch <<< "$stable_version"
+            echo "$major.$minor.$((patch + 1))"
+          }
+
+          validate_alpha_base_version() {
+            local candidate="$1"
+            if [[ ! "$candidate" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "invalid alpha base version: $candidate" >&2
+              echo "expected a stable semantic version such as 0.9.3, 0.10.0, or 1.0.0" >&2
+              exit 2
+            fi
+          }
 
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
@@ -68,6 +95,12 @@ jobs:
             else
               channel="stable"
             fi
+          elif [[ "${GITHUB_REF_NAME}" == "develop" && -z "${DISPATCH_VERSION:-}" ]]; then
+            base_version="${ALPHA_BASE_VERSION:-$(next_patch_alpha_base_version)}"
+            validate_alpha_base_version "$base_version"
+            version="${base_version}-alpha.${GITHUB_RUN_NUMBER}"
+            tag="v${version}"
+            channel="alpha"
           else
             version="${DISPATCH_VERSION:?workflow_dispatch requires a version}"
             tag="v${version}"

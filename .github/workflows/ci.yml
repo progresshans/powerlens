@@ -42,11 +42,15 @@ jobs:
             script/package_release.sh \
             script/smoke_launch_app.sh \
             script/test_generate_release_notes.sh \
+            script/test_release_workflow.sh \
             script/test_sparkle_update.sh \
             script/verify_distribution.sh
 
       - name: Validate release-note generation
         run: bash script/test_generate_release_notes.sh
+
+      - name: Validate release workflow
+        run: bash script/test_release_workflow.sh
 
       - name: Validate metadata
         run: |
