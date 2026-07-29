@@ -568,6 +568,72 @@ struct PowerStateTrackerTests {
     }
 
     @Test
+    func manualHoldSurvivesBriefChargingBeyondLimit() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        _ = tracker.resolve(calmSnapshot(at: 0))
+        let established = tracker.resolve(calmSnapshot(at: 12))
+
+        let firstBeyond = tracker.resolve(
+            chargingAboveLimitSnapshot(at: 15)
+        )
+        let beforeBoundary = tracker.resolve(
+            chargingAboveLimitSnapshot(at: 20)
+        )
+        let confirmed = tracker.resolve(
+            chargingAboveLimitSnapshot(at: 21)
+        )
+
+        #expect(
+            established.managedChargingState
+                == .holdingAtLimit(targetPercent: 80)
+        )
+        for resolved in [firstBeyond, beforeBoundary] {
+            #expect(
+                resolved.managedChargingState
+                    == .holdingAtLimit(targetPercent: 80)
+            )
+            #expect(resolved.externalPowerState == .holding)
+        }
+        #expect(
+            confirmed.managedChargingState
+                == .chargingBeyondLimit(targetPercent: 80)
+        )
+        #expect(confirmed.externalPowerState == .charging)
+    }
+
+    @Test
+    func completedChargeBeyondLimitUsesRecoveryHysteresis() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let charging = tracker.resolve(
+            chargingAboveLimitSnapshot(at: 0)
+        )
+        let firstCalm = tracker.resolve(
+            calmAboveLimitSnapshot(at: 3)
+        )
+        let beforeBoundary = tracker.resolve(
+            calmAboveLimitSnapshot(at: 8)
+        )
+        let settled = tracker.resolve(
+            calmAboveLimitSnapshot(at: 9)
+        )
+
+        #expect(
+            charging.managedChargingState
+                == .chargingBeyondLimit(targetPercent: 80)
+        )
+        for resolved in [firstCalm, beforeBoundary] {
+            #expect(
+                resolved.managedChargingState
+                    == .chargingBeyondLimit(targetPercent: 80)
+            )
+        }
+        #expect(
+            settled.managedChargingState
+                == .aboveConfiguredLimit(targetPercent: 80)
+        )
+    }
+
+    @Test
     func sustainedShortfallRequiresConfirmedRecoveryFromUnknownFlow() {
         var tracker = PowerStateTracker(configuration: configuration)
         _ = tracker.resolve(assistSnapshot(at: 0))
@@ -881,6 +947,38 @@ struct PowerStateTrackerTests {
             batteryPowerW: -12,
             adapterInputPowerW: 32,
             systemLoadW: 20,
+            adapterMaxPowerW: 96,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+    }
+
+    private func chargingAboveLimitSnapshot(
+        at seconds: TimeInterval
+    ) -> TelemetrySnapshot {
+        makeTelemetrySnapshot(
+            timestamp: date(seconds),
+            batteryLevel: 99,
+            isCharging: true,
+            batteryCurrentA: 0.74,
+            batteryPowerW: -9.4,
+            adapterInputPowerW: 20.5,
+            systemLoadW: 10.4,
+            adapterMaxPowerW: 96,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+    }
+
+    private func calmAboveLimitSnapshot(
+        at seconds: TimeInterval
+    ) -> TelemetrySnapshot {
+        makeTelemetrySnapshot(
+            timestamp: date(seconds),
+            batteryLevel: 100,
+            isCharged: true,
+            batteryCurrentA: 0,
+            batteryPowerW: 0,
+            adapterInputPowerW: 10.4,
+            systemLoadW: 10.4,
             adapterMaxPowerW: 96,
             chargingPolicyStatus: .manualLimit(targetPercent: 80)
         )

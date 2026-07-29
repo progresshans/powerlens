@@ -19,7 +19,7 @@ SOURCE_INFO_PLIST="$POWERLENS_SOURCE_INFO_PLIST"
 ENTITLEMENTS="$POWERLENS_ENTITLEMENTS"
 SPARKLE_GENERATE_APPCAST_TOOL="$POWERLENS_SPARKLE_GENERATE_APPCAST_TOOL"
 
-DEFAULT_VERSION="0.9.2"
+DEFAULT_VERSION="0.9.3"
 DEFAULT_BUILD="$(powerlens_default_build_number)"
 VERSION="${POWERLENS_VERSION:-$DEFAULT_VERSION}"
 BUILD_NUMBER="${POWERLENS_BUILD:-$DEFAULT_BUILD}"
@@ -121,7 +121,7 @@ SWIFT
 
 validate_sparkle_key_pair() {
   if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-    return
+    return 0
   fi
 
   local private_key=""
@@ -131,7 +131,7 @@ validate_sparkle_key_pair() {
     powerlens_require_file "$SPARKLE_ED_KEY_FILE"
     private_key="$(< "$SPARKLE_ED_KEY_FILE")"
   else
-    return
+    return 0
   fi
 
   local derived_public_key

@@ -136,7 +136,8 @@ struct DashboardView: View {
             VStack(alignment: .trailing, spacing: 12) {
                 LiveIndicatorView(
                     refreshDate: store.lastRefreshAt ?? snapshot.timestamp,
-                    activeEngineName: store.activeTelemetryEngine.displayName
+                    activeEngineName: store.activeTelemetryEngine.displayName,
+                    health: store.telemetryHealth
                 )
 
                 DashboardHeaderAction(

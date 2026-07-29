@@ -50,12 +50,12 @@ For an alpha release, use the same workflow with an alpha version/tag and copy
 the generated feed into `docs/appcast-alpha.xml`:
 
 ```bash
-POWERLENS_VERSION=0.9.2-alpha.1 \
+POWERLENS_VERSION=0.9.3-alpha.1 \
 POWERLENS_BUILD=3 \
 POWERLENS_SPARKLE_GENERATE_APPCAST=1 \
 POWERLENS_SPARKLE_APPCAST_DIR="$PWD/release/appcast-alpha-work" \
 POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml" \
-POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX="https://github.com/progresshans/powerlens/releases/download/v0.9.2-alpha.1/" \
+POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX="https://github.com/progresshans/powerlens/releases/download/v0.9.3-alpha.1/" \
 ./script/package_release.sh
 ```
 

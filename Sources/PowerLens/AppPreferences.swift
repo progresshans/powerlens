@@ -86,6 +86,13 @@ enum LongTermResolution: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static func requiresDestructiveConfirmation(
+        from current: Self,
+        to proposed: Self
+    ) -> Bool {
+        current != .off && proposed == .off
+    }
+
     static var current: Self {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
               let value = Self(rawValue: raw) else {

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 @MainActor
 final class PowerLensStore: ObservableObject {
@@ -9,21 +10,31 @@ final class PowerLensStore: ObservableObject {
     }
 
     @Published private(set) var latest: TelemetrySnapshot?
-    @Published private(set) var telemetryUnavailable = false
+    @Published private(set) var telemetryHealth = TelemetryHealth.waiting
+    @Published private(set) var historyHealth = HistoryHealth.checking
     @Published private(set) var diagnostics: [DiagnosticItem] = []
     @Published private(set) var topEnergyApps: [AppEnergyUsage] = []
     @Published private(set) var menuBarSymbolName = "bolt.fill"
     @Published private(set) var menuBarBatteryBadge = MenuBarStatusItemRenderer.Badge.none
     @Published private(set) var history: [TelemetrySnapshot] = []
     @Published private(set) var lastRefreshAt: Date?
+    @Published private(set) var lastRefreshAttemptAt: Date?
     @Published private(set) var requestedTelemetryEngine = TelemetryEnginePreference.current
     @Published private(set) var activeTelemetryEngine: TelemetryEngineKind = .compatible
     @Published private(set) var resolvedPowerState: ResolvedPowerState?
 
     private let telemetryReader: any TelemetryReading
     private let historyStore: any HistoryStoring
+    private let energySampler: any ProcessEnergySampling
     private let now: () -> Date
-    private let energySampler = ProcessEnergySampler()
+    private static let telemetryLogger = Logger(
+        subsystem: "com.progresshans.powerlens",
+        category: "Telemetry"
+    )
+    private static let historyLogger = Logger(
+        subsystem: "com.progresshans.powerlens",
+        category: "History"
+    )
     private var refreshTask: Task<Void, Never>?
     private var refreshSequence = 0
     private var powerStateTracker: PowerStateTracker
@@ -34,15 +45,21 @@ final class PowerLensStore: ObservableObject {
     private let backgroundRefreshInterval: Duration = .seconds(10)
     private var refreshCadence: RefreshCadence = .background
 
+    var telemetryUnavailable: Bool {
+        telemetryHealth.isUnavailable
+    }
+
     init(
         telemetryReader: any TelemetryReading = TelemetryReadService(),
         historyStore: any HistoryStoring = HistoryStore(),
+        energySampler: any ProcessEnergySampling = ProcessEnergySampler(),
         startsAutomatically: Bool = true,
         now: @escaping () -> Date = Date.init,
         powerStateConfiguration: PowerStateHysteresisConfiguration = .init()
     ) {
         self.telemetryReader = telemetryReader
         self.historyStore = historyStore
+        self.energySampler = energySampler
         self.now = now
         self.powerStateTracker = PowerStateTracker(
             configuration: powerStateConfiguration
@@ -57,7 +74,14 @@ final class PowerLensStore: ObservableObject {
 
     private func startRefreshTask() {
         refreshTask = Task {
-            history = await historyStore.loadRecent(since: now().addingTimeInterval(-memoryWindow))
+            do {
+                history = try await historyStore.loadRecent(
+                    since: now().addingTimeInterval(-memoryWindow)
+                )
+                recordHistorySuccess()
+            } catch {
+                recordHistoryFailure(error, operation: "load recent history")
+            }
             await purgeIfNeeded()
             await refresh(persistImmediately: history.isEmpty)
             await refreshLoop()
@@ -71,16 +95,20 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        lastPurgeAt = current
-
         guard let window = RawHistoryWindow.current.seconds else {
             return  // Full-detail history kept forever: nothing to prune.
         }
 
-        await historyStore.purge(
-            olderThan: current.addingTimeInterval(-window),
-            rollupBucketSeconds: LongTermResolution.current.bucketSeconds
-        )
+        lastPurgeAt = current
+        do {
+            try await historyStore.purge(
+                olderThan: current.addingTimeInterval(-window),
+                rollupBucketSeconds: LongTermResolution.current.bucketSeconds
+            )
+            recordHistorySuccess()
+        } catch {
+            recordHistoryFailure(error, operation: "purge history")
+        }
     }
 
     deinit {
@@ -101,8 +129,15 @@ final class PowerLensStore: ObservableObject {
         refreshCadence = cadence
     }
 
+    func historyRetentionPreferencesChanged() {
+        lastPurgeAt = nil
+        Task {
+            await purgeIfNeeded()
+        }
+    }
+
     func history(hours: Double) -> [TelemetrySnapshot] {
-        let cutoff = Date().addingTimeInterval(-(hours * 3600))
+        let cutoff = now().addingTimeInterval(-(hours * 3600))
         return history.filter { $0.timestamp >= cutoff }
     }
 
@@ -121,43 +156,87 @@ final class PowerLensStore: ObservableObject {
             ?? Date(timeIntervalSince1970: 0)
         let rawStart = max(interval.start, rawCutoff)
 
-        var rawSeries: [AggregatedTelemetryPoint] = []
-        if rawStart < interval.end {
-            rawSeries = await historyStore.aggregatedSeries(
-                for: DateInterval(start: rawStart, end: interval.end),
-                bucketSeconds: range.bucketSeconds
+        do {
+            var rawSeries: [AggregatedTelemetryPoint] = []
+            if rawStart < interval.end {
+                rawSeries = try await historyStore.aggregatedSeries(
+                    for: DateInterval(start: rawStart, end: interval.end),
+                    bucketSeconds: range.bucketSeconds
+                )
+            }
+
+            var rollups: [AggregatedTelemetryPoint] = []
+            if interval.start < rawCutoff {
+                rollups = try await historyStore.rollupSeries(
+                    for: DateInterval(
+                        start: interval.start,
+                        end: min(rawCutoff, interval.end)
+                    )
+                )
+            }
+
+            let summary = try await historyStore.summary(for: interval)
+            let healthTrend = try await historyStore.batteryHealthTrend(
+                since: Date(timeIntervalSince1970: 0)
+            )
+            let mergedSeries = (rollups + rawSeries).sorted {
+                $0.bucketStart < $1.bucketStart
+            }
+            recordHistorySuccess()
+
+            return InsightsData(
+                range: range,
+                interval: interval,
+                series: mergedSeries,
+                summary: summary,
+                healthTrend: healthTrend
+            )
+        } catch {
+            recordHistoryFailure(error, operation: "load insights")
+            return InsightsData(
+                range: range,
+                interval: interval,
+                series: [],
+                summary: .empty(range: interval),
+                healthTrend: []
             )
         }
-
-        var rollups: [AggregatedTelemetryPoint] = []
-        if interval.start < rawCutoff {
-            rollups = await historyStore.rollupSeries(
-                for: DateInterval(start: interval.start, end: min(rawCutoff, interval.end))
-            )
-        }
-
-        let summary = await historyStore.summary(for: interval)
-        let healthTrend = await historyStore.batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
-        let mergedSeries = (rollups + rawSeries).sorted { $0.bucketStart < $1.bucketStart }
-
-        return InsightsData(
-            range: range,
-            interval: interval,
-            series: mergedSeries,
-            summary: summary,
-            healthTrend: healthTrend
-        )
     }
 
     /// Loads raw snapshots within a range for export. Bounded by the on-disk
     /// retention window.
     func exportSnapshots(for range: HistoryRange) async -> [TelemetrySnapshot] {
         let interval = range.interval(now: now())
-        let loaded = await historyStore.loadRecent(since: interval.start)
-        return loaded.filter { interval.contains($0.timestamp) }
+        do {
+            let loaded = try await historyStore.loadRecent(
+                since: interval.start
+            )
+            recordHistorySuccess()
+            return loaded.filter { interval.contains($0.timestamp) }
+        } catch {
+            recordHistoryFailure(error, operation: "export history")
+            return []
+        }
     }
 
     var telemetryStatusText: String {
+        switch telemetryHealth {
+        case .waiting:
+            return L10n.text("telemetry.status.waiting")
+        case let .delayed(failedAttempts):
+            return L10n.tr(
+                "telemetry.status.delayed",
+                failedAttempts
+            )
+        case let .unavailable(failedAttempts):
+            return L10n.tr(
+                "telemetry.status.unavailable",
+                failedAttempts
+            )
+        case .live:
+            break
+        }
+
         switch (requestedTelemetryEngine, activeTelemetryEngine) {
         case (.auto, .livePrecision), (.auto, .compatible):
             return L10n.tr("telemetry.status.auto", activeTelemetryEngine.displayName)
@@ -180,7 +259,11 @@ final class PowerLensStore: ObservableObject {
 
     private func refreshLoop() async {
         while !Task.isCancelled {
-            try? await Task.sleep(for: currentRefreshInterval)
+            do {
+                try await Task.sleep(for: currentRefreshInterval)
+            } catch {
+                return
+            }
             await refresh(persistImmediately: false)
             await purgeIfNeeded()
         }
@@ -201,10 +284,24 @@ final class PowerLensStore: ObservableObject {
         let preference = TelemetryEnginePreference.current
         requestedTelemetryEngine = preference
 
-        guard let result = try? await telemetryReader.readSnapshot(preference: preference) else {
-            if latest == nil {
-                telemetryUnavailable = true
+        let result: TelemetryReadResult
+        do {
+            result = try await telemetryReader.readSnapshot(
+                preference: preference
+            )
+        } catch {
+            guard sequence == refreshSequence else {
+                return
             }
+
+            lastRefreshAttemptAt = now()
+            let failedAttempts = telemetryHealth.failedAttempts + 1
+            telemetryHealth = latest == nil
+                ? .unavailable(failedAttempts: failedAttempts)
+                : .delayed(failedAttempts: failedAttempts)
+            Self.telemetryLogger.warning(
+                "Telemetry refresh failed; consecutive attempts: \(failedAttempts, privacy: .public); error: \(String(describing: error), privacy: .private)"
+            )
             return
         }
 
@@ -212,7 +309,13 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        telemetryUnavailable = false
+        let sampledEnergyApps = await energySampler.sample(now: now())
+        guard sequence == refreshSequence else {
+            return
+        }
+
+        telemetryHealth = .live
+        lastRefreshAttemptAt = now()
 
         let snapshot = result.snapshot
         let resolvedState = powerStateTracker.resolve(snapshot)
@@ -234,7 +337,7 @@ final class PowerLensStore: ObservableObject {
         diagnostics = resolvedDiagnostics
         lastRefreshAt = snapshot.timestamp
         activeTelemetryEngine = result.activeEngine
-        topEnergyApps = energySampler.sample(now: now())
+        topEnergyApps = sampledEnergyApps
 
         let shouldPersist = persistImmediately || shouldPersist(snapshot: snapshot)
         guard shouldPersist else {
@@ -249,7 +352,12 @@ final class PowerLensStore: ObservableObject {
         let cutoff = now().addingTimeInterval(-memoryWindow)
         history.removeAll { $0.timestamp < cutoff }
 
-        await historyStore.append(historicalSnapshot)
+        do {
+            try await historyStore.append(historicalSnapshot)
+            recordHistorySuccess()
+        } catch {
+            recordHistoryFailure(error, operation: "append history")
+        }
     }
 
     private func shouldPersist(snapshot: TelemetrySnapshot) -> Bool {
@@ -258,5 +366,19 @@ final class PowerLensStore: ObservableObject {
         }
 
         return snapshot.timestamp.timeIntervalSince(last.timestamp) >= 60
+    }
+
+    private func recordHistorySuccess() {
+        historyHealth = .available
+    }
+
+    private func recordHistoryFailure(
+        _ error: any Error,
+        operation: String
+    ) {
+        historyHealth = .degraded
+        Self.historyLogger.error(
+            "History operation failed: \(operation, privacy: .public); error: \(String(describing: error), privacy: .private)"
+        )
     }
 }

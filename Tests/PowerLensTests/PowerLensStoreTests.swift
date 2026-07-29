@@ -26,6 +26,9 @@ struct PowerLensStoreTests {
         #expect(store.latest == snapshot)
         #expect(store.activeTelemetryEngine == .livePrecision)
         #expect(store.lastRefreshAt == snapshot.timestamp)
+        #expect(store.lastRefreshAttemptAt == snapshot.timestamp.addingTimeInterval(60))
+        #expect(store.telemetryHealth == .live)
+        #expect(store.historyHealth == .available)
         #expect(store.history == [historicalSnapshot])
         #expect(await historyStore.appendedSnapshots() == [historicalSnapshot])
     }
@@ -43,6 +46,7 @@ struct PowerLensStoreTests {
         await store.refreshOnce(persistImmediately: true)
 
         #expect(store.latest == nil)
+        #expect(store.telemetryHealth == .unavailable(failedAttempts: 1))
         #expect(store.history.isEmpty)
         #expect(await historyStore.appendedSnapshots().isEmpty)
     }
@@ -92,6 +96,7 @@ struct PowerLensStoreTests {
         await firstRefresh.value
 
         #expect(store.latest == newerSnapshot)
+        #expect(store.telemetryHealth == .live)
         #expect(store.activeTelemetryEngine == .livePrecision)
         #expect(store.history == [newerSnapshot])
         #expect(await historyStore.appendedSnapshots() == [newerSnapshot])
@@ -119,6 +124,61 @@ struct PowerLensStoreTests {
         await store.refreshOnce(persistImmediately: false)
 
         #expect(store.menuBarBatteryBadge == .pluggedHolding)
+    }
+
+    @Test
+    @MainActor
+    func refreshExplainsChargingPastAConfiguredLimitEndToEnd() async {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 99,
+            isCharging: true,
+            timeToFullMinutes: 0,
+            batteryCurrentA: 0.74,
+            batteryPowerW: -9.4,
+            adapterInputPowerW: 20.5,
+            systemLoadW: 10.4,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(result: .init(
+                snapshot: snapshot,
+                activeEngine: .livePrecision
+            )),
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(
+            store.resolvedPowerState?.managedChargingState
+                == .chargingBeyondLimit(targetPercent: 80)
+        )
+        #expect(store.resolvedPowerState?.externalPowerState == .charging)
+        #expect(store.menuBarBatteryBadge == .chargingBolt)
+        #expect(
+            store.latest?.statusHeadline(
+                resolvedState: store.resolvedPowerState
+            ) == L10n.tr(
+                "status.manualLimit.chargingBeyond",
+                Formatters.percent(80)
+            )
+        )
+        #expect(
+            store.diagnostics.contains {
+                $0.title == L10n.tr(
+                    "status.manualLimit.chargingBeyond",
+                    Formatters.percent(80)
+                )
+                    && $0.message == L10n.text(
+                        "diag.manualLimit.chargingBeyond.message"
+                    )
+            }
+        )
+        #expect(
+            store.latest.map(PowerFlowPresentationModel.init)?.state
+                == .charging
+        )
     }
 
     @Test
@@ -255,6 +315,42 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
+    func retentionPreferenceChangeRequestsANewPurge() async {
+        let historyStore = StubHistoryStore()
+        let snapshot = makeTelemetrySnapshot()
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(
+                result: TelemetryReadResult(
+                    snapshot: snapshot,
+                    activeEngine: .compatible
+                )
+            ),
+            historyStore: historyStore,
+            startsAutomatically: true
+        )
+
+        for _ in 0..<200 {
+            if await historyStore.purgedCutoffDates().count >= 1 {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        store.historyRetentionPreferencesChanged()
+
+        for _ in 0..<200 {
+            if await historyStore.purgedCutoffDates().count >= 2 {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(await historyStore.purgedCutoffDates().count == 2)
+        withExtendedLifetime(store) {}
+    }
+
+    @Test
+    @MainActor
     func telemetryUnavailableSetWhenReadFailsWithNoData() async {
         let store = PowerLensStore(
             telemetryReader: StubTelemetryReader(error: TelemetryReadError.unavailable),
@@ -265,6 +361,7 @@ struct PowerLensStoreTests {
         await store.refreshOnce(persistImmediately: true)
 
         #expect(store.telemetryUnavailable)
+        #expect(store.telemetryHealth == .unavailable(failedAttempts: 1))
         #expect(store.latest == nil)
     }
 
@@ -281,7 +378,148 @@ struct PowerLensStoreTests {
         await store.refreshOnce(persistImmediately: true)
 
         #expect(store.telemetryUnavailable == false)
+        #expect(store.telemetryHealth == .live)
         #expect(store.latest == snapshot)
+    }
+
+    @Test
+    @MainActor
+    func failedRefreshAfterSuccessMarksDataDelayedAndPreservesSnapshot() async {
+        let snapshot = makeTelemetrySnapshot()
+        let reader = SequenceTelemetryReader(snapshots: [snapshot])
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: false)
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(store.latest == snapshot)
+        #expect(store.telemetryUnavailable == false)
+        #expect(store.telemetryHealth == .delayed(failedAttempts: 1))
+
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(store.telemetryHealth == .delayed(failedAttempts: 2))
+    }
+
+    @Test
+    @MainActor
+    func successfulRefreshRecoversFromUnavailableState() async {
+        let snapshot = makeTelemetrySnapshot()
+        let reader = OutcomeTelemetryReader(
+            outcomes: [
+                .unavailable,
+                .success(
+                    TelemetryReadResult(
+                        snapshot: snapshot,
+                        activeEngine: .compatible
+                    )
+                ),
+            ]
+        )
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: false)
+        #expect(store.telemetryHealth == .unavailable(failedAttempts: 1))
+
+        await store.refreshOnce(persistImmediately: false)
+
+        #expect(store.telemetryHealth == .live)
+        #expect(store.latest == snapshot)
+    }
+
+    @Test
+    @MainActor
+    func staleFailedRefreshDoesNotOverrideNewerSuccess() async {
+        let snapshot = makeTelemetrySnapshot()
+        let reader = ControlledTelemetryReader()
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: StubHistoryStore(),
+            startsAutomatically: false
+        )
+
+        let firstRefresh = Task { @MainActor in
+            await store.refreshOnce(persistImmediately: false)
+        }
+        await waitForPendingReads(1, in: reader)
+        let secondRefresh = Task { @MainActor in
+            await store.refreshOnce(persistImmediately: false)
+        }
+        await waitForPendingReads(2, in: reader)
+
+        await reader.resumeLast(
+            with: TelemetryReadResult(
+                snapshot: snapshot,
+                activeEngine: .livePrecision
+            )
+        )
+        await secondRefresh.value
+        await reader.failFirst()
+        await firstRefresh.value
+
+        #expect(store.telemetryHealth == .live)
+        #expect(store.latest == snapshot)
+    }
+
+    @Test
+    @MainActor
+    func historyAppendFailureIsVisibleWithoutInterruptingLiveTelemetry() async {
+        let snapshot = makeTelemetrySnapshot()
+        let historyStore = StubHistoryStore(failAppend: true)
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(
+                result: TelemetryReadResult(
+                    snapshot: snapshot,
+                    activeEngine: .compatible
+                )
+            ),
+            historyStore: historyStore,
+            startsAutomatically: false
+        )
+
+        await store.refreshOnce(persistImmediately: true)
+
+        #expect(store.latest == snapshot)
+        #expect(store.telemetryHealth == .live)
+        #expect(store.historyHealth == .degraded)
+    }
+}
+
+private enum TelemetryOutcome: Sendable {
+    case success(TelemetryReadResult)
+    case unavailable
+}
+
+private actor OutcomeTelemetryReader: TelemetryReading {
+    private let outcomes: [TelemetryOutcome]
+    private var nextIndex = 0
+
+    init(outcomes: [TelemetryOutcome]) {
+        self.outcomes = outcomes
+    }
+
+    func readSnapshot(
+        preference: TelemetryEnginePreference
+    ) async throws -> TelemetryReadResult {
+        guard nextIndex < outcomes.count else {
+            throw TelemetryReadError.unavailable
+        }
+
+        defer { nextIndex += 1 }
+        switch outcomes[nextIndex] {
+        case let .success(result):
+            return result
+        case .unavailable:
+            throw TelemetryReadError.unavailable
+        }
     }
 }
 
@@ -365,37 +603,63 @@ private actor ControlledTelemetryReader: TelemetryReading {
     func resumeLast(with result: TelemetryReadResult) {
         continuations.removeLast().resume(returning: result)
     }
+
+    func failFirst() {
+        continuations.removeFirst().resume(
+            throwing: TelemetryReadError.unavailable
+        )
+    }
 }
 
 private actor StubHistoryStore: HistoryStoring {
     private var appended: [TelemetrySnapshot] = []
     private var purgedCutoffs: [Date] = []
+    private let failAppend: Bool
 
-    func loadRecent(since cutoffDate: Date) async -> [TelemetrySnapshot] {
+    init(failAppend: Bool = false) {
+        self.failAppend = failAppend
+    }
+
+    func loadRecent(
+        since cutoffDate: Date
+    ) async throws -> [TelemetrySnapshot] {
         []
     }
 
-    func append(_ snapshot: TelemetrySnapshot) async {
+    func append(_ snapshot: TelemetrySnapshot) async throws {
+        if failAppend {
+            throw StubHistoryError.writeFailed
+        }
         appended.append(snapshot)
     }
 
-    func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async {
+    func purge(
+        olderThan cutoffDate: Date,
+        rollupBucketSeconds: Int?
+    ) async throws {
         purgedCutoffs.append(cutoffDate)
     }
 
-    func summary(for range: DateInterval) async -> HistorySummary {
+    func summary(for range: DateInterval) async throws -> HistorySummary {
         .empty(range: range)
     }
 
-    func aggregatedSeries(for range: DateInterval, bucketSeconds: Int) async -> [AggregatedTelemetryPoint] {
+    func aggregatedSeries(
+        for range: DateInterval,
+        bucketSeconds: Int
+    ) async throws -> [AggregatedTelemetryPoint] {
         []
     }
 
-    func rollupSeries(for range: DateInterval) async -> [AggregatedTelemetryPoint] {
+    func rollupSeries(
+        for range: DateInterval
+    ) async throws -> [AggregatedTelemetryPoint] {
         []
     }
 
-    func batteryHealthTrend(since cutoffDate: Date) async -> [BatteryHealthPoint] {
+    func batteryHealthTrend(
+        since cutoffDate: Date
+    ) async throws -> [BatteryHealthPoint] {
         []
     }
 
@@ -406,4 +670,8 @@ private actor StubHistoryStore: HistoryStoring {
     func purgedCutoffDates() -> [Date] {
         purgedCutoffs
     }
+}
+
+private enum StubHistoryError: Error {
+    case writeFailed
 }

@@ -30,9 +30,15 @@
 "telemetry.status.auto" = "자동 모드가 현재 %@ 경로를 사용 중입니다.";
 "telemetry.status.manual" = "현재 %@ 경로가 활성화되어 있습니다.";
 "telemetry.status.fallback" = "지금은 %@ 경로를 사용할 수 없어 %@ 경로로 동작 중입니다.";
+"telemetry.status.waiting" = "첫 텔레메트리 새로 고침을 기다리는 중입니다.";
+"telemetry.status.delayed" = "새로 고침이 연속 %d회 실패해 마지막 측정값을 표시하고 있습니다.";
+"telemetry.status.unavailable" = "새로 고침이 연속 %d회 실패해 아직 표시할 전력 측정값이 없습니다.";
 "telemetry.live" = "라이브";
+"telemetry.delayed" = "업데이트 지연";
+"telemetry.unavailable" = "사용 불가";
 "telemetry.live.waiting" = "새로고침 대기 중";
 "telemetry.live.detail" = "%@ · %@";
+"telemetry.delayed.detail" = "마지막 %@ 측정 · %@";
 
 "settings.pane.general" = "일반";
 "settings.pane.telemetry" = "텔레메트리";
@@ -61,6 +67,7 @@
 "common.on" = "켬";
 "common.off" = "끔";
 "common.ok" = "확인";
+"common.cancel" = "취소";
 "common.quit" = "종료";
 
 "powerSource.ac" = "전원";
@@ -93,6 +100,8 @@
 "status.holdingCurrentLevel" = "현재 배터리 수준 유지 중";
 "status.externalPowerConnected" = "외부 전원 연결됨";
 "status.manualLimit.charging" = "%@ 충전 한도까지 충전 중";
+"status.manualLimit.chargingBeyond" = "%@ 충전 한도를 넘어 충전 중";
+"status.manualLimit.above" = "%@ 충전 한도보다 높은 상태";
 "status.manualLimit.reducing" = "%@ 충전 한도에 맞추는 중";
 "status.manualLimit.holding" = "%@ 충전 한도에서 유지 중";
 "status.manualLimit.active" = "%@ 충전 한도 설정됨";
@@ -112,6 +121,8 @@
 "status.subheadline.externalPowerConnected" = "외부 전원이 연결되어 있으며 PowerLens가 관측된 전력 차이가 지속되는지 확인하고 있습니다.";
 "status.subheadline.transientBatteryAssist" = "PowerLens가 안정적인 전력 흐름을 확인하는 동안 배터리가 잠시 보조하고 있습니다.";
 "status.subheadline.manualLimit.charging" = "macOS가 선택한 충전 한도까지 배터리를 충전하고 있습니다.";
+"status.subheadline.manualLimit.chargingBeyond" = "충전 한도 설정은 유지되며 현재 한도보다 높은 잔량에서 충전이 관측되고 있습니다.";
+"status.subheadline.manualLimit.above" = "충전 한도 설정은 유지되며 배터리 잔량이 현재 선택한 한도보다 높습니다.";
 "status.subheadline.manualLimit.reducing" = "어댑터가 연결된 상태에서 macOS가 배터리 잔량을 선택한 충전 한도에 맞추고 있습니다.";
 "status.subheadline.manualLimit.holding" = "macOS가 선택한 충전 한도에서 배터리 충전을 멈추고 유지하고 있습니다.";
 "status.subheadline.manualLimit.active" = "선택한 충전 한도가 설정되어 있습니다. PowerLens는 현재 전력 흐름을 별도로 판단합니다.";
@@ -121,6 +132,8 @@
 "status.subheadline.manualLimit.transientAssist" = "충전 한도가 활성화된 동안 배터리가 잠시 전력을 보조하고 있습니다.";
 "status.subheadline.optimizedCharging.transientAssist" = "최적화된 배터리 충전이 활성화된 동안 배터리가 잠시 전력을 보조하고 있습니다.";
 
+"diag.manualLimit.chargingBeyond.message" = "충전 한도 설정은 그대로입니다. macOS의 배터리 관리 동작이나 사용자의 ‘완전히 충전’ 요청으로 한도를 넘어 충전될 수 있습니다. PowerLens는 현재 전력 흐름을 확인할 수 있지만 macOS가 의도한 최종 충전 잔량은 확인할 수 없습니다.";
+"diag.manualLimit.above.message" = "충전 한도 설정은 그대로이며 현재 잔량이 한도보다 높습니다. macOS의 배터리 관리 동작이나 사용자의 ‘완전히 충전’ 요청으로 이 상태가 나타날 수 있습니다. PowerLens는 이전 충전의 원인이나 목표 잔량을 확인할 수 없습니다.";
 "diag.powerDeliveryShortfall.title" = "외부 전력이 현재 부하를 충당하지 못하고 있습니다";
 "diag.powerDeliveryShortfall.message" = "외부 입력은 %@, 시스템 부하는 %@이며 배터리가 계속 보조하고 있습니다. 이는 관측된 흐름을 설명하며 어댑터, 케이블 또는 도크를 원인으로 단정하지 않습니다.";
 "diag.temperatureHigh.title" = "배터리 온도 상승";
@@ -276,6 +289,13 @@
 "launchAtLogin.toggle" = "로그인 시 실행";
 
 "settings.pane.history" = "기록";
+"history.status.title" = "기록 상태";
+"history.status.checking" = "확인 중";
+"history.status.available" = "사용 가능";
+"history.status.degraded" = "저장 문제";
+"history.status.checking.detail" = "로컬 기록 데이터베이스를 확인하고 있습니다.";
+"history.status.available.detail" = "로컬 기록을 사용할 수 있습니다.";
+"history.status.degraded.detail" = "현재 로컬 기록을 사용할 수 없습니다. 실시간 측정은 계속됩니다.";
 "history.rawWindow.title" = "전체 해상도 보관";
 "history.rawWindow.detail" = "분 단위 원본을 얼마나 보관할지.";
 "history.window.days30" = "30일";
@@ -284,6 +304,10 @@
 "history.window.forever" = "무제한";
 "history.longTerm.title" = "오래된 데이터";
 "history.longTerm.detail" = "그 이전 데이터를 이 해상도로 계속 보관합니다.";
+"history.longTerm.off.detail" = "선택한 기간의 상세 기록만 유지합니다. 그보다 오래된 롤업, 배터리 건강·사이클 기록 및 참조되지 않는 메타데이터는 영구 삭제됩니다.";
+"history.longTerm.off.confirm.title" = "오래된 데이터 보관을 중단할까요?";
+"history.longTerm.off.confirm.message" = "최근 %@의 상세 기록은 유지됩니다. 그보다 오래된 시간·일 단위 롤업과 배터리 건강·사이클 기록, 보관 중인 측정값이 더 이상 참조하지 않는 앱·어댑터·배터리 메타데이터는 영구 삭제됩니다.\n\n백업에서 복원하지 않는 한 되돌릴 수 없습니다.";
+"history.longTerm.off.confirm.action" = "오래된 데이터 삭제";
 "history.resolution.hourly" = "시간 단위";
 "history.resolution.daily" = "일 단위";
 "history.resolution.off" = "보관 안 함";

@@ -1,0 +1,80 @@
+name: Bug report
+description: Report incorrect behavior or a telemetry/display problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove battery serial numbers and other private machine data before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: PowerLens version
+      placeholder: 0.9.3-alpha.7
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS and Mac model
+      placeholder: macOS 26.0, MacBook Pro (Apple silicon)
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Telemetry engine
+      options:
+        - Auto
+        - Compatible
+        - Live Precision
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: power-setup
+    attributes:
+      label: Power setup
+      description: >-
+        Include the adapter rating, cable/dock/display power delivery,
+        external-power state, and charging-limit or Optimized Battery Charging
+        state. Write N/A if unrelated, and omit serial numbers.
+      placeholder: >-
+        96 W adapter through a dock; external power connected; 80% charge limit
+        enabled
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: Include the charger/power state and the exact PowerLens message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps or conditions to reproduce
+      description: >-
+        If the behavior is intermittent or cannot be reproduced on demand,
+        describe what happened immediately before it. If you cannot reproduce
+        it, write "Not reproducible."
+      placeholder: |
+        1. Connect…
+        2. Set…
+        3. Observe…
+        Frequency or pattern:
+        If not reproducible, preceding conditions:
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Additional diagnostics
+      description: Add sanitized screenshots or logs. Do not include credentials or battery identifiers.

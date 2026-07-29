@@ -1,7 +1,9 @@
 import Foundation
 
 enum HistorySchema {
-    static let statements = [
+    static let currentVersion = 3
+
+    static let creationStatements = [
         """
         CREATE TABLE IF NOT EXISTS batteries (
             battery_id INTEGER PRIMARY KEY,
@@ -120,18 +122,48 @@ enum HistorySchema {
         CREATE INDEX IF NOT EXISTS history_rollups_bucket_idx
         ON history_rollups(bucket_start);
         """,
-        // Forward-compatibility for databases created before battery power
-        // provenance was stored. The error is harmless (and ignored) when the
-        // column already exists from the CREATE above.
-        """
-        ALTER TABLE telemetry_samples
-        ADD COLUMN battery_power_source_code INTEGER;
-        """,
-        // Forward-compatibility: add the charge-state aggregate columns to rollup
-        // tables created by an earlier prerelease. These error harmlessly (and are
-        // ignored) when the columns already exist from the CREATE above.
-        "ALTER TABLE history_rollups ADD COLUMN on_battery_seconds INTEGER;",
-        "ALTER TABLE history_rollups ADD COLUMN on_external_seconds INTEGER;",
-        "ALTER TABLE history_rollups ADD COLUMN charge_sessions INTEGER;",
     ]
+
+    /// Older prerelease databases did not set `user_version`, so migrations
+    /// are guarded by actual column presence rather than only a version number.
+    static let columnMigrations = [
+        ColumnMigration(
+            table: "telemetry_samples",
+            column: "battery_power_source_code",
+            sql: """
+            ALTER TABLE telemetry_samples
+            ADD COLUMN battery_power_source_code INTEGER;
+            """
+        ),
+        ColumnMigration(
+            table: "history_rollups",
+            column: "on_battery_seconds",
+            sql: """
+            ALTER TABLE history_rollups
+            ADD COLUMN on_battery_seconds INTEGER;
+            """
+        ),
+        ColumnMigration(
+            table: "history_rollups",
+            column: "on_external_seconds",
+            sql: """
+            ALTER TABLE history_rollups
+            ADD COLUMN on_external_seconds INTEGER;
+            """
+        ),
+        ColumnMigration(
+            table: "history_rollups",
+            column: "charge_sessions",
+            sql: """
+            ALTER TABLE history_rollups
+            ADD COLUMN charge_sessions INTEGER;
+            """
+        ),
+    ]
+}
+
+struct ColumnMigration {
+    let table: String
+    let column: String
+    let sql: String
 }

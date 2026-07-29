@@ -488,17 +488,40 @@ struct PowerStateTracker: Sendable {
         } else {
             whileReducing = false
         }
+        let whileAboveSelectedLimit =
+            previousStableState?.isAboveSelectedLimit == true
+        let whileChargingBeyondLimit: Bool
+        if case .chargingBeyondLimit = previousStableState {
+            whileChargingBeyondLimit = true
+        } else {
+            whileChargingBeyondLimit = false
+        }
 
         switch candidate {
         case .holdingAtLimit, .optimizedHold:
             return configuration.holdConfirmation
         case .reducingToLimit:
             return configuration.reductionConfirmation
+        case .chargingBeyondLimit:
+            return whileHolding || whileReducing
+                || whileAboveSelectedLimit
+                ? configuration.recoveryConfirmation
+                : 0
+        case .aboveConfiguredLimit:
+            if whileChargingBeyondLimit {
+                return configuration.recoveryConfirmation
+            }
+            return whileHolding || whileReducing
+                ? configuration.transientAssistGrace
+                : 0
         case .chargingToLimit, .optimizedCharging:
             return whileHolding || whileReducing
                 ? configuration.recoveryConfirmation
                 : 0
         case .limitConfigured, .optimizedActive, nil:
+            if whileAboveSelectedLimit {
+                return configuration.recoveryConfirmation
+            }
             return whileHolding || whileReducing
                 ? configuration.transientAssistGrace
                 : 0

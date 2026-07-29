@@ -97,7 +97,10 @@ struct MenuBarRootView: View {
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 8) {
-                CompactLiveStatusChip(refreshDate: store.lastRefreshAt ?? snapshot.timestamp)
+                CompactLiveStatusChip(
+                    refreshDate: store.lastRefreshAt ?? snapshot.timestamp,
+                    health: store.telemetryHealth
+                )
 
                 HStack(spacing: 5) {
                     PopoverToolbarButton(
@@ -131,10 +134,15 @@ struct MenuBarRootView: View {
 
 private struct CompactLiveStatusChip: View {
     let refreshDate: Date?
+    let health: TelemetryHealth
 
     var body: some View {
-        let now = Date()
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            content(now: context.date)
+        }
+    }
 
+    private func content(now: Date) -> some View {
         HStack(spacing: 5) {
             Circle()
                 .fill(dotColor(now: now))
@@ -153,13 +161,36 @@ private struct CompactLiveStatusChip: View {
 
     private func detailText(now: Date) -> String {
         guard let refreshDate else {
-            return "\(L10n.text("telemetry.live")) · \(L10n.text("telemetry.live.waiting"))"
+            let title = health.isUnavailable
+                ? L10n.text("telemetry.unavailable")
+                : L10n.text("telemetry.live")
+            return "\(title) · \(L10n.text("telemetry.live.waiting"))"
         }
 
-        return "\(L10n.text("telemetry.live")) · \(Formatters.relativeAge(since: refreshDate, now: now))"
+        let title: String
+        if case .delayed = health {
+            title = L10n.text("telemetry.delayed")
+        } else {
+            title = L10n.text("telemetry.live")
+        }
+        return "\(title) · \(Formatters.relativeAge(since: refreshDate, now: now))"
     }
 
     private func dotColor(now: Date) -> Color {
+        switch health {
+        case .waiting:
+            return .gray
+        case .unavailable:
+            return .red
+        case .delayed:
+            guard let refreshDate else {
+                return .red
+            }
+            return now.timeIntervalSince(refreshDate) <= 60 ? .orange : .red
+        case .live:
+            break
+        }
+
         guard let refreshDate else {
             return .gray
         }

@@ -54,10 +54,16 @@ struct StatusChip: View {
 }
 
 struct LiveDot: View {
+    let color: Color
+
+    init(color: Color = .green) {
+        self.color = color
+    }
+
     var body: some View {
         Circle()
-            .fill(.green)
+            .fill(color)
             .frame(width: 8, height: 8)
-            .shadow(color: .green.opacity(0.45), radius: 3)
+            .shadow(color: color.opacity(0.45), radius: 3)
     }
 }

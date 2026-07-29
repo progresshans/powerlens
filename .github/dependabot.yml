@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: swift
+    directory: /
+    # Routine version updates follow the integration branch. Dependabot
+    # security updates still target the default branch and require review.
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    # Routine version updates follow the integration branch. Dependabot
+    # security updates still target the default branch and require review.
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:15"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
