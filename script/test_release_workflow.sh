@@ -39,6 +39,16 @@ abort "release workflow: missing metadata resolution step" unless metadata_step
 run_script = metadata_step["run"]
 abort "release workflow: metadata resolution step has no script" unless run_script
 
+publish_step = steps.find { |step| step["name"] == "Publish GitHub Release" }
+abort "release workflow: missing GitHub Release step" unless publish_step
+
+publish_script = publish_step["run"]
+abort "release workflow: GitHub Release step has no script" unless publish_script
+unless publish_script.include?('--title "$VERSION"') &&
+       !publish_script.include?('--title "PowerLens $VERSION"')
+  abort "release workflow: GitHub Release title must contain only the version"
+end
+
 File.write(resolve_script_path, run_script)
 RUBY
 
@@ -82,13 +92,25 @@ git -C "$FALLBACK_REPOSITORY" \
   -c user.email="tests@powerlens.invalid" \
   commit --allow-empty -q -m "fixture"
 git -C "$FALLBACK_REPOSITORY" tag v0.9.2
-git -C "$FALLBACK_REPOSITORY" tag v0.9.3-alpha.99
+git -C "$FALLBACK_REPOSITORY" tag v0.9.2-alpha.99
+git -C "$FALLBACK_REPOSITORY" tag v0.9.3-alpha.6
+git -C "$FALLBACK_REPOSITORY" tag v0.9.3-alpha.7
 
 run_case develop branch develop "" "" "" "$FALLBACK_REPOSITORY"
 assert_output \
   "$TEST_DIR/develop.output" \
-  "version=0.9.3-alpha.42" \
-  "tag=v0.9.3-alpha.42" \
+  "version=0.9.3-alpha.8" \
+  "tag=v0.9.3-alpha.8" \
+  "channel=alpha" \
+  "appcast_path=docs/appcast-alpha.xml" \
+  "prerelease=true" \
+  "latest=false"
+
+run_case new-base branch develop "" "" "0.10.0" "$FALLBACK_REPOSITORY"
+assert_output \
+  "$TEST_DIR/new-base.output" \
+  "version=0.10.0-alpha.1" \
+  "tag=v0.10.0-alpha.1" \
   "channel=alpha" \
   "appcast_path=docs/appcast-alpha.xml" \
   "prerelease=true" \

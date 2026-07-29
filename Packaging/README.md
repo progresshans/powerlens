@@ -144,8 +144,9 @@ PowerLens has two workflow layers:
 Merging a reviewed change into `develop` automatically publishes a numbered
 alpha release. The base version comes from the optional
 `POWERLENS_ALPHA_BASE_VERSION` repository variable or, when it is unset, the
-next patch after the latest stable tag. The workflow run number becomes the
-alpha suffix.
+next patch after the latest stable tag. The alpha suffix starts at `1` for a new
+base version and then increments from the highest existing matching alpha tag.
+Published tags for a base version are never renumbered.
 
 Stable releases should normally be published by pushing a version tag such as
 `v0.9.3`. Maintainers can also publish an explicit alpha tag such as

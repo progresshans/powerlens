@@ -47,8 +47,8 @@ Stable releases and any manually initiated alpha release remain deliberate.
 ## Publication
 
 - [ ] For an automatic alpha, merge the reviewed commit into `develop` and
-      confirm the workflow selected the expected base version and run-number
-      suffix.
+      confirm the workflow selected the expected base version and the next
+      per-version alpha suffix.
 - [ ] For a stable or manually initiated alpha, push an explicit `v<version>` or
       `v<version>-alpha.<n>` tag, or manually dispatch the workflow with the
       matching channel.
