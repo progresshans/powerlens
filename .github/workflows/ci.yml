@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Show toolchain
         run: |
@@ -38,9 +38,15 @@ jobs:
           bash -n \
             script/lib/powerlens_packaging.sh \
             script/build_and_run.sh \
+            script/generate_release_notes.sh \
             script/package_release.sh \
+            script/smoke_launch_app.sh \
+            script/test_generate_release_notes.sh \
             script/test_sparkle_update.sh \
             script/verify_distribution.sh
+
+      - name: Validate release-note generation
+        run: bash script/test_generate_release_notes.sh
 
       - name: Validate metadata
         run: |
@@ -61,6 +67,9 @@ jobs:
           POWERLENS_BUILD: ${{ github.run_number }}
           POWERLENS_SKIP_NOTARIZATION: "1"
           POWERLENS_CLEAN_BUILD: "0"
+          # Valid 32-byte base64 placeholder: exercises the public-key-only
+          # package path without exposing or using a release private key.
+          POWERLENS_SPARKLE_PUBLIC_ED_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: ./script/package_release.sh
 
       - name: Verify packaged arm64 bundle
@@ -69,3 +78,10 @@ jobs:
           test -f release/PowerLens-0.0.0-ci.app.zip
           test -f release/PowerLens-0.0.0-ci.dmg
           test -f release/PowerLens-0.0.0-ci-checksums.txt
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' release/stage/PowerLens.app/Contents/Info.plist)" \
+            = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' release/stage/PowerLens.app/Contents/Info.plist)" \
+            = "26.0"
+
+      - name: Launch packaged app
+        run: ./script/smoke_launch_app.sh release/stage/PowerLens.app

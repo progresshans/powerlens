@@ -4,7 +4,48 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
-## [0.9.2] - Unreleased
+## [Unreleased]
+
+### Added
+
+- Read-only awareness of macOS manual and adaptive charging limits, including
+  distinct states for charging below a configured limit, holding at the limit,
+  and observed charging above the limit.
+- Explicit live, delayed, and unavailable telemetry states, plus a visible
+  local-history storage status.
+
+### Changed
+
+- Updated Sparkle to 2.9.4.
+- Power-flow views preserve independently observed adapter, battery, and system
+  readings instead of forcing mismatched sensors to balance.
+- Charging-limit diagnostics describe only what PowerLens can observe and no
+  longer guess whether macOS is temporarily charging or targeting 100%.
+- High-energy app sampling now runs outside the main actor and reuses results
+  between 10-second measurements.
+- Choosing not to retain older history now explains the affected data and asks
+  for confirmation before permanently deleting expired samples, rollups,
+  long-term health history, and unreferenced metadata.
+- Raised the minimum supported operating system to macOS 26.
+
+### Fixed
+
+- Managed charging states remain stable through brief sensor mismatches and
+  transition only after sustained contradictory evidence.
+- Derived power values keep their approximation and provenance markers across
+  the UI and exported history.
+- Voltage-less battery-current readings are no longer used to fabricate a
+  conflicting power value.
+- Telemetry refresh and local-history failures no longer leave an apparently
+  healthy live or storage status.
+- History schema changes now use checked, versioned migrations instead of
+  silently ignoring SQLite errors.
+- Local packages with a Sparkle public key and a Keychain-managed private key
+  no longer exit silently before the build starts.
+- Stable release publishing now requires an exact, non-empty version section
+  instead of falling back to `[Unreleased]`.
+
+## [0.9.2] - 2026-07-15
 
 ### Added
 
