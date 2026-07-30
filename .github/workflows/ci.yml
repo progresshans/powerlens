@@ -40,13 +40,22 @@ jobs:
             script/build_and_run.sh \
             script/generate_release_notes.sh \
             script/package_release.sh \
+            script/publish_github_release.sh \
+            script/reserve_release_tag.sh \
+            script/resolve_release_metadata.sh \
             script/smoke_launch_app.sh \
             script/test_generate_release_notes.sh \
+            script/test_release_workflow.sh \
             script/test_sparkle_update.sh \
-            script/verify_distribution.sh
+            script/validate_appcast_progression.sh \
+            script/verify_distribution.sh \
+            script/verify_release_tag.sh
 
       - name: Validate release-note generation
         run: bash script/test_generate_release_notes.sh
+
+      - name: Validate release workflow
+        run: bash script/test_release_workflow.sh
 
       - name: Validate metadata
         run: |

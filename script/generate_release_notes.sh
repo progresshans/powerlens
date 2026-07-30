@@ -2,16 +2,26 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${1:?usage: generate_release_notes.sh VERSION OUTPUT_PATH [CHANGELOG_PATH]}"
-OUTPUT_PATH="${2:?usage: generate_release_notes.sh VERSION OUTPUT_PATH [CHANGELOG_PATH]}"
+VERSION="${1:?usage: generate_release_notes.sh VERSION OUTPUT_PATH [CHANGELOG_PATH] [MODE]}"
+OUTPUT_PATH="${2:?usage: generate_release_notes.sh VERSION OUTPUT_PATH [CHANGELOG_PATH] [MODE]}"
 CHANGELOG_PATH="${3:-$ROOT_DIR/CHANGELOG.md}"
+MODE="${4:-require-notes}"
 
-python3 - "$VERSION" "$CHANGELOG_PATH" "$OUTPUT_PATH" <<'PY'
+case "$MODE" in
+  require-notes | allow-empty-alpha)
+    ;;
+  *)
+    echo "release notes: unsupported mode: $MODE" >&2
+    exit 2
+    ;;
+esac
+
+python3 - "$VERSION" "$CHANGELOG_PATH" "$OUTPUT_PATH" "$MODE" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-version, changelog_path, output_path = sys.argv[1:]
+version, changelog_path, output_path, mode = sys.argv[1:]
 text = Path(changelog_path).read_text(encoding="utf-8")
 
 base_version = re.sub(r"-alpha\.\d+$", "", version)
@@ -38,10 +48,17 @@ selected = next(
     None,
 )
 if not selected:
-    choices = ", ".join(candidates)
-    raise SystemExit(
-        f"release notes: CHANGELOG.md has no non-empty section for {choices}"
-    )
+    if mode == "allow-empty-alpha" and "-alpha." in version:
+        selected = (
+            "This alpha preview contains the latest reviewed changes from "
+            "`develop`. No additional user-facing release notes were recorded "
+            "for this build."
+        )
+    else:
+        choices = ", ".join(candidates)
+        raise SystemExit(
+            f"release notes: CHANGELOG.md has no non-empty section for {choices}"
+        )
 
 # CHANGELOG entries live below a level-two version heading. The generated
 # release document replaces that heading with its own level-one title, so lift
