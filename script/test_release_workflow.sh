@@ -75,6 +75,14 @@ unless build["if"] == expected_build_condition
 end
 abort "release workflow: build must use release secret environment" unless build["environment"] == "release"
 abort "release workflow: publish must depend on build" unless publish["needs"] == "build"
+expected_publish_condition =
+  "${{ always() && !cancelled() && needs.build.result == 'success' }}"
+unless publish["if"] == expected_publish_condition
+  abort(
+    "release workflow: publication must continue past skipped automatic " \
+    "approval only after a successful build"
+  )
+end
 
 publish_concurrency = publish["concurrency"]
 unless publish_concurrency == {

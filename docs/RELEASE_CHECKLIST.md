@@ -6,6 +6,16 @@ release without deployment approval. Stable releases, explicit tag releases,
 and any manually initiated alpha release remain deliberate and wait for the
 `release-approval` environment.
 
+## GitHub Environment Policy
+
+- [ ] Confirm the `release` environment retains the signing, notarization, and
+      Sparkle secrets plus its branch and tag policies, but has no required
+      reviewers. This environment supplies secrets after the workflow's
+      approval decision; it must not add a second approval gate.
+- [ ] Confirm the `release-approval` environment has the intended maintainer
+      reviewer and branch and tag policies, but no release secrets. It is the
+      only deployment approval gate.
+
 ## Code and Metadata
 
 - [ ] Update `CHANGELOG.md` with user-facing Added, Changed, and Fixed entries.

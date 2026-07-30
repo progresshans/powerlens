@@ -303,6 +303,9 @@ jobs:
   publish:
     name: Publish Release and Sparkle Appcast
     needs: build
+    # Automatic develop alphas skip release_approval. Evaluate this job
+    # explicitly so that ancestor skip does not propagate past a successful build.
+    if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
