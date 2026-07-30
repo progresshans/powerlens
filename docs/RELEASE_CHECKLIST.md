@@ -1,14 +1,17 @@
 # PowerLens Release Checklist
 
 Use this checklist for stable and alpha releases. Merging a reviewed pull
-request into `develop` automatically publishes a numbered alpha release.
+request into `develop` automatically schedules a numbered alpha release;
+publication still waits for approval on the protected `release` environment.
 Stable releases and any manually initiated alpha release remain deliberate.
 
 ## Code and Metadata
 
 - [ ] Update `CHANGELOG.md` with user-facing Added, Changed, and Fixed entries.
 - [ ] For a stable release, confirm an exact, non-empty `[<version>]` section
-      exists; `[Unreleased]` is an alpha-only fallback.
+      exists. Explicit alpha releases may fall back to `[Unreleased]` but also
+      require non-empty notes; only automatic `develop` alphas may use the
+      generic preview note.
 - [ ] Confirm `Package.resolved` contains the intended Sparkle version and
       revision.
 - [ ] Run `swift test --arch arm64`.
@@ -47,14 +50,25 @@ Stable releases and any manually initiated alpha release remain deliberate.
 ## Publication
 
 - [ ] For an automatic alpha, merge the reviewed commit into `develop` and
-      confirm the workflow selected the expected base version and the next
-      per-version alpha suffix.
+      confirm the latest intended commit has a scheduled workflow. When another
+      automatic alpha is already active, expect multiple pending merges to
+      coalesce to the newest `develop` commit rather than publishing every
+      intermediate commit.
 - [ ] For a stable or manually initiated alpha, push an explicit `v<version>` or
       `v<version>-alpha.<n>` tag, or manually dispatch the workflow with the
-      matching channel.
+      matching channel. These explicit releases must not be coalesced.
 - [ ] Approve the protected `release` environment only after reviewing the
-      commit, version, generated notes, and CI result.
-- [ ] Verify the GitHub Release body contains the intended CHANGELOG section.
+      exact commit, expected version and channel, source CHANGELOG entries, and
+      CI result.
+- [ ] After metadata resolution, confirm the selected tag points to the exact
+      source commit. For an automatic or manually dispatched release, confirm
+      its annotated reservation records the current workflow run ID.
+- [ ] If any stage fails after tag reservation, rerun that same workflow. Do
+      not dispatch a different run for the reserved version; a different run is
+      intentionally prevented from overwriting it.
+- [ ] Verify the GitHub Release body contains the intended CHANGELOG section or,
+      for an automatic alpha with no entries, the expected generic preview
+      note.
 - [ ] Download the published assets and verify their checksums.
 - [ ] Confirm the stable or alpha appcast serves the new item while the other
       channel remains intact.
