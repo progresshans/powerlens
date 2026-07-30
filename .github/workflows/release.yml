@@ -2,6 +2,8 @@ name: Publish Release
 
 on:
   push:
+    branches:
+      - develop
     tags:
       - "v*"
   workflow_dispatch:
@@ -22,13 +24,15 @@ on:
 permissions:
   contents: read
 
+# Keep a running automatic alpha, but coalesce multiple pending develop pushes
+# into the newest commit. Explicit tag and dispatch runs get unique groups.
 concurrency:
-  group: publish-release-${{ github.ref }}
+  group: release-request-${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'develop' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build, Notarize, Release, and Publish Appcast
+  build:
+    name: Build and Notarize Release
     runs-on: macos-26
     environment: release
     permissions:
@@ -52,69 +56,50 @@ jobs:
           test "$(uname -m)" = "arm64"
           uname -m
 
+      - name: Validate manually dispatched release notes
+        id: manual_notes
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          ./script/generate_release_notes.sh \
+            "$VERSION" \
+            "$RUNNER_TEMP/powerlens-release-notes.md" \
+            "$GITHUB_WORKSPACE/CHANGELOG.md" \
+            require-notes
+          echo "validated=true" >> "$GITHUB_OUTPUT"
+
       - name: Resolve release metadata
         id: meta
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
+          ALPHA_BASE_VERSION: ${{ vars.POWERLENS_ALPHA_BASE_VERSION }}
+          MANUAL_NOTES_VALIDATED: ${{ steps.manual_notes.outputs.validated }}
+        run: ./script/resolve_release_metadata.sh
+
+      - name: Create release notes
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_NOTES_MODE: ${{ steps.meta.outputs.release_notes_mode }}
         run: |
-          set -euo pipefail
+          ./script/generate_release_notes.sh \
+            "$VERSION" \
+            "$RUNNER_TEMP/powerlens-release-notes.md" \
+            "$GITHUB_WORKSPACE/CHANGELOG.md" \
+            "$RELEASE_NOTES_MODE"
 
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-            tag="$GITHUB_REF_NAME"
-            if [[ "$version" == *"-alpha."* ]]; then
-              channel="alpha"
-            else
-              channel="stable"
-            fi
-          else
-            version="${DISPATCH_VERSION:?workflow_dispatch requires a version}"
-            tag="v${version}"
-            channel="${DISPATCH_CHANNEL:-stable}"
-          fi
-
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$ ]]; then
-            echo "unsupported release version: $version" >&2
-            echo "expected 0.9.3 or 0.9.3-alpha.1" >&2
-            exit 2
-          fi
-
-          if [[ "$version" == *"-alpha."* && "$channel" != "alpha" ]]; then
-            echo "alpha versions must use the alpha channel" >&2
-            exit 2
-          fi
-          if [[ "$version" != *"-alpha."* && "$channel" != "stable" ]]; then
-            echo "stable versions must use the stable channel" >&2
-            exit 2
-          fi
-
-          case "$channel" in
-            stable)
-              appcast_path="docs/appcast.xml"
-              prerelease="false"
-              latest="true"
-              ;;
-            alpha)
-              appcast_path="docs/appcast-alpha.xml"
-              prerelease="true"
-              latest="false"
-              ;;
-            *)
-              echo "unsupported channel: $channel" >&2
-              exit 2
-              ;;
-          esac
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "appcast_path=$appcast_path" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
-          echo "download_url_prefix=https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/" >> "$GITHUB_OUTPUT"
-
-          echo "PowerLens $version ($channel) -> $tag"
+      - name: Record release provenance
+        env:
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+        run: |
+          printf \
+            '\n<!-- powerlens-release-run-id: %s -->\n<!-- powerlens-release-sha: %s -->\n' \
+            "$RELEASE_RUN_ID" \
+            "$SOURCE_SHA" \
+            >> "$RUNNER_TEMP/powerlens-release-notes.md"
 
       - name: Validate release secrets
         env:
@@ -233,72 +218,175 @@ jobs:
           STRICT: "1"
         run: ./script/verify_distribution.sh release/stage/PowerLens.app
 
-      - name: Preserve generated appcast
-        run: |
-          mkdir -p "$RUNNER_TEMP/powerlens-appcast"
-          cp "${{ steps.meta.outputs.appcast_path }}" "$RUNNER_TEMP/powerlens-appcast/appcast.xml"
-
-      - name: Create release notes
+      - name: Verify reserved release tag
+        if: steps.meta.outputs.tag_origin != 'pending'
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: ./script/generate_release_notes.sh "$VERSION" "$RUNNER_TEMP/powerlens-release-notes.md"
-
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          TAG_ORIGIN: ${{ steps.meta.outputs.tag_origin }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+        run: |
+          ./script/verify_release_tag.sh \
+            "$TAG" \
+            "$SOURCE_SHA" \
+            "$TAG_ORIGIN" \
+            "$RELEASE_RUN_ID"
+
+      - name: Stage publication artifact
+        env:
           VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          APPCAST_PATH: ${{ steps.meta.outputs.appcast_path }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
           LATEST: ${{ steps.meta.outputs.latest }}
+          RELEASE_KIND: ${{ steps.meta.outputs.release_kind }}
+          TAG_ORIGIN: ${{ steps.meta.outputs.tag_origin }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          args=(
-            "$TAG"
-            "release/PowerLens-$VERSION.dmg"
-            "release/PowerLens-$VERSION.app.zip"
-            "release/PowerLens-$VERSION-checksums.txt"
-            --title "PowerLens $VERSION"
-            --notes-file "$RUNNER_TEMP/powerlens-release-notes.md"
-            --target "$GITHUB_SHA"
-          )
+          publish_dir="$RUNNER_TEMP/powerlens-publish"
+          rm -rf "$publish_dir"
+          mkdir -p "$publish_dir"
 
-          if [[ "$PRERELEASE" == "true" ]]; then
-            args+=(--prerelease)
-          fi
+          cp "release/PowerLens-$VERSION.dmg" "$publish_dir/"
+          cp "release/PowerLens-$VERSION.app.zip" "$publish_dir/"
+          cp "release/PowerLens-$VERSION-checksums.txt" "$publish_dir/"
+          cp "$APPCAST_PATH" "$publish_dir/appcast.xml"
+          cp "$RUNNER_TEMP/powerlens-release-notes.md" "$publish_dir/release-notes.md"
 
-          if [[ "$LATEST" == "false" ]]; then
-            args+=(--latest=false)
-          fi
+          {
+            printf 'VERSION=%s\n' "$VERSION"
+            printf 'TAG=%s\n' "$TAG"
+            printf 'CHANNEL=%s\n' "$CHANNEL"
+            printf 'APPCAST_PATH=%s\n' "$APPCAST_PATH"
+            printf 'PRERELEASE=%s\n' "$PRERELEASE"
+            printf 'LATEST=%s\n' "$LATEST"
+            printf 'RELEASE_KIND=%s\n' "$RELEASE_KIND"
+            printf 'TAG_ORIGIN=%s\n' "$TAG_ORIGIN"
+            printf 'SOURCE_SHA=%s\n' "$SOURCE_SHA"
+            printf 'RELEASE_RUN_ID=%s\n' "$RELEASE_RUN_ID"
+          } > "$publish_dir/metadata.env"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            edit_args=(
-              "$TAG"
-              --title "PowerLens $VERSION"
-              --notes-file "$RUNNER_TEMP/powerlens-release-notes.md"
-              --target "$GITHUB_SHA"
-            )
+      - name: Upload publication artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: powerlens-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/powerlens-publish
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+          compression-level: 0
 
-            if [[ "$PRERELEASE" == "true" ]]; then
-              edit_args+=(--prerelease --latest=false)
-            else
-              edit_args+=(--prerelease=false --latest)
-            fi
+  publish:
+    name: Publish Release and Sparkle Appcast
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: publish-release
+      cancel-in-progress: false
+      queue: max
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
-            gh release edit "${edit_args[@]}"
-            gh release upload "$TAG" \
-              "release/PowerLens-$VERSION.dmg" \
-              "release/PowerLens-$VERSION.app.zip" \
-              "release/PowerLens-$VERSION-checksums.txt" \
-              --clobber
-          else
-            gh release create "${args[@]}"
-          fi
+    env:
+      POWERLENS_SPARKLE_FEED_URL: https://progresshans.github.io/powerlens/appcast.xml
+      POWERLENS_SPARKLE_ALPHA_FEED_URL: https://progresshans.github.io/powerlens/appcast-alpha.xml
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download publication artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: powerlens-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/powerlens-publish
+
+      - name: Validate publication metadata
+        id: meta
+        env:
+          METADATA_PATH: ${{ runner.temp }}/powerlens-publish/metadata.env
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          VERSION=""
+          TAG=""
+          CHANNEL=""
+          APPCAST_PATH=""
+          PRERELEASE=""
+          LATEST=""
+          RELEASE_KIND=""
+          TAG_ORIGIN=""
+          SOURCE_SHA=""
+          RELEASE_RUN_ID=""
+
+          while IFS='=' read -r key value; do
+            case "$key" in
+              VERSION | TAG | CHANNEL | APPCAST_PATH | PRERELEASE | LATEST | RELEASE_KIND | TAG_ORIGIN | SOURCE_SHA | RELEASE_RUN_ID)
+                printf -v "$key" '%s' "$value"
+                ;;
+              *)
+                echo "unsupported publication metadata key: $key" >&2
+                exit 2
+                ;;
+            esac
+          done < "$METADATA_PATH"
+
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$ ]]
+          [[ "$TAG" == "v$VERSION" ]]
+          [[ "$CHANNEL" == "stable" || "$CHANNEL" == "alpha" ]]
+          [[ "$APPCAST_PATH" == "docs/appcast.xml" || "$APPCAST_PATH" == "docs/appcast-alpha.xml" ]]
+          [[ "$PRERELEASE" == "true" || "$PRERELEASE" == "false" ]]
+          [[ "$LATEST" == "true" || "$LATEST" == "false" ]]
+          [[ "$RELEASE_KIND" == "automatic" || "$RELEASE_KIND" == "tag" || "$RELEASE_KIND" == "manual" ]]
+          [[ "$TAG_ORIGIN" == "event" || "$TAG_ORIGIN" == "reserved" || "$TAG_ORIGIN" == "pending" ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_SHA" == "$(git rev-parse "${EXPECTED_SHA}^{commit}")" ]]
+          [[ "$RELEASE_RUN_ID" == "$EXPECTED_RUN_ID" ]]
+
+          case "$RELEASE_KIND:$TAG_ORIGIN" in
+            automatic:reserved | tag:event | manual:pending)
+              ;;
+            *)
+              echo "invalid release kind and tag origin: $RELEASE_KIND / $TAG_ORIGIN" >&2
+              exit 2
+              ;;
+          esac
+
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "channel=$CHANNEL"
+            echo "appcast_path=$APPCAST_PATH"
+            echo "prerelease=$PRERELEASE"
+            echo "latest=$LATEST"
+            echo "release_kind=$RELEASE_KIND"
+            echo "tag_origin=$TAG_ORIGIN"
+            echo "source_sha=$SOURCE_SHA"
+            echo "release_run_id=$RELEASE_RUN_ID"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Prepare GitHub Pages artifact
         env:
           APPCAST_PATH: ${{ steps.meta.outputs.appcast_path }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          GENERATED_APPCAST: ${{ runner.temp }}/powerlens-publish/appcast.xml
           STABLE_FEED_URL: ${{ env.POWERLENS_SPARKLE_FEED_URL }}
           ALPHA_FEED_URL: ${{ env.POWERLENS_SPARKLE_ALPHA_FEED_URL }}
+          CACHE_BUSTER: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
 
@@ -311,19 +399,50 @@ jobs:
             local url="$1"
             local destination="$2"
             local tmp="$destination.tmp"
+            local status
+            local request_url
 
-            if curl -fsSL "$url" -o "$tmp"; then
-              python3 - "$tmp" <<'PY'
+            request_url="${url}?powerlens-release=$CACHE_BUSTER"
+
+            status="$(
+              curl \
+                --silent \
+                --show-error \
+                --location \
+                --retry 3 \
+                --retry-all-errors \
+                --connect-timeout 15 \
+                --max-time 60 \
+                --header 'Cache-Control: no-cache' \
+                --output "$tmp" \
+                --write-out '%{http_code}' \
+                "$request_url"
+            )" || {
+              rm -f "$tmp"
+              echo "failed to preserve existing feed from $url" >&2
+              return 1
+            }
+
+            case "$status" in
+              200)
+                python3 - "$tmp" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           ET.parse(sys.argv[1])
           PY
-              mv "$tmp" "$destination"
-              echo "preserved existing feed from $url"
-            else
-              rm -f "$tmp"
-              echo "no existing feed at $url; using repository placeholder for $destination"
-            fi
+                mv "$tmp" "$destination"
+                echo "preserved existing feed from $url"
+                ;;
+              404)
+                rm -f "$tmp"
+                echo "no existing feed at $url; using repository placeholder"
+                ;;
+              *)
+                rm -f "$tmp"
+                echo "unexpected HTTP $status while preserving $url" >&2
+                return 1
+                ;;
+            esac
           }
 
           fetch_existing_feed "$STABLE_FEED_URL" "$pages_dir/appcast.xml"
@@ -331,30 +450,54 @@ jobs:
 
           relative_appcast="${APPCAST_PATH#docs/}"
           mkdir -p "$pages_dir/$(dirname "$relative_appcast")"
-          cp "$RUNNER_TEMP/powerlens-appcast/appcast.xml" "$pages_dir/$relative_appcast"
+          ./script/validate_appcast_progression.sh \
+            "$pages_dir/appcast.xml" \
+            "$pages_dir/appcast-alpha.xml" \
+            "$GENERATED_APPCAST" \
+            "$VERSION" \
+            "$CHANNEL"
+          cp "$GENERATED_APPCAST" "$pages_dir/$relative_appcast"
           python3 - "$pages_dir/$relative_appcast" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           ET.parse(sys.argv[1])
           PY
 
+      - name: Reserve manually dispatched release tag
+        id: manual_tag
+        if: steps.meta.outputs.release_kind == 'manual'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          RELEASE_RUN_ID: ${{ steps.meta.outputs.release_run_id }}
+        run: |
+          ./script/reserve_release_tag.sh \
+            "$TAG" \
+            "$SOURCE_SHA" \
+            "$RELEASE_RUN_ID"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          LATEST: ${{ steps.meta.outputs.latest }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          TAG_ORIGIN: ${{ steps.manual_tag.outputs.tag_origin || steps.meta.outputs.tag_origin }}
+          RELEASE_RUN_ID: ${{ steps.meta.outputs.release_run_id }}
+          RELEASE_NOTES_PATH: ${{ runner.temp }}/powerlens-publish/release-notes.md
+          RELEASE_ASSET_DIR: ${{ runner.temp }}/powerlens-publish
+        run: ./script/publish_github_release.sh
+
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/powerlens-pages
 
-  deploy-pages:
-    name: Deploy Sparkle Appcast
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}

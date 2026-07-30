@@ -1,13 +1,17 @@
 # PowerLens Release Checklist
 
-Use this checklist for stable and alpha releases. A release must be deliberate:
-ordinary branch pushes do not publish software.
+Use this checklist for stable and alpha releases. Merging a reviewed pull
+request into `develop` automatically schedules a numbered alpha release;
+publication still waits for approval on the protected `release` environment.
+Stable releases and any manually initiated alpha release remain deliberate.
 
 ## Code and Metadata
 
 - [ ] Update `CHANGELOG.md` with user-facing Added, Changed, and Fixed entries.
 - [ ] For a stable release, confirm an exact, non-empty `[<version>]` section
-      exists; `[Unreleased]` is an alpha-only fallback.
+      exists. Explicit alpha releases may fall back to `[Unreleased]` but also
+      require non-empty notes; only automatic `develop` alphas may use the
+      generic preview note.
 - [ ] Confirm `Package.resolved` contains the intended Sparkle version and
       revision.
 - [ ] Run `swift test --arch arm64`.
@@ -39,17 +43,41 @@ ordinary branch pushes do not publish software.
       and Gatekeeper assessment.
 - [ ] Install the DMG in a clean macOS user account and verify first launch.
 - [ ] Run `./script/test_sparkle_update.sh` on a maintainer Mac.
-- [ ] Confirm the generated appcast has the expected channel, version,
-      download URL, length, EdDSA signature, and `26.0` minimum system version.
+- [ ] Confirm the generated appcast has the expected channel, display version,
+      Sparkle build number greater than the highest build in either published
+      channel, download URL, length, EdDSA signature, and `26.0` minimum system
+      version.
 - [ ] Verify DMG, ZIP, and checksum filenames match the release version.
 
 ## Publication
 
-- [ ] Push an explicit `v<version>` or `v<version>-alpha.<n>` tag, or manually
-      dispatch the release workflow with the matching channel.
+- [ ] For an automatic alpha, merge the reviewed commit into `develop` and
+      confirm the latest intended commit has a scheduled workflow. When another
+      automatic alpha is already active, expect multiple pending merges to
+      coalesce to the newest `develop` commit rather than publishing every
+      intermediate commit.
+- [ ] For a stable or manually initiated alpha, push an explicit `v<version>` or
+      `v<version>-alpha.<n>` tag, or manually dispatch the workflow with the
+      matching channel. These explicit releases must not be coalesced.
 - [ ] Approve the protected `release` environment only after reviewing the
-      commit, version, generated notes, and CI result.
-- [ ] Verify the GitHub Release body contains the intended CHANGELOG section.
+      exact commit, expected version and channel, source CHANGELOG entries, and
+      CI result.
+- [ ] After metadata resolution, confirm an automatic alpha's annotated tag
+      points to the exact source commit and records the current workflow run
+      ID. For an explicit tag release, confirm the existing tag points to that
+      commit. A manual dispatch intentionally has no tag yet.
+- [ ] For a manual dispatch, confirm the publication job preserves the live
+      feeds and accepts the appcast progression before it reserves the
+      annotated tag. A rejected older version must leave no remote tag.
+- [ ] If any stage fails after tag reservation, rerun that same workflow. Do
+      not dispatch a different run for the reserved version; a different run is
+      intentionally prevented from overwriting it. Do not rerun a deterministic
+      appcast progression rejection: an automatic alpha keeps its unpublished
+      reserved tag and a newer `develop` run must advance past it; an explicit
+      release needs a deliberately newer version and tag after investigation.
+- [ ] Verify the GitHub Release body contains the intended CHANGELOG section or,
+      for an automatic alpha with no entries, the expected generic preview
+      note.
 - [ ] Download the published assets and verify their checksums.
 - [ ] Confirm the stable or alpha appcast serves the new item while the other
       channel remains intact.
