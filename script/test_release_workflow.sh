@@ -44,11 +44,36 @@ if request_concurrency.key?("queue")
 end
 
 jobs = workflow["jobs"]
+release_approval = jobs["release_approval"]
 build = jobs["build"]
 publish = jobs["publish"]
+abort "release workflow: missing explicit release approval job" unless release_approval.is_a?(Hash)
 abort "release workflow: missing build job" unless build.is_a?(Hash)
 abort "release workflow: missing publish job" unless publish.is_a?(Hash)
-abort "release workflow: build must use protected release environment" unless build["environment"] == "release"
+
+expected_approval_condition =
+  "${{ github.event_name != 'push' || github.ref != 'refs/heads/develop' }}"
+unless release_approval["if"] == expected_approval_condition
+  abort "release workflow: only automatic develop alphas may skip approval"
+end
+unless release_approval["environment"] == "release-approval"
+  abort "release workflow: explicit releases must use the approval-only environment"
+end
+if release_approval.to_s.include?("secrets.")
+  abort "release workflow: approval-only environment must not consume release secrets"
+end
+
+unless build["needs"] == "release_approval"
+  abort "release workflow: build must depend on explicit release approval"
+end
+expected_build_condition =
+  "${{ always() && !cancelled() && " \
+  "(needs.release_approval.result == 'success' || " \
+  "needs.release_approval.result == 'skipped') }}"
+unless build["if"] == expected_build_condition
+  abort "release workflow: build must accept approved or skipped approval jobs only"
+end
+abort "release workflow: build must use release secret environment" unless build["environment"] == "release"
 abort "release workflow: publish must depend on build" unless publish["needs"] == "build"
 
 publish_concurrency = publish["concurrency"]
