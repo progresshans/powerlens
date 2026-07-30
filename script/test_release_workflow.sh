@@ -133,6 +133,9 @@ pages_prepare = publish_steps.fetch(pages_prepare_index)
 unless pages_prepare["run"].include?("./script/validate_appcast_progression.sh")
   abort "release workflow: Pages preparation must prevent appcast rollback"
 end
+unless pages_prepare["run"].include?('"$GENERATED_APPCAST"')
+  abort "release workflow: appcast progression must inspect the generated build number"
+end
 
 manual_reservation = publish_steps.fetch(manual_reservation_index)
 unless manual_reservation["if"] == "steps.meta.outputs.release_kind == 'manual'" &&
@@ -168,14 +171,19 @@ RUBY
 
 write_appcast_fixture() {
   local path="$1"
+  local release version build
   shift
 
   {
     echo '<?xml version="1.0" encoding="utf-8"?>'
     echo '<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">'
     echo '  <channel>'
-    for version in "$@"; do
+    for release in "$@"; do
+      version="${release%%:*}"
+      build="${release#*:}"
       echo '    <item>'
+      printf '      <sparkle:version>%s</sparkle:version>\n' \
+        "$build"
       printf '      <sparkle:shortVersionString>%s</sparkle:shortVersionString>\n' \
         "$version"
       echo '    </item>'
@@ -186,25 +194,43 @@ write_appcast_fixture() {
 }
 
 write_appcast_fixture "$TEST_DIR/empty-appcast.xml"
+write_appcast_fixture \
+  "$TEST_DIR/alpha-first.xml" \
+  0.9.3-alpha.1:101
 "$APPCAST_VALIDATOR" \
   "$TEST_DIR/empty-appcast.xml" \
+  "$TEST_DIR/alpha-first.xml" \
   0.9.3-alpha.1 \
   alpha \
   >/dev/null
 
-write_appcast_fixture "$TEST_DIR/alpha-appcast.xml" 0.9.3-alpha.7
+write_appcast_fixture \
+  "$TEST_DIR/alpha-appcast.xml" \
+  0.9.3-alpha.7:107
+write_appcast_fixture \
+  "$TEST_DIR/alpha-next.xml" \
+  0.9.3-alpha.8:108
 "$APPCAST_VALIDATOR" \
   "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/alpha-next.xml" \
   0.9.3-alpha.8 \
   alpha \
   >/dev/null
+write_appcast_fixture \
+  "$TEST_DIR/alpha-resume.xml" \
+  0.9.3-alpha.7:107
 "$APPCAST_VALIDATOR" \
   "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/alpha-resume.xml" \
   0.9.3-alpha.7 \
   alpha \
   >/dev/null
+write_appcast_fixture \
+  "$TEST_DIR/alpha-version-rollback.xml" \
+  0.9.3-alpha.6:109
 if "$APPCAST_VALIDATOR" \
   "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/alpha-version-rollback.xml" \
   0.9.3-alpha.6 \
   alpha \
   >"$TEST_DIR/alpha-rollback.log" 2>&1; then
@@ -215,14 +241,56 @@ grep -Fq \
   "refusing to replace alpha 0.9.3-alpha.7 with older 0.9.3-alpha.6" \
   "$TEST_DIR/alpha-rollback.log"
 
-write_appcast_fixture "$TEST_DIR/stable-appcast.xml" 0.9.2
+write_appcast_fixture \
+  "$TEST_DIR/alpha-build-rollback.xml" \
+  0.9.3-alpha.8:106
+if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/alpha-build-rollback.xml" \
+  0.9.3-alpha.8 \
+  alpha \
+  >"$TEST_DIR/alpha-build-rollback.log" 2>&1; then
+  echo "release workflow test: appcast validator allowed a Sparkle build rollback" >&2
+  exit 1
+fi
+grep -Fq \
+  "refusing to replace Sparkle build 107 with older build 106" \
+  "$TEST_DIR/alpha-build-rollback.log"
+
+write_appcast_fixture \
+  "$TEST_DIR/alpha-build-stall.xml" \
+  0.9.3-alpha.8:107
+if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/alpha-build-stall.xml" \
+  0.9.3-alpha.8 \
+  alpha \
+  >"$TEST_DIR/alpha-build-stall.log" 2>&1; then
+  echo "release workflow test: appcast validator allowed a stalled Sparkle build" >&2
+  exit 1
+fi
+grep -Fq \
+  "without increasing Sparkle build 107" \
+  "$TEST_DIR/alpha-build-stall.log"
+
+write_appcast_fixture \
+  "$TEST_DIR/stable-appcast.xml" \
+  0.9.2:200
+write_appcast_fixture \
+  "$TEST_DIR/stable-next.xml" \
+  0.9.3:201
 "$APPCAST_VALIDATOR" \
   "$TEST_DIR/stable-appcast.xml" \
+  "$TEST_DIR/stable-next.xml" \
   0.9.3 \
   stable \
   >/dev/null
+write_appcast_fixture \
+  "$TEST_DIR/stable-version-rollback.xml" \
+  0.9.1:202
 if "$APPCAST_VALIDATOR" \
   "$TEST_DIR/stable-appcast.xml" \
+  "$TEST_DIR/stable-version-rollback.xml" \
   0.9.1 \
   stable \
   >"$TEST_DIR/stable-rollback.log" 2>&1; then
@@ -235,6 +303,7 @@ grep -Fq \
 
 if "$APPCAST_VALIDATOR" \
   "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/stable-next.xml" \
   0.9.3 \
   stable \
   >"$TEST_DIR/channel-mismatch.log" 2>&1; then

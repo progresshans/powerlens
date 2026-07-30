@@ -183,7 +183,8 @@ Stable releases should normally be published by pushing a version tag such as
 channel. Branch pushes other than `develop` do not publish a release. If a
 release fails after reserving a tag, rerun the original workflow so its run ID
 can safely resume that reservation. A manual version that would move its
-appcast backward fails before reserving its tag.
+appcast display version or Sparkle build number backward fails before reserving
+its tag.
 
 Release notes are generated from the matching version section in
 `CHANGELOG.md`. Stable versions require an exact, non-empty version section.
@@ -197,9 +198,12 @@ workflow publishes the `docs/` site as a Pages artifact after preserving both
 currently published feeds. A missing feed may use the repository placeholder;
 transient HTTP or invalid-XML responses stop the Pages deployment instead of
 silently replacing the other channel. A release also stops before publication
-if it would move its update channel back to an older version. Before editing an
-existing release, the workflow verifies the remote tag commit and the release's
-recorded run ID and source SHA.
+if it would move its update channel's display version or machine-readable
+Sparkle build number backward. Advancing a display version without increasing
+the Sparkle build number is also rejected because Sparkle compares
+`CFBundleVersion`/`sparkle:version` when deciding whether an update is newer.
+Before editing an existing release, the workflow verifies the remote tag commit
+and the release's recorded run ID and source SHA.
 
 The release workflow requires these GitHub Secrets:
 

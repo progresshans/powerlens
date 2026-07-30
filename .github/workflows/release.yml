@@ -452,6 +452,7 @@ jobs:
           mkdir -p "$pages_dir/$(dirname "$relative_appcast")"
           ./script/validate_appcast_progression.sh \
             "$pages_dir/$relative_appcast" \
+            "$GENERATED_APPCAST" \
             "$VERSION" \
             "$CHANNEL"
           cp "$GENERATED_APPCAST" "$pages_dir/$relative_appcast"
