@@ -41,9 +41,14 @@
 "telemetry.delayed.detail" = "Last %@ reading · %@";
 
 "settings.pane.general" = "General";
-"settings.pane.telemetry" = "Telemetry";
-"settings.pane.behavior" = "App Behavior";
-"settings.telemetry.status" = "Telemetry Status";
+"settings.pane.data" = "Data";
+"settings.pane.updates" = "Updates";
+"settings.section.menuBarAndDock" = "Menu Bar & Dock";
+"settings.section.system" = "System";
+"settings.section.telemetry" = "Telemetry";
+"settings.section.history" = "Local History";
+"settings.section.telemetry.footer" = "Telemetry is the battery and power data PowerLens reads from this Mac. It is not sent anywhere.";
+"settings.row.status" = "Status";
 "settings.currentMode" = "Current Mode";
 
 "updates.check" = "Check for Updates…";
@@ -288,8 +293,6 @@
 
 "launchAtLogin.toggle" = "Launch at Login";
 
-"settings.pane.history" = "History";
-"history.status.title" = "History Status";
 "history.status.checking" = "Checking";
 "history.status.available" = "Available";
 "history.status.degraded" = "Storage Issue";
