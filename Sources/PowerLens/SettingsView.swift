@@ -16,12 +16,12 @@ struct SettingsView: View {
     @State private var isConfirmingLongTermHistoryDiscard = false
 
     private var selectedPane: SettingsPane {
-        SettingsPane(rawValue: selectedPaneRaw) ?? .general
+        SettingsPane(storedRawValue: selectedPaneRaw)
     }
 
     private var paneSelection: Binding<String?> {
         Binding(
-            get: { selectedPaneRaw },
+            get: { selectedPane.rawValue },
             set: { selectedPaneRaw = $0 ?? SettingsPane.general.rawValue }
         )
     }
@@ -80,12 +80,10 @@ struct SettingsView: View {
             switch selectedPane {
             case .general:
                 generalSection
-            case .telemetry:
-                telemetrySection
-            case .history:
-                historySection
-            case .behavior:
-                behaviorSection
+            case .data:
+                dataSection
+            case .updates:
+                updatesSection
             }
         }
         .formStyle(.grouped)
@@ -108,12 +106,51 @@ struct SettingsView: View {
                 rowLabel(L10n.text("language.title"))
             }
         }
+
+        Section {
+            LabeledContent {
+                Picker(L10n.text("menuBarStyle.title"), selection: $menuBarDisplayStyle) {
+                    ForEach(MenuBarDisplayStylePreference.allCases) { style in
+                        Text(style.title).tag(style.rawValue)
+                    }
+                }
+                .labelsHidden()
+            } label: {
+                rowLabel(
+                    L10n.text("menuBarStyle.title"),
+                    (MenuBarDisplayStylePreference(rawValue: menuBarDisplayStyle) ?? .powerLens).detail
+                )
+            }
+
+            Toggle(isOn: $showDockIcon) {
+                rowLabel(
+                    L10n.text("dockIcon.toggle"),
+                    showDockIcon
+                        ? L10n.text("dockIcon.description.visible")
+                        : L10n.text("dockIcon.description.hidden")
+                )
+            }
+        } header: {
+            Text(L10n.text("settings.section.menuBarAndDock"))
+        }
+
+        Section {
+            Toggle(isOn: launchAtLoginBinding) {
+                rowLabel(L10n.text("launchAtLogin.toggle"))
+            }
+
+            Toggle(isOn: $notificationsEnabled) {
+                rowLabel(L10n.text("notifications.toggle"), L10n.text("notifications.description"))
+            }
+        } header: {
+            Text(L10n.text("settings.section.system"))
+        }
     }
 
-    // MARK: - Telemetry
+    // MARK: - Data
 
     @ViewBuilder
-    private var telemetrySection: some View {
+    private var dataSection: some View {
         Section {
             LabeledContent {
                 HStack(spacing: 8) {
@@ -121,7 +158,7 @@ struct SettingsView: View {
                     StatusChip(text: telemetryStatusChipText)
                 }
             } label: {
-                rowLabel(L10n.text("settings.telemetry.status"), store.telemetryStatusText)
+                rowLabel(L10n.text("settings.row.status"), store.telemetryStatusText)
             }
 
             LabeledContent {
@@ -137,13 +174,12 @@ struct SettingsView: View {
                     (TelemetryEnginePreference(rawValue: telemetryEnginePreference) ?? .auto).detail
                 )
             }
+        } header: {
+            Text(L10n.text("settings.section.telemetry"))
+        } footer: {
+            Text(L10n.text("settings.section.telemetry.footer"))
         }
-    }
 
-    // MARK: - History
-
-    @ViewBuilder
-    private var historySection: some View {
         Section {
             LabeledContent {
                 HStack(spacing: 8) {
@@ -152,7 +188,7 @@ struct SettingsView: View {
                 }
             } label: {
                 rowLabel(
-                    L10n.text("history.status.title"),
+                    L10n.text("settings.row.status"),
                     historyStatusDetailText
                 )
             }
@@ -182,48 +218,15 @@ struct SettingsView: View {
                     longTermHistoryDetail
                 )
             }
+        } header: {
+            Text(L10n.text("settings.section.history"))
         }
     }
 
-    // MARK: - Behavior
+    // MARK: - Updates
 
     @ViewBuilder
-    private var behaviorSection: some View {
-        Section {
-            LabeledContent {
-                Picker(L10n.text("menuBarStyle.title"), selection: $menuBarDisplayStyle) {
-                    ForEach(MenuBarDisplayStylePreference.allCases) { style in
-                        Text(style.title).tag(style.rawValue)
-                    }
-                }
-                .labelsHidden()
-            } label: {
-                rowLabel(
-                    L10n.text("menuBarStyle.title"),
-                    (MenuBarDisplayStylePreference(rawValue: menuBarDisplayStyle) ?? .powerLens).detail
-                )
-            }
-        }
-
-        Section {
-            Toggle(isOn: $showDockIcon) {
-                rowLabel(
-                    L10n.text("dockIcon.toggle"),
-                    showDockIcon
-                        ? L10n.text("dockIcon.description.visible")
-                        : L10n.text("dockIcon.description.hidden")
-                )
-            }
-
-            Toggle(isOn: launchAtLoginBinding) {
-                rowLabel(L10n.text("launchAtLogin.toggle"))
-            }
-
-            Toggle(isOn: $notificationsEnabled) {
-                rowLabel(L10n.text("notifications.toggle"), L10n.text("notifications.description"))
-            }
-        }
-
+    private var updatesSection: some View {
         Section {
             LabeledContent {
                 Picker(L10n.text("updates.channel"), selection: $updateChannel) {
@@ -244,25 +247,28 @@ struct SettingsView: View {
                 Button(L10n.text("updates.check.button")) {
                     softwareUpdateController.checkForUpdates()
                 }
-                .disabled(!softwareUpdateController.canCheckForUpdates)
+                .disabled(
+                    !softwareUpdateController.isConfigured
+                        || !softwareUpdateController.canCheckForUpdates
+                )
             } label: {
                 rowLabel(
                     L10n.text("updates.check"),
-                    softwareUpdateController.isConfigured
-                        ? L10n.text("updates.check.description")
-                        : L10n.text("updates.notConfigured")
+                    L10n.text("updates.check.description")
                 )
             }
 
             Toggle(isOn: automaticUpdatesBinding) {
                 rowLabel(
                     L10n.text("updates.automatic"),
-                    softwareUpdateController.isConfigured
-                        ? L10n.text("updates.automatic.description")
-                        : L10n.text("updates.notConfigured")
+                    L10n.text("updates.automatic.description")
                 )
             }
             .disabled(!softwareUpdateController.isConfigured)
+        } footer: {
+            if !softwareUpdateController.isConfigured {
+                Text(L10n.text("updates.notConfigured"))
+            }
         }
     }
 

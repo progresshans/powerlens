@@ -41,9 +41,14 @@
 "telemetry.delayed.detail" = "마지막 %@ 측정 · %@";
 
 "settings.pane.general" = "일반";
-"settings.pane.telemetry" = "텔레메트리";
-"settings.pane.behavior" = "앱 동작";
-"settings.telemetry.status" = "텔레메트리 상태";
+"settings.pane.data" = "데이터";
+"settings.pane.updates" = "업데이트";
+"settings.section.menuBarAndDock" = "메뉴 바 및 Dock";
+"settings.section.system" = "시스템";
+"settings.section.telemetry" = "텔레메트리";
+"settings.section.history" = "로컬 기록";
+"settings.section.telemetry.footer" = "텔레메트리는 PowerLens가 이 Mac에서 읽는 배터리·전력 데이터입니다. 외부로 전송되지 않습니다.";
+"settings.row.status" = "상태";
 "settings.currentMode" = "현재 모드";
 
 "updates.check" = "업데이트 확인…";
@@ -288,8 +293,6 @@
 
 "launchAtLogin.toggle" = "로그인 시 실행";
 
-"settings.pane.history" = "기록";
-"history.status.title" = "기록 상태";
 "history.status.checking" = "확인 중";
 "history.status.available" = "사용 가능";
 "history.status.degraded" = "저장 문제";
