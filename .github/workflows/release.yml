@@ -31,8 +31,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release_approval:
+    name: Approve Explicit Release
+    if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/develop' }}
+    runs-on: ubuntu-latest
+    environment: release-approval
+
+    steps:
+      - name: Record approved release request
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          printf \
+            'Approved %s release request for %s at %s\n' \
+            "$RELEASE_EVENT" \
+            "$RELEASE_REF" \
+            "$RELEASE_SHA"
+
   build:
     name: Build and Notarize Release
+    needs: release_approval
+    if: ${{ always() && !cancelled() && (needs.release_approval.result == 'success' || needs.release_approval.result == 'skipped') }}
     runs-on: macos-26
     environment: release
     permissions:

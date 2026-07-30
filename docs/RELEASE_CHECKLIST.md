@@ -1,9 +1,10 @@
 # PowerLens Release Checklist
 
 Use this checklist for stable and alpha releases. Merging a reviewed pull
-request into `develop` automatically schedules a numbered alpha release;
-publication still waits for approval on the protected `release` environment.
-Stable releases and any manually initiated alpha release remain deliberate.
+request into `develop` automatically builds and publishes a numbered alpha
+release without deployment approval. Stable releases, explicit tag releases,
+and any manually initiated alpha release remain deliberate and wait for the
+`release-approval` environment.
 
 ## Code and Metadata
 
@@ -52,16 +53,17 @@ Stable releases and any manually initiated alpha release remain deliberate.
 ## Publication
 
 - [ ] For an automatic alpha, merge the reviewed commit into `develop` and
-      confirm the latest intended commit has a scheduled workflow. When another
-      automatic alpha is already active, expect multiple pending merges to
-      coalesce to the newest `develop` commit rather than publishing every
-      intermediate commit.
+      confirm the latest intended commit has a scheduled workflow that skips the
+      `release-approval` job. When another automatic alpha is already active,
+      expect multiple pending merges to coalesce to the newest `develop` commit
+      rather than publishing every intermediate commit.
 - [ ] For a stable or manually initiated alpha, push an explicit `v<version>` or
       `v<version>-alpha.<n>` tag, or manually dispatch the workflow with the
       matching channel. These explicit releases must not be coalesced.
-- [ ] Approve the protected `release` environment only after reviewing the
-      exact commit, expected version and channel, source CHANGELOG entries, and
-      CI result.
+- [ ] For a stable, explicit-tag, or manually dispatched release, approve the
+      `release-approval` environment only after reviewing the exact commit,
+      expected version and channel, source CHANGELOG entries, and CI result.
+      Automatic `develop` alphas must not request this approval.
 - [ ] After metadata resolution, confirm an automatic alpha's annotated tag
       points to the exact source commit and records the current workflow run
       ID. For an explicit tag release, confirm the existing tag points to that
