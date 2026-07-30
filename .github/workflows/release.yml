@@ -56,15 +56,30 @@ jobs:
           test "$(uname -m)" = "arm64"
           uname -m
 
+      - name: Validate manually dispatched release notes
+        id: manual_notes
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          ./script/generate_release_notes.sh \
+            "$VERSION" \
+            "$RUNNER_TEMP/powerlens-release-notes.md" \
+            "$GITHUB_WORKSPACE/CHANGELOG.md" \
+            require-notes
+          echo "validated=true" >> "$GITHUB_OUTPUT"
+
       - name: Resolve and reserve release metadata
         id: meta
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
           ALPHA_BASE_VERSION: ${{ vars.POWERLENS_ALPHA_BASE_VERSION }}
+          MANUAL_NOTES_VALIDATED: ${{ steps.manual_notes.outputs.validated }}
         run: ./script/resolve_release_metadata.sh
 
       - name: Create release notes
+        if: github.event_name != 'workflow_dispatch'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           RELEASE_NOTES_MODE: ${{ steps.meta.outputs.release_notes_mode }}

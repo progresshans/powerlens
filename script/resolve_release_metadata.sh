@@ -12,6 +12,7 @@ set -euo pipefail
 DISPATCH_VERSION="${DISPATCH_VERSION:-}"
 DISPATCH_CHANNEL="${DISPATCH_CHANNEL:-}"
 ALPHA_BASE_VERSION="${ALPHA_BASE_VERSION:-}"
+MANUAL_NOTES_VALIDATED="${MANUAL_NOTES_VALIDATED:-}"
 
 die() {
   echo "release metadata: $*" >&2
@@ -300,6 +301,9 @@ if [[ "$version" == *"-alpha."* && "$channel" != "alpha" ]]; then
 fi
 if [[ "$version" != *"-alpha."* && "$channel" != "stable" ]]; then
   die "stable versions must use the stable channel"
+fi
+if [[ "$release_kind" == "manual" && "$MANUAL_NOTES_VALIDATED" != "true" ]]; then
+  die "manual release notes must be validated before tag reservation"
 fi
 
 if [[ "$release_kind" != "automatic" ]]; then

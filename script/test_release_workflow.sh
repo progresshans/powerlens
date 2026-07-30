@@ -69,9 +69,35 @@ publish_steps = publish["steps"]
 abort "release workflow: missing build steps" unless build_steps.is_a?(Array)
 abort "release workflow: missing publish steps" unless publish_steps.is_a?(Array)
 
-metadata_step = build_steps.find { |step| step["name"] == "Resolve and reserve release metadata" }
+manual_notes_index =
+  build_steps.index { |step| step["name"] == "Validate manually dispatched release notes" }
+metadata_index =
+  build_steps.index { |step| step["name"] == "Resolve and reserve release metadata" }
+unless manual_notes_index && metadata_index && manual_notes_index < metadata_index
+  abort "release workflow: manual notes must be validated before tag reservation"
+end
+manual_notes_step = build_steps.fetch(manual_notes_index)
+unless manual_notes_step["if"] == "github.event_name == 'workflow_dispatch'"
+  abort "release workflow: manual note preflight must only run for dispatches"
+end
+unless manual_notes_step["run"].include?("require-notes") &&
+    manual_notes_step["run"].include?("validated=true")
+  abort "release workflow: manual note preflight must be strict and record success"
+end
+
+metadata_step = build_steps.fetch(metadata_index)
 unless metadata_step && metadata_step["run"] == "./script/resolve_release_metadata.sh"
   abort "release workflow: metadata must use the tested resolver"
+end
+unless metadata_step.dig("env", "MANUAL_NOTES_VALIDATED") ==
+    "${{ steps.manual_notes.outputs.validated }}"
+  abort "release workflow: resolver must require the manual note preflight output"
+end
+
+release_notes_step = build_steps.find { |step| step["name"] == "Create release notes" }
+unless release_notes_step &&
+    release_notes_step["if"] == "github.event_name != 'workflow_dispatch'"
+  abort "release workflow: manual notes must not be regenerated after reservation"
 end
 
 upload_step = build_steps.find { |step| step["name"] == "Upload publication artifact" }
@@ -220,6 +246,7 @@ run_resolver() {
   local dispatch_version="$7"
   local dispatch_channel="$8"
   local alpha_base_version="$9"
+  local manual_notes_validated="${10:-}"
   local output_path="$TEST_DIR/$name.output"
   local log_path="$TEST_DIR/$name.log"
 
@@ -235,6 +262,7 @@ run_resolver() {
       DISPATCH_VERSION="$dispatch_version" \
       DISPATCH_CHANNEL="$dispatch_channel" \
       ALPHA_BASE_VERSION="$alpha_base_version" \
+      MANUAL_NOTES_VALIDATED="$manual_notes_validated" \
       "$RESOLVER"
   ) >"$log_path" 2>&1
 }
@@ -435,6 +463,29 @@ git -C "$WORK_REPOSITORY" \
 manual_source="$(git -C "$WORK_REPOSITORY" rev-parse HEAD)"
 git -C "$WORK_REPOSITORY" push -q origin develop
 
+if run_resolver \
+  manual-without-note-preflight \
+  workflow_dispatch \
+  branch \
+  main \
+  "$manual_source" \
+  2000 \
+  0.9.3 \
+  stable \
+  "" \
+  ""; then
+  echo "release workflow test: manual dispatch skipped note preflight" >&2
+  exit 1
+fi
+grep -Fq \
+  "manual release notes must be validated before tag reservation" \
+  "$TEST_DIR/manual-without-note-preflight.log"
+if git ls-remote --exit-code --tags "$REMOTE_REPOSITORY" \
+  refs/tags/v0.9.3 >/dev/null 2>&1; then
+  echo "release workflow test: failed manual preflight still reserved a tag" >&2
+  exit 1
+fi
+
 run_resolver \
   manual-stable \
   workflow_dispatch \
@@ -444,7 +495,8 @@ run_resolver \
   2001 \
   0.9.3 \
   stable \
-  ""
+  "" \
+  true
 assert_output \
   "$TEST_DIR/manual-stable.output" \
   "version=0.9.3" \
@@ -463,7 +515,8 @@ run_resolver \
   2001 \
   0.9.3 \
   stable \
-  ""
+  "" \
+  true
 
 if run_resolver \
   manual-stable-other-run \
@@ -474,7 +527,8 @@ if run_resolver \
   2002 \
   0.9.3 \
   stable \
-  ""; then
+  "" \
+  true; then
   echo "release workflow test: another run reused an owned manual tag" >&2
   exit 1
 fi
