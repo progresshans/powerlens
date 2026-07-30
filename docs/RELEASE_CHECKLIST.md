@@ -44,8 +44,9 @@ Stable releases and any manually initiated alpha release remain deliberate.
 - [ ] Install the DMG in a clean macOS user account and verify first launch.
 - [ ] Run `./script/test_sparkle_update.sh` on a maintainer Mac.
 - [ ] Confirm the generated appcast has the expected channel, display version,
-      monotonically increasing Sparkle build number, download URL, length,
-      EdDSA signature, and `26.0` minimum system version.
+      Sparkle build number greater than the highest build in either published
+      channel, download URL, length, EdDSA signature, and `26.0` minimum system
+      version.
 - [ ] Verify DMG, ZIP, and checksum filenames match the release version.
 
 ## Publication

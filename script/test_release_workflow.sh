@@ -136,6 +136,10 @@ end
 unless pages_prepare["run"].include?('"$GENERATED_APPCAST"')
   abort "release workflow: appcast progression must inspect the generated build number"
 end
+unless pages_prepare["run"].include?('"$pages_dir/appcast.xml"') &&
+    pages_prepare["run"].include?('"$pages_dir/appcast-alpha.xml"')
+  abort "release workflow: build progression must compare both live update feeds"
+end
 
 manual_reservation = publish_steps.fetch(manual_reservation_index)
 unless manual_reservation["if"] == "steps.meta.outputs.release_kind == 'manual'" &&
@@ -199,6 +203,7 @@ write_appcast_fixture \
   0.9.3-alpha.1:101
 "$APPCAST_VALIDATOR" \
   "$TEST_DIR/empty-appcast.xml" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/alpha-first.xml" \
   0.9.3-alpha.1 \
   alpha \
@@ -211,6 +216,7 @@ write_appcast_fixture \
   "$TEST_DIR/alpha-next.xml" \
   0.9.3-alpha.8:108
 "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/alpha-appcast.xml" \
   "$TEST_DIR/alpha-next.xml" \
   0.9.3-alpha.8 \
@@ -220,15 +226,39 @@ write_appcast_fixture \
   "$TEST_DIR/alpha-resume.xml" \
   0.9.3-alpha.7:107
 "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/alpha-appcast.xml" \
   "$TEST_DIR/alpha-resume.xml" \
   0.9.3-alpha.7 \
   alpha \
   >/dev/null
+
+write_appcast_fixture \
+  "$TEST_DIR/alpha-multiple-builds.xml" \
+  0.9.3-alpha.7:106 \
+  0.9.3-alpha.7:107
+write_appcast_fixture \
+  "$TEST_DIR/alpha-stale-resume.xml" \
+  0.9.3-alpha.7:106
+if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/empty-appcast.xml" \
+  "$TEST_DIR/alpha-multiple-builds.xml" \
+  "$TEST_DIR/alpha-stale-resume.xml" \
+  0.9.3-alpha.7 \
+  alpha \
+  >"$TEST_DIR/alpha-stale-resume.log" 2>&1; then
+  echo "release workflow test: appcast validator resumed a stale target item" >&2
+  exit 1
+fi
+grep -Fq \
+  "highest published Sparkle build 107 with older build 106" \
+  "$TEST_DIR/alpha-stale-resume.log"
+
 write_appcast_fixture \
   "$TEST_DIR/alpha-version-rollback.xml" \
   0.9.3-alpha.6:109
 if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/alpha-appcast.xml" \
   "$TEST_DIR/alpha-version-rollback.xml" \
   0.9.3-alpha.6 \
@@ -245,6 +275,7 @@ write_appcast_fixture \
   "$TEST_DIR/alpha-build-rollback.xml" \
   0.9.3-alpha.8:106
 if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/alpha-appcast.xml" \
   "$TEST_DIR/alpha-build-rollback.xml" \
   0.9.3-alpha.8 \
@@ -254,13 +285,14 @@ if "$APPCAST_VALIDATOR" \
   exit 1
 fi
 grep -Fq \
-  "refusing to replace Sparkle build 107 with older build 106" \
+  "refusing to replace the highest published Sparkle build 107 with older build 106" \
   "$TEST_DIR/alpha-build-rollback.log"
 
 write_appcast_fixture \
   "$TEST_DIR/alpha-build-stall.xml" \
   0.9.3-alpha.8:107
 if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/alpha-appcast.xml" \
   "$TEST_DIR/alpha-build-stall.xml" \
   0.9.3-alpha.8 \
@@ -270,8 +302,53 @@ if "$APPCAST_VALIDATOR" \
   exit 1
 fi
 grep -Fq \
-  "without increasing Sparkle build 107" \
+  "without increasing the cross-channel Sparkle build 107" \
   "$TEST_DIR/alpha-build-stall.log"
+
+write_appcast_fixture \
+  "$TEST_DIR/cross-channel-stable.xml" \
+  0.9.3:107
+write_appcast_fixture \
+  "$TEST_DIR/cross-channel-alpha.xml" \
+  0.9.4-alpha.5:105
+write_appcast_fixture \
+  "$TEST_DIR/cross-channel-alpha-rollback.xml" \
+  0.9.4-alpha.6:106
+if "$APPCAST_VALIDATOR" \
+  "$TEST_DIR/cross-channel-stable.xml" \
+  "$TEST_DIR/cross-channel-alpha.xml" \
+  "$TEST_DIR/cross-channel-alpha-rollback.xml" \
+  0.9.4-alpha.6 \
+  alpha \
+  >"$TEST_DIR/cross-channel-build-rollback.log" 2>&1; then
+  echo "release workflow test: appcast validator ignored the other channel's build" >&2
+  exit 1
+fi
+grep -Fq \
+  "highest published Sparkle build 107 with older build 106" \
+  "$TEST_DIR/cross-channel-build-rollback.log"
+
+write_appcast_fixture \
+  "$TEST_DIR/cross-channel-alpha-next.xml" \
+  0.9.4-alpha.6:108
+"$APPCAST_VALIDATOR" \
+  "$TEST_DIR/cross-channel-stable.xml" \
+  "$TEST_DIR/cross-channel-alpha.xml" \
+  "$TEST_DIR/cross-channel-alpha-next.xml" \
+  0.9.4-alpha.6 \
+  alpha \
+  >/dev/null
+
+write_appcast_fixture \
+  "$TEST_DIR/cross-channel-alpha-resume.xml" \
+  0.9.4-alpha.5:105
+"$APPCAST_VALIDATOR" \
+  "$TEST_DIR/cross-channel-stable.xml" \
+  "$TEST_DIR/cross-channel-alpha.xml" \
+  "$TEST_DIR/cross-channel-alpha-resume.xml" \
+  0.9.4-alpha.5 \
+  alpha \
+  >/dev/null
 
 write_appcast_fixture \
   "$TEST_DIR/stable-appcast.xml" \
@@ -281,6 +358,7 @@ write_appcast_fixture \
   0.9.3:201
 "$APPCAST_VALIDATOR" \
   "$TEST_DIR/stable-appcast.xml" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/stable-next.xml" \
   0.9.3 \
   stable \
@@ -290,6 +368,7 @@ write_appcast_fixture \
   0.9.1:202
 if "$APPCAST_VALIDATOR" \
   "$TEST_DIR/stable-appcast.xml" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/stable-version-rollback.xml" \
   0.9.1 \
   stable \
@@ -303,6 +382,7 @@ grep -Fq \
 
 if "$APPCAST_VALIDATOR" \
   "$TEST_DIR/alpha-appcast.xml" \
+  "$TEST_DIR/empty-appcast.xml" \
   "$TEST_DIR/stable-next.xml" \
   0.9.3 \
   stable \

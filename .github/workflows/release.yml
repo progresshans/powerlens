@@ -451,7 +451,8 @@ jobs:
           relative_appcast="${APPCAST_PATH#docs/}"
           mkdir -p "$pages_dir/$(dirname "$relative_appcast")"
           ./script/validate_appcast_progression.sh \
-            "$pages_dir/$relative_appcast" \
+            "$pages_dir/appcast.xml" \
+            "$pages_dir/appcast-alpha.xml" \
             "$GENERATED_APPCAST" \
             "$VERSION" \
             "$CHANNEL"

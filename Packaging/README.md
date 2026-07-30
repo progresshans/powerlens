@@ -198,12 +198,13 @@ workflow publishes the `docs/` site as a Pages artifact after preserving both
 currently published feeds. A missing feed may use the repository placeholder;
 transient HTTP or invalid-XML responses stop the Pages deployment instead of
 silently replacing the other channel. A release also stops before publication
-if it would move its update channel's display version or machine-readable
-Sparkle build number backward. Advancing a display version without increasing
-the Sparkle build number is also rejected because Sparkle compares
-`CFBundleVersion`/`sparkle:version` when deciding whether an update is newer.
-Before editing an existing release, the workflow verifies the remote tag commit
-and the release's recorded run ID and source SHA.
+if it would move the target channel's display version backward. A new release's
+machine-readable Sparkle build number must exceed the highest build already
+published in either the stable or alpha feed, because users can switch channels
+and Sparkle compares `CFBundleVersion`/`sparkle:version` when deciding whether
+an update is newer. An exact rerun of an item already present in its target feed
+is allowed. Before editing an existing release, the workflow verifies the
+remote tag commit and the release's recorded run ID and source SHA.
 
 The release workflow requires these GitHub Secrets:
 
