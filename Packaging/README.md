@@ -136,8 +136,9 @@ PowerLens has two workflow layers:
   - runs on pushes to `develop`, `v*` tags, or an explicit manual dispatch
   - waits for approval on the protected `release` environment, then builds on
     an Apple silicon runner
-  - atomically reserves run-owned tags for automatic and manually dispatched
-    releases
+  - atomically reserves run-owned tags for automatic alphas before building
+    and for manual dispatches immediately before publication
+  - verifies that explicit tag-triggered releases use the exact tagged commit
   - builds an arm64 executable, then signs, notarizes, and packages the app
   - verifies that the packaged PowerLens executable is exactly arm64
   - serializes GitHub Release and GitHub Pages mutations in one publication
@@ -154,12 +155,19 @@ Actions intentionally keeps only the newest pending commit. Intermediate
 pending commits therefore do not each produce an alpha. Explicit tag and
 manual-dispatch releases use independent request groups and are not coalesced.
 
-After approval, the workflow reserves an annotated remote tag before building.
-That atomic reservation prevents automatic, explicit-tag, and manual releases
-from allocating the same version. The reservation records the GitHub Actions
-run ID, so a rerun of that workflow recovers the same version instead of
-allocating another alpha. All actual GitHub Release and Pages updates then pass
-through a single durable publication queue.
+After approval, an automatic alpha reserves its annotated remote tag before
+building because that tag determines the generated version. An explicit tag
+release verifies the existing tag and tagged commit. A manual dispatch already
+has an explicit version, so it validates the release notes and builds without
+reserving a tag. Inside the durable publication queue, it first preserves the
+live feeds and validates appcast progression, then reserves its annotated tag
+immediately before creating the GitHub Release. This avoids leaving a tag
+behind when a manual version cannot advance the current feed.
+
+Each reservation records the GitHub Actions run ID. If a later publication
+stage fails, a rerun of that workflow recovers the same reservation, while a
+different run cannot reuse it. All GitHub Release and Pages mutations pass
+through the same global publication queue.
 
 The alpha base version comes from the optional
 `POWERLENS_ALPHA_BASE_VERSION` repository variable or, when it is unset, the
@@ -174,7 +182,8 @@ Stable releases should normally be published by pushing a version tag such as
 `v0.9.3-alpha.1`, or manually dispatch the workflow with a matching version and
 channel. Branch pushes other than `develop` do not publish a release. If a
 release fails after reserving a tag, rerun the original workflow so its run ID
-can safely resume that reservation.
+can safely resume that reservation. A manual version that would move its
+appcast backward fails before reserving its tag.
 
 Release notes are generated from the matching version section in
 `CHANGELOG.md`. Stable versions require an exact, non-empty version section.

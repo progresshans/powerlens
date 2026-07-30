@@ -69,7 +69,7 @@ jobs:
             require-notes
           echo "validated=true" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve and reserve release metadata
+      - name: Resolve release metadata
         id: meta
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
@@ -219,6 +219,7 @@ jobs:
         run: ./script/verify_distribution.sh release/stage/PowerLens.app
 
       - name: Verify reserved release tag
+        if: steps.meta.outputs.tag_origin != 'pending'
         env:
           TAG: ${{ steps.meta.outputs.tag }}
           SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
@@ -350,10 +351,19 @@ jobs:
           [[ "$PRERELEASE" == "true" || "$PRERELEASE" == "false" ]]
           [[ "$LATEST" == "true" || "$LATEST" == "false" ]]
           [[ "$RELEASE_KIND" == "automatic" || "$RELEASE_KIND" == "tag" || "$RELEASE_KIND" == "manual" ]]
-          [[ "$TAG_ORIGIN" == "event" || "$TAG_ORIGIN" == "reserved" ]]
+          [[ "$TAG_ORIGIN" == "event" || "$TAG_ORIGIN" == "reserved" || "$TAG_ORIGIN" == "pending" ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$SOURCE_SHA" == "$(git rev-parse "${EXPECTED_SHA}^{commit}")" ]]
           [[ "$RELEASE_RUN_ID" == "$EXPECTED_RUN_ID" ]]
+
+          case "$RELEASE_KIND:$TAG_ORIGIN" in
+            automatic:reserved | tag:event | manual:pending)
+              ;;
+            *)
+              echo "invalid release kind and tag origin: $RELEASE_KIND / $TAG_ORIGIN" >&2
+              exit 2
+              ;;
+          esac
 
           {
             echo "version=$VERSION"
@@ -451,6 +461,19 @@ jobs:
           ET.parse(sys.argv[1])
           PY
 
+      - name: Reserve manually dispatched release tag
+        id: manual_tag
+        if: steps.meta.outputs.release_kind == 'manual'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          RELEASE_RUN_ID: ${{ steps.meta.outputs.release_run_id }}
+        run: |
+          ./script/reserve_release_tag.sh \
+            "$TAG" \
+            "$SOURCE_SHA" \
+            "$RELEASE_RUN_ID"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -459,7 +482,7 @@ jobs:
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
           LATEST: ${{ steps.meta.outputs.latest }}
           SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
-          TAG_ORIGIN: ${{ steps.meta.outputs.tag_origin }}
+          TAG_ORIGIN: ${{ steps.manual_tag.outputs.tag_origin || steps.meta.outputs.tag_origin }}
           RELEASE_RUN_ID: ${{ steps.meta.outputs.release_run_id }}
           RELEASE_NOTES_PATH: ${{ runner.temp }}/powerlens-publish/release-notes.md
           RELEASE_ASSET_DIR: ${{ runner.temp }}/powerlens-publish

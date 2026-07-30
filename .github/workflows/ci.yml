@@ -41,6 +41,7 @@ jobs:
             script/generate_release_notes.sh \
             script/package_release.sh \
             script/publish_github_release.sh \
+            script/reserve_release_tag.sh \
             script/resolve_release_metadata.sh \
             script/smoke_launch_app.sh \
             script/test_generate_release_notes.sh \

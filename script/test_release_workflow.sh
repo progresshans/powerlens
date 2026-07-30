@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW_PATH="$ROOT_DIR/.github/workflows/release.yml"
 RESOLVER="$ROOT_DIR/script/resolve_release_metadata.sh"
+TAG_RESERVER="$ROOT_DIR/script/reserve_release_tag.sh"
 TAG_VERIFIER="$ROOT_DIR/script/verify_release_tag.sh"
 PUBLISHER="$ROOT_DIR/script/publish_github_release.sh"
 APPCAST_VALIDATOR="$ROOT_DIR/script/validate_appcast_progression.sh"
@@ -72,9 +73,9 @@ abort "release workflow: missing publish steps" unless publish_steps.is_a?(Array
 manual_notes_index =
   build_steps.index { |step| step["name"] == "Validate manually dispatched release notes" }
 metadata_index =
-  build_steps.index { |step| step["name"] == "Resolve and reserve release metadata" }
+  build_steps.index { |step| step["name"] == "Resolve release metadata" }
 unless manual_notes_index && metadata_index && manual_notes_index < metadata_index
-  abort "release workflow: manual notes must be validated before tag reservation"
+  abort "release workflow: manual notes must be validated before metadata resolution"
 end
 manual_notes_step = build_steps.fetch(manual_notes_index)
 unless manual_notes_step["if"] == "github.event_name == 'workflow_dispatch'"
@@ -97,7 +98,14 @@ end
 release_notes_step = build_steps.find { |step| step["name"] == "Create release notes" }
 unless release_notes_step &&
     release_notes_step["if"] == "github.event_name != 'workflow_dispatch'"
-  abort "release workflow: manual notes must not be regenerated after reservation"
+  abort "release workflow: manual notes must not be regenerated after preflight"
+end
+
+tag_verification_step =
+  build_steps.find { |step| step["name"] == "Verify reserved release tag" }
+unless tag_verification_step &&
+    tag_verification_step["if"] == "steps.meta.outputs.tag_origin != 'pending'"
+  abort "release workflow: a pending manual tag must not be verified during build"
 end
 
 upload_step = build_steps.find { |step| step["name"] == "Upload publication artifact" }
@@ -112,14 +120,38 @@ end
 
 pages_prepare_index =
   publish_steps.index { |step| step["name"] == "Prepare GitHub Pages artifact" }
+manual_reservation_index =
+  publish_steps.index { |step| step["name"] == "Reserve manually dispatched release tag" }
 release_index =
   publish_steps.index { |step| step["name"] == "Publish GitHub Release" }
-unless pages_prepare_index && release_index && pages_prepare_index < release_index
-  abort "release workflow: feed preservation must succeed before release publication"
+unless pages_prepare_index && manual_reservation_index && release_index &&
+    pages_prepare_index < manual_reservation_index &&
+    manual_reservation_index < release_index
+  abort "release workflow: feed validation must precede manual tag reservation and publication"
 end
 pages_prepare = publish_steps.fetch(pages_prepare_index)
 unless pages_prepare["run"].include?("./script/validate_appcast_progression.sh")
   abort "release workflow: Pages preparation must prevent appcast rollback"
+end
+
+manual_reservation = publish_steps.fetch(manual_reservation_index)
+unless manual_reservation["if"] == "steps.meta.outputs.release_kind == 'manual'" &&
+    manual_reservation["run"].include?("./script/reserve_release_tag.sh")
+  abort "release workflow: only manual dispatches may reserve a tag during publication"
+end
+
+metadata_validation =
+  publish_steps.find { |step| step["name"] == "Validate publication metadata" }
+unless metadata_validation &&
+    metadata_validation["run"].include?("manual:pending") &&
+    metadata_validation["run"].include?("automatic:reserved") &&
+    metadata_validation["run"].include?("tag:event")
+  abort "release workflow: publication metadata must enforce release-kind tag ownership"
+end
+
+unless release_step.dig("env", "TAG_ORIGIN") ==
+    "${{ steps.manual_tag.outputs.tag_origin || steps.meta.outputs.tag_origin }}"
+  abort "release workflow: publisher must use the manual reservation output"
 end
 
 pages_upload = publish_steps.find { |step| step["name"] == "Upload GitHub Pages artifact" }
@@ -264,6 +296,21 @@ run_resolver() {
       ALPHA_BASE_VERSION="$alpha_base_version" \
       MANUAL_NOTES_VALIDATED="$manual_notes_validated" \
       "$RESOLVER"
+  ) >"$log_path" 2>&1
+}
+
+run_tag_reserver() {
+  local name="$1"
+  local tag="$2"
+  local source_sha="$3"
+  local run_id="$4"
+  local output_path="$TEST_DIR/$name.output"
+  local log_path="$TEST_DIR/$name.log"
+
+  (
+    cd "$WORK_REPOSITORY"
+    GITHUB_OUTPUT="$output_path" \
+      "$TAG_RESERVER" "$tag" "$source_sha" "$run_id"
   ) >"$log_path" 2>&1
 }
 
@@ -478,7 +525,7 @@ if run_resolver \
   exit 1
 fi
 grep -Fq \
-  "manual release notes must be validated before tag reservation" \
+  "manual release notes must be validated before release metadata is accepted" \
   "$TEST_DIR/manual-without-note-preflight.log"
 if git ls-remote --exit-code --tags "$REMOTE_REPOSITORY" \
   refs/tags/v0.9.3 >/dev/null 2>&1; then
@@ -503,8 +550,13 @@ assert_output \
   "tag=v0.9.3" \
   "channel=stable" \
   "release_kind=manual" \
-  "tag_origin=reserved" \
+  "tag_origin=pending" \
   "release_notes_mode=require-notes"
+if git ls-remote --exit-code --tags "$REMOTE_REPOSITORY" \
+  refs/tags/v0.9.3 >/dev/null 2>&1; then
+  echo "release workflow test: metadata resolution reserved a manual tag" >&2
+  exit 1
+fi
 
 run_resolver \
   manual-stable-rerun \
@@ -517,24 +569,39 @@ run_resolver \
   stable \
   "" \
   true
+assert_output \
+  "$TEST_DIR/manual-stable-rerun.output" \
+  "tag_origin=pending"
 
-if run_resolver \
-  manual-stable-other-run \
-  workflow_dispatch \
-  branch \
-  main \
+run_tag_reserver \
+  manual-stable-reservation \
+  v0.9.3 \
   "$manual_source" \
-  2002 \
-  0.9.3 \
-  stable \
-  "" \
-  true; then
+  2001
+assert_output \
+  "$TEST_DIR/manual-stable-reservation.output" \
+  "tag_origin=reserved"
+
+run_tag_reserver \
+  manual-stable-reservation-rerun \
+  v0.9.3 \
+  "$manual_source" \
+  2001
+assert_output \
+  "$TEST_DIR/manual-stable-reservation-rerun.output" \
+  "tag_origin=reserved"
+
+if run_tag_reserver \
+  manual-stable-reservation-other-run \
+  v0.9.3 \
+  "$manual_source" \
+  2002; then
   echo "release workflow test: another run reused an owned manual tag" >&2
   exit 1
 fi
 grep -Fq \
-  "v0.9.3 already exists and is not owned by run 2002" \
-  "$TEST_DIR/manual-stable-other-run.log"
+  "v0.9.3 is owned by run 2001, expected 2002" \
+  "$TEST_DIR/manual-stable-reservation-other-run.log"
 
 git -C "$WORK_REPOSITORY" \
   -c user.name="PowerLens Tests" \

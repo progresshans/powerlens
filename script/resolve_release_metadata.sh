@@ -220,51 +220,13 @@ reserve_automatic_alpha_tag() {
   die "could not reserve an alpha tag after 10 attempts"
 }
 
-reserve_or_verify_explicit_tag() {
-  local owner
-
-  if tag_exists "$tag"; then
-    verify_tag_commit "$tag"
-
-    if [[ "$release_kind" == "tag" ]]; then
-      tag_origin="event"
-      return
-    fi
-
-    owner="$(tag_run_id "$tag" || true)"
-    if [[ "$owner" == "$GITHUB_RUN_ID" ]]; then
-      tag_origin="reserved"
-      echo "Reusing $tag reserved by run $GITHUB_RUN_ID" >&2
-      return
-    fi
-
-    die "$tag already exists and is not owned by run $GITHUB_RUN_ID"
-  fi
-
-  if [[ "$release_kind" == "tag" ]]; then
+verify_event_tag() {
+  if ! tag_exists "$tag"; then
     die "tag event ref $tag is missing after fetching remote tags"
   fi
 
-  create_owned_tag "$tag"
-  if git push origin "refs/tags/$tag:refs/tags/$tag"; then
-    tag_origin="reserved"
-    echo "Reserved $tag for run $GITHUB_RUN_ID" >&2
-    return
-  fi
-
-  git tag -d "$tag" >/dev/null
-  refresh_tags
-  if tag_exists "$tag"; then
-    verify_tag_commit "$tag"
-    owner="$(tag_run_id "$tag" || true)"
-    if [[ "$owner" == "$GITHUB_RUN_ID" ]]; then
-      tag_origin="reserved"
-      return
-    fi
-    die "$tag was reserved concurrently by another release event"
-  fi
-
-  die "failed to reserve $tag"
+  verify_tag_commit "$tag"
+  tag_origin="event"
 }
 
 source_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
@@ -303,11 +265,13 @@ if [[ "$version" != *"-alpha."* && "$channel" != "stable" ]]; then
   die "stable versions must use the stable channel"
 fi
 if [[ "$release_kind" == "manual" && "$MANUAL_NOTES_VALIDATED" != "true" ]]; then
-  die "manual release notes must be validated before tag reservation"
+  die "manual release notes must be validated before release metadata is accepted"
 fi
 
-if [[ "$release_kind" != "automatic" ]]; then
-  reserve_or_verify_explicit_tag
+if [[ "$release_kind" == "tag" ]]; then
+  verify_event_tag
+elif [[ "$release_kind" == "manual" ]]; then
+  tag_origin="pending"
 fi
 
 case "$channel" in

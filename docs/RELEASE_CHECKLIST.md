@@ -60,9 +60,13 @@ Stable releases and any manually initiated alpha release remain deliberate.
 - [ ] Approve the protected `release` environment only after reviewing the
       exact commit, expected version and channel, source CHANGELOG entries, and
       CI result.
-- [ ] After metadata resolution, confirm the selected tag points to the exact
-      source commit. For an automatic or manually dispatched release, confirm
-      its annotated reservation records the current workflow run ID.
+- [ ] After metadata resolution, confirm an automatic alpha's annotated tag
+      points to the exact source commit and records the current workflow run
+      ID. For an explicit tag release, confirm the existing tag points to that
+      commit. A manual dispatch intentionally has no tag yet.
+- [ ] For a manual dispatch, confirm the publication job preserves the live
+      feeds and accepts the appcast progression before it reserves the
+      annotated tag. A rejected older version must leave no remote tag.
 - [ ] If any stage fails after tag reservation, rerun that same workflow. Do
       not dispatch a different run for the reserved version; a different run is
       intentionally prevented from overwriting it.
