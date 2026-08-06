@@ -62,6 +62,11 @@ enum BatteryPowerSource: String, Codable, Sendable {
     }
 }
 
+enum PowerMeasurementSetSource: String, Codable, Sendable {
+    case smc
+    case powerTelemetry = "power_telemetry"
+}
+
 struct DiagnosticItem: Identifiable, Equatable, Sendable {
     let id = UUID()
     let severity: DiagnosticSeverity
@@ -102,6 +107,10 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
     let adapterVoltageV: Double?
     let adapterCurrentA: Double?
     let systemLoadW: Double?
+    /// Identifies when battery, input, and system power were selected together
+    /// from one provider. A nil value means the readings are incomplete, mixed,
+    /// or loaded from history without source provenance.
+    let powerMeasurementSetSource: PowerMeasurementSetSource?
     let lowPowerModeEnabled: Bool
     let thermalState: String
     let serialNumber: String?
@@ -147,6 +156,7 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
         adapterVoltageV: Double?,
         adapterCurrentA: Double?,
         systemLoadW: Double?,
+        powerMeasurementSetSource: PowerMeasurementSetSource? = nil,
         lowPowerModeEnabled: Bool,
         thermalState: String,
         serialNumber: String?,
@@ -181,6 +191,7 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
         self.adapterVoltageV = adapterVoltageV
         self.adapterCurrentA = adapterCurrentA
         self.systemLoadW = systemLoadW
+        self.powerMeasurementSetSource = powerMeasurementSetSource
         self.lowPowerModeEnabled = lowPowerModeEnabled
         self.thermalState = thermalState
         self.serialNumber = serialNumber
@@ -220,6 +231,7 @@ struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
             adapterVoltageV: adapterVoltageV,
             adapterCurrentA: adapterCurrentA,
             systemLoadW: systemLoadW,
+            powerMeasurementSetSource: powerMeasurementSetSource,
             lowPowerModeEnabled: lowPowerModeEnabled,
             thermalState: thermalState,
             serialNumber: serialNumber,

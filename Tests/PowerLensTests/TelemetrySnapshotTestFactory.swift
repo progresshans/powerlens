@@ -16,6 +16,7 @@ func makeTelemetrySnapshot(
     batteryPowerSource: BatteryPowerSource? = nil,
     adapterInputPowerW: Double? = 11,
     systemLoadW: Double? = 10,
+    powerMeasurementSetSource: PowerMeasurementSetSource? = nil,
     adapterMaxPowerW: Double? = 97,
     chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
 ) -> TelemetrySnapshot {
@@ -46,6 +47,7 @@ func makeTelemetrySnapshot(
         adapterVoltageV: 19.5,
         adapterCurrentA: 0.6,
         systemLoadW: systemLoadW,
+        powerMeasurementSetSource: powerMeasurementSetSource,
         lowPowerModeEnabled: false,
         thermalState: "Nominal",
         serialNumber: "SERIAL",

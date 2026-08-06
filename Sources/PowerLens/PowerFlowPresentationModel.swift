@@ -157,6 +157,15 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             return observeBatteryOnlyFlow(snapshot)
         }
 
+        // Keep diagnostics conservative when independently cached battery
+        // current disagrees. For the diagram only, a complete same-provider
+        // power set that still satisfies input + battery = system is stronger
+        // route evidence than that conflicting current sample.
+        if snapshot.batteryFlowEvidence == .conflicted,
+           let coherentPowerSetFlow = observeCoherentPowerSet(snapshot) {
+            return coherentPowerSetFlow
+        }
+
         switch snapshot.batteryFlowEvidence {
         case .discharging:
             if let measuredBatteryDischargeW =
@@ -247,6 +256,29 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
                 source: .unavailable
             )
         }
+    }
+
+    private static func observeCoherentPowerSet(
+        _ snapshot: TelemetrySnapshot
+    ) -> BatteryFlowObservation? {
+        guard snapshot.powerMeasurementSetSource != nil,
+              snapshot.batteryPowerSource == .directTelemetry,
+              let batteryPowerW = snapshot.batteryPowerW,
+              let inputPowerW = snapshot.adapterInputPowerW,
+              let systemLoadW = snapshot.systemLoadW,
+              abs(batteryPowerW) > 0.35,
+              powerValuesAreCoherent(
+                  inputPowerW + batteryPowerW,
+                  systemLoadW
+              ) else {
+            return nil
+        }
+
+        return BatteryFlowObservation(
+            direction: batteryPowerW > 0 ? .discharging : .charging,
+            powerW: abs(batteryPowerW),
+            source: .measured
+        )
     }
 
     private static func observeBatteryOnlyFlow(
@@ -473,6 +505,18 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             comparisonMagnitudeW * 0.1
         )
         return abs(observedPowerW - representedPowerW) > allowedDifferenceW
+    }
+
+    private static func powerValuesAreCoherent(
+        _ lhs: Double,
+        _ rhs: Double
+    ) -> Bool {
+        let comparisonMagnitudeW = max(abs(lhs), abs(rhs))
+        let allowedDifferenceW = max(
+            1,
+            comparisonMagnitudeW * 0.05
+        )
+        return abs(lhs - rhs) <= allowedDifferenceW
     }
 
     private static func isApproximatelyEqual(

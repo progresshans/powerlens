@@ -57,19 +57,25 @@ struct TelemetryCoordinatorTests {
     }
 
     @Test
-    func legacySnapshotWithoutChargingPolicyStillDecodes() throws {
+    func legacySnapshotWithoutLiveOnlyFieldsStillDecodes() throws {
+        let snapshotID = UUID()
         let legacySnapshot = makeSnapshot(
+            id: snapshotID,
             systemLoadW: 22,
             adapterInputPowerW: 20
         )
-        let enrichedSnapshot = legacySnapshot.withChargingPolicyStatus(
-            .manualLimit(targetPercent: 90)
-        )
+        let enrichedSnapshot = makeSnapshot(
+            id: snapshotID,
+            systemLoadW: 22,
+            adapterInputPowerW: 20,
+            powerMeasurementSetSource: .smc
+        ).withChargingPolicyStatus(.manualLimit(targetPercent: 90))
         let encoded = try JSONEncoder().encode(enrichedSnapshot)
         var object = try #require(
             JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         )
         object.removeValue(forKey: "chargingPolicyStatus")
+        object.removeValue(forKey: "powerMeasurementSetSource")
         let legacyData = try JSONSerialization.data(withJSONObject: object)
 
         let decoded = try JSONDecoder().decode(
@@ -79,6 +85,7 @@ struct TelemetryCoordinatorTests {
 
         #expect(decoded == legacySnapshot)
         #expect(decoded.chargingPolicyStatus == nil)
+        #expect(decoded.powerMeasurementSetSource == nil)
     }
 }
 
@@ -136,10 +143,13 @@ private final class StubChargingPolicyReader:
 }
 
 private func makeSnapshot(
+    id: UUID = UUID(),
     systemLoadW: Double?,
-    adapterInputPowerW: Double?
+    adapterInputPowerW: Double?,
+    powerMeasurementSetSource: PowerMeasurementSetSource? = nil
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
+        id: id,
         timestamp: Date(timeIntervalSince1970: 1_775_628_000),
         batteryLevel: 80,
         powerSource: .ac,
@@ -165,6 +175,7 @@ private func makeSnapshot(
         adapterVoltageV: 19.26,
         adapterCurrentA: 1.09,
         systemLoadW: systemLoadW,
+        powerMeasurementSetSource: powerMeasurementSetSource,
         lowPowerModeEnabled: false,
         thermalState: "Nominal",
         serialNumber: "SERIAL",

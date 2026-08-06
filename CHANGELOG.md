@@ -30,6 +30,12 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ### Fixed
 
+- Internally balanced SMC or PowerTelemetry power sets now keep the live power
+  route usable when a separately cached battery-current sample points in the
+  opposite direction, while diagnostics continue to report the conflict.
+- PowerTelemetry battery power now uses the same charge/discharge sign
+  convention as SMC, and unavailable zero input voltage/current readings are
+  shown as missing instead of `0.00`.
 - Managed charging states remain stable through brief sensor mismatches and
   transition only after sustained contradictory evidence.
 - Derived power values keep their approximation and provenance markers across
