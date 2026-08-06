@@ -27,6 +27,9 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   for confirmation before permanently deleting expired samples, rollups,
   long-term health history, and unreferenced metadata.
 - Raised the minimum supported operating system to macOS 26.
+- The charging and external-power menu bar icons now draw their badge over the
+  battery at display time instead of shipping a pre-composed icon for every
+  level, which retires 42 derived assets.
 
 ### Fixed
 
@@ -50,6 +53,15 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   no longer exit silently before the build starts.
 - Stable release publishing now requires an exact, non-empty version section
   instead of falling back to `[Unreleased]`.
+- The 25% menu bar battery icon drew a fill closer to 30%, leaving it nearly
+  indistinguishable from the 30% icon. Every 5% step is now evenly spaced.
+- The external-power menu bar icon drew a vertically short fill below 25%. The
+  fill now spans the full battery height at every level.
+- The charging menu bar icon showed the same fill for 60%, 65% and 70%, and the
+  external-power icon for 45% through 70%, because the pre-composed assets
+  discarded the fill beside the badge. Both now track the level, and the jump at
+  75% is no longer abrupt. A badge still covers part of the bar, so a few
+  adjacent levels above 45% remain hard to tell apart.
 
 ## [0.9.2] - 2026-07-15
 
