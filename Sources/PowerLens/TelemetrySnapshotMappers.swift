@@ -40,8 +40,8 @@ struct CompatibleTelemetrySnapshotMapper {
             adapterDescription: TelemetryValueParser.nonEmptyString(adapterDetails["Description"]),
             adapterMaxPowerW: TelemetryValueParser.doubleValue(adapterDetails["Watts"]),
             adapterInputPowerW: nil,
-            adapterVoltageV: TelemetryValueParser.doubleValue(adapterDetails["Voltage"]),
-            adapterCurrentA: TelemetryValueParser.doubleValue(adapterDetails["Current"]),
+            adapterVoltageV: positiveElectricalValue(adapterDetails["Voltage"]),
+            adapterCurrentA: positiveElectricalValue(adapterDetails["Current"]),
             systemLoadW: nil,
             lowPowerModeEnabled: environment.lowPowerModeEnabled,
             thermalState: TelemetryValueParser.describe(environment.thermalState),
@@ -53,6 +53,14 @@ struct CompatibleTelemetrySnapshotMapper {
 }
 
 struct LivePrecisionTelemetrySnapshotMapper {
+    private struct ResolvedPowerMeasurements {
+        let batteryPowerW: Double?
+        let batteryPowerSource: BatteryPowerSource?
+        let adapterInputPowerW: Double?
+        let systemLoadW: Double?
+        let setSource: PowerMeasurementSetSource?
+    }
+
     let powerSourceInfo: [String: Any]
     let batteryRegistry: [String: Any]
     let adapterDetails: [String: Any]
@@ -68,11 +76,8 @@ struct LivePrecisionTelemetrySnapshotMapper {
         let powerSource = TelemetryValueParser.parsePowerSource(powerSourceInfo[kIOPSPowerSourceStateKey] as? String)
         let batteryVoltageV = TelemetryValueParser.doubleValue(batteryRegistry["Voltage"]).map { $0 / 1000 }
         let batteryCurrentA = TelemetryValueParser.doubleValue(batteryRegistry["Amperage"]).map { $0 / 1000 }
-        let batteryPower = resolveBatteryPower(
-            smcPowerW: smcPower?.batteryPowerW,
-            telemetryPowerW: TelemetryValueParser.milliwattsValue(
-                telemetry["BatteryPower"]
-            ),
+        let powerMeasurements = resolvePowerMeasurements(
+            telemetry: telemetry,
             voltageV: batteryVoltageV,
             currentA: batteryCurrentA
         )
@@ -105,16 +110,22 @@ struct LivePrecisionTelemetrySnapshotMapper {
             batteryTemperatureC: TelemetryValueParser.doubleValue(batteryRegistry["Temperature"]).map { $0 / 100 },
             batteryVoltageV: batteryVoltageV,
             batteryCurrentA: batteryCurrentA,
-            batteryPowerW: batteryPower.valueW,
-            batteryPowerSource: batteryPower.source,
+            batteryPowerW: powerMeasurements.batteryPowerW,
+            batteryPowerSource: powerMeasurements.batteryPowerSource,
             adapterDescription: TelemetryValueParser.nonEmptyString(adapterDetails["Description"])
                 ?? TelemetryValueParser.nonEmptyString(batteryRegistry["DeviceName"]),
             adapterMaxPowerW: TelemetryValueParser.doubleValue(adapterDetails["Watts"]),
-            adapterInputPowerW: smcPower?.externalPowerW
-                ?? TelemetryValueParser.milliwattsValue(telemetry["SystemPowerIn"]),
-            adapterVoltageV: TelemetryValueParser.doubleValue(telemetry["SystemVoltageIn"]).map { $0 / 1000 },
-            adapterCurrentA: TelemetryValueParser.doubleValue(telemetry["SystemCurrentIn"]).map { $0 / 1000 },
-            systemLoadW: smcPower?.systemPowerW ?? TelemetryValueParser.milliwattsValue(telemetry["SystemLoad"]),
+            adapterInputPowerW: powerMeasurements.adapterInputPowerW,
+            adapterVoltageV: positiveElectricalValue(
+                telemetry["SystemVoltageIn"],
+                dividedBy: 1000
+            ),
+            adapterCurrentA: positiveElectricalValue(
+                telemetry["SystemCurrentIn"],
+                dividedBy: 1000
+            ),
+            systemLoadW: powerMeasurements.systemLoadW,
+            powerMeasurementSetSource: powerMeasurements.setSource,
             lowPowerModeEnabled: environment.lowPowerModeEnabled,
             thermalState: TelemetryValueParser.describe(environment.thermalState),
             serialNumber: TelemetryValueParser.nonEmptyString(powerSourceInfo["Hardware Serial Number"])
@@ -124,13 +135,71 @@ struct LivePrecisionTelemetrySnapshotMapper {
         )
     }
 
+    private func resolvePowerMeasurements(
+        telemetry: [String: Any],
+        voltageV: Double?,
+        currentA: Double?
+    ) -> ResolvedPowerMeasurements {
+        // SBAP already follows PowerLens' convention (positive discharging,
+        // negative charging). PowerTelemetryData follows battery amperage, so
+        // its BatteryPower sign must be inverted at the provider boundary.
+        let telemetryBatteryPowerW = TelemetryValueParser.milliwattsValue(
+            telemetry["BatteryPower"]
+        ).map { -$0 }
+        let telemetryInputPowerW = TelemetryValueParser.milliwattsValue(
+            telemetry["SystemPowerIn"]
+        )
+        let telemetrySystemLoadW = TelemetryValueParser.milliwattsValue(
+            telemetry["SystemLoad"]
+        )
+
+        if let batteryPowerW = smcPower?.batteryPowerW,
+           let adapterInputPowerW = smcPower?.externalPowerW,
+           let systemLoadW = smcPower?.systemPowerW {
+            return ResolvedPowerMeasurements(
+                batteryPowerW: batteryPowerW,
+                batteryPowerSource: .directTelemetry,
+                adapterInputPowerW: adapterInputPowerW,
+                systemLoadW: systemLoadW,
+                setSource: .smc
+            )
+        }
+
+        if let batteryPowerW = telemetryBatteryPowerW,
+           let adapterInputPowerW = telemetryInputPowerW,
+           let systemLoadW = telemetrySystemLoadW {
+            return ResolvedPowerMeasurements(
+                batteryPowerW: batteryPowerW,
+                batteryPowerSource: .directTelemetry,
+                adapterInputPowerW: adapterInputPowerW,
+                systemLoadW: systemLoadW,
+                setSource: .powerTelemetry
+            )
+        }
+
+        let directBatteryPowerW = smcPower?.batteryPowerW
+            ?? telemetryBatteryPowerW
+        let batteryPower = resolveBatteryPower(
+            directPowerW: directBatteryPowerW,
+            voltageV: voltageV,
+            currentA: currentA
+        )
+        return ResolvedPowerMeasurements(
+            batteryPowerW: batteryPower.valueW,
+            batteryPowerSource: batteryPower.source,
+            adapterInputPowerW: smcPower?.externalPowerW
+                ?? telemetryInputPowerW,
+            systemLoadW: smcPower?.systemPowerW ?? telemetrySystemLoadW,
+            setSource: nil
+        )
+    }
+
     private func resolveBatteryPower(
-        smcPowerW: Double?,
-        telemetryPowerW: Double?,
+        directPowerW: Double?,
         voltageV: Double?,
         currentA: Double?
     ) -> (valueW: Double?, source: BatteryPowerSource?) {
-        if let directPowerW = smcPowerW ?? telemetryPowerW {
+        if let directPowerW {
             return (directPowerW, .directTelemetry)
         }
 
@@ -143,4 +212,16 @@ struct LivePrecisionTelemetrySnapshotMapper {
         // negative = charging.
         return (-(currentA * voltageV), .currentAndVoltage)
     }
+}
+
+private func positiveElectricalValue(
+    _ value: Any?,
+    dividedBy divisor: Double = 1
+) -> Double? {
+    guard let value = TelemetryValueParser.doubleValue(value),
+          value.isFinite,
+          value > 0 else {
+        return nil
+    }
+    return value / divisor
 }

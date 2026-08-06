@@ -309,8 +309,10 @@ struct PowerFlowPresentationModelTests {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: 1,
             batteryPowerW: 5,
+            batteryPowerSource: .directTelemetry,
             adapterInputPowerW: 20,
-            systemLoadW: 20
+            systemLoadW: 20,
+            powerMeasurementSetSource: .smc
         )
 
         let model = PowerFlowPresentationModel(snapshot: snapshot)
@@ -322,6 +324,29 @@ struct PowerFlowPresentationModelTests {
         #expect(model.routes.map(\.role) == [.input])
         #expect(model.routes.first?.source.value == "20.0W")
         #expect(model.routes.first?.target.value == "20.0W")
+    }
+
+    @Test
+    func coherentDirectPowerSetDoesNotTurnAConflictIntoWarningEvidence() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryCurrentA: 1.5,
+            batteryPowerW: 18,
+            batteryPowerSource: .directTelemetry,
+            adapterInputPowerW: 20,
+            systemLoadW: 38,
+            powerMeasurementSetSource: .smc,
+            adapterMaxPowerW: 20
+        )
+
+        #expect(snapshot.batteryFlowEvidence == .conflicted)
+        #expect(snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(!snapshot.hasCorroboratedPowerDeliveryShortfall)
+
+        let model = PowerFlowPresentationModel(snapshot: snapshot)
+        #expect(model.state == .underpowered)
+        #expect(model.showsIndependentReadingsNotice)
+        #expect(model.routes.map(\.role) == [.input, .battery])
+        #expect(model.routes.last?.source.value == "18.0W")
     }
 
     @Test
