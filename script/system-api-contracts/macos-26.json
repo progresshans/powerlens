@@ -19,6 +19,14 @@
       "expectedArgumentTypes": ["@", ":", "@"]
     },
     {
+      "selector": "isOBCEngaged:",
+      "dispatch": "instanceMethod",
+      "expectedReturnTypes": ["B", "c"],
+      "expectedArgumentTypes": ["@", ":", "^@"]
+    }
+  ],
+  "optionalPowerUIMethods": [
+    {
       "selector": "isMCLCurrentlyEnabled:",
       "dispatch": "instanceMethod",
       "expectedReturnTypes": ["Q"],
@@ -29,19 +37,12 @@
       "dispatch": "instanceMethod",
       "expectedReturnTypes": ["C"],
       "expectedArgumentTypes": ["@", ":", "^@"]
-    },
-    {
-      "selector": "isOBCEngaged:",
-      "dispatch": "instanceMethod",
-      "expectedReturnTypes": ["B", "c"],
-      "expectedArgumentTypes": ["@", ":", "^@"]
     }
   ],
   "allowedPowerUIRuntimeClassifications": [
     "compatible",
     "optionalCapabilityMissing",
     "environmentUnavailable",
-    "transientFailure",
-    "invalidResponse"
+    "transientFailure"
   ]
 }

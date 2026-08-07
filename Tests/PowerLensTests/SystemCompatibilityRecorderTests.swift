@@ -43,6 +43,61 @@ struct SystemCompatibilityRecorderTests {
     }
 
     @Test
+    func failedTransitionWriteRetriesOnTheNextEqualObservation() async throws {
+        let fileManager = FileManager.default
+        let fileURL = temporaryFileURL()
+        defer { try? fileManager.removeItem(
+            at: fileURL.deletingLastPathComponent()
+        ) }
+        let recorder = SystemCompatibilityRecorder(
+            fileURL: fileURL,
+            observationWriteInterval: 3600,
+            transitionLimit: 50
+        )
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        let transitioned = diagnostic(
+            .contractMismatch,
+            .frameworkLoadFailed
+        )
+
+        await recorder.record(.compatiblePowerUI, observedAt: start)
+
+        // Replacing the destination file with a directory forces the atomic
+        // write to fail after an earlier state has already been persisted.
+        try fileManager.removeItem(at: fileURL)
+        try fileManager.createDirectory(
+            at: fileURL,
+            withIntermediateDirectories: false
+        )
+        await recorder.record(
+            transitioned,
+            observedAt: start.addingTimeInterval(1)
+        )
+
+        var isDirectory: ObjCBool = false
+        #expect(fileManager.fileExists(
+            atPath: fileURL.path,
+            isDirectory: &isDirectory
+        ))
+        #expect(isDirectory.boolValue)
+
+        try fileManager.removeItem(at: fileURL)
+        await recorder.record(
+            transitioned,
+            observedAt: start.addingTimeInterval(2)
+        )
+
+        let document = try decodeDocument(at: fileURL)
+        #expect(document.currentStates.first?.diagnostic == transitioned)
+        #expect(document.currentStates.first?.occurrenceCount == 2)
+        #expect(document.recentTransitions.count == 2)
+        #expect(
+            document.recentTransitions.last?.previousClassification
+                == .compatible
+        )
+    }
+
+    @Test
     func semanticTransitionsAreBoundedAndRecoveryIsRecorded() async {
         let fileURL = temporaryFileURL()
         defer { try? FileManager.default.removeItem(

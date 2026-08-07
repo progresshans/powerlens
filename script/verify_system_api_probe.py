@@ -10,6 +10,24 @@ from typing import Any
 
 
 SUPPORTED_PROFILE_SCHEMA_VERSION = 1
+SANITIZED_TYPE_NAMES = {
+    "array",
+    "boolean",
+    "data",
+    "dictionary",
+    "number",
+    "other",
+    "string",
+}
+SMC_ACCESS_STATES = {
+    "available",
+    "unavailable",
+    "notAttempted",
+    "keyMissing",
+    "accessFailed",
+    "readFailed",
+}
+EXPECTED_SMC_KEYS = {"SBAP", "PDTR", "PSTR"}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -30,6 +48,180 @@ def _actual_encodings(contract: dict[str, Any]) -> set[str]:
         f"return={return_type};args={argument_text}"
         for return_type in returns
     }
+
+
+def _matches_type(value: Any, expected_type: type) -> bool:
+    if expected_type is int:
+        return type(value) is int
+    return isinstance(value, expected_type)
+
+
+def _require_report_section(
+    report: dict[str, Any],
+    key: str,
+    label: str,
+    errors: list[str],
+) -> dict[str, Any] | None:
+    section = report.get(key)
+    if not isinstance(section, dict):
+        errors.append(f"{label} probe report is missing")
+        return None
+    return section
+
+
+def _validate_section_fields(
+    section: dict[str, Any],
+    label: str,
+    expected_fields: dict[str, type],
+    errors: list[str],
+) -> None:
+    for field, expected_type in expected_fields.items():
+        if field not in section or not _matches_type(
+            section[field], expected_type
+        ):
+            errors.append(f"{label} probe field {field} is missing or invalid")
+
+
+def _validate_expected_key_types(
+    section: dict[str, Any],
+    label: str,
+    errors: list[str],
+) -> None:
+    values = section.get("expectedKeyTypes")
+    if not isinstance(values, dict):
+        return
+    if not all(
+        isinstance(key, str)
+        and isinstance(value, str)
+        and value in SANITIZED_TYPE_NAMES
+        for key, value in values.items()
+    ):
+        errors.append(f"{label} expected-key type report is invalid")
+
+
+def _validate_hardware_reports(
+    report: dict[str, Any],
+    errors: list[str],
+) -> None:
+    sections = [
+        (
+            "ioPowerSources",
+            "IOPowerSources",
+            {
+                "infoAvailable": bool,
+                "sourceCount": int,
+                "firstDescriptionAvailable": bool,
+                "expectedKeyTypes": dict,
+            },
+        ),
+        (
+            "externalPowerAdapter",
+            "external power adapter",
+            {
+                "dictionaryAvailable": bool,
+                "expectedKeyTypes": dict,
+            },
+        ),
+        (
+            "appleSmartBattery",
+            "AppleSmartBattery",
+            {
+                "serviceAvailable": bool,
+                "propertiesReadable": bool,
+                "expectedKeyTypes": dict,
+            },
+        ),
+    ]
+
+    for key, label, expected_fields in sections:
+        section = _require_report_section(report, key, label, errors)
+        if section is None:
+            continue
+        _validate_section_fields(section, label, expected_fields, errors)
+        _validate_expected_key_types(section, label, errors)
+
+    smc = _require_report_section(report, "appleSMC", "AppleSMC", errors)
+    if smc is None:
+        return
+    _validate_section_fields(
+        smc,
+        "AppleSMC",
+        {
+            "serviceAvailable": bool,
+            "connectionState": str,
+            "keys": list,
+        },
+        errors,
+    )
+    if smc.get("connectionState") not in SMC_ACCESS_STATES:
+        errors.append("AppleSMC connection state is invalid")
+
+    key_reports = smc.get("keys")
+    if not isinstance(key_reports, list):
+        return
+    reported_keys: list[str] = []
+    for key_report in key_reports:
+        if not isinstance(key_report, dict):
+            errors.append("AppleSMC key report is invalid")
+            continue
+        key = key_report.get("key")
+        state = key_report.get("state")
+        if not isinstance(key, str) or state not in SMC_ACCESS_STATES:
+            errors.append("AppleSMC key report is invalid")
+            continue
+        reported_keys.append(key)
+
+    if len(reported_keys) != len(EXPECTED_SMC_KEYS) or set(
+        reported_keys
+    ) != EXPECTED_SMC_KEYS:
+        errors.append("AppleSMC key reports are incomplete")
+
+
+def _validate_powerui_method(
+    contract: Any,
+    methods_by_selector: dict[str, dict[str, Any]],
+    errors: list[str],
+    *,
+    optional: bool,
+) -> None:
+    if not isinstance(contract, dict):
+        errors.append("contract profile contains an invalid method entry")
+        return
+    selector = contract.get("selector")
+    if not isinstance(selector, str):
+        errors.append("contract profile contains a method without a selector")
+        return
+    method = methods_by_selector.get(selector)
+    if method is None:
+        errors.append(f"PowerUI method report is missing selector {selector}")
+        return
+    if method.get("dispatch") != contract.get("dispatch"):
+        errors.append(f"PowerUI selector {selector} has the wrong dispatch kind")
+    if method.get("expectedReturnTypes") != contract.get(
+        "expectedReturnTypes"
+    ):
+        errors.append(f"PowerUI selector {selector} changed expected return ABI")
+    if method.get("expectedArgumentTypes") != contract.get(
+        "expectedArgumentTypes"
+    ):
+        errors.append(f"PowerUI selector {selector} changed expected argument ABI")
+
+    state = method.get("state")
+    # Optional describes runtime availability, not report/schema optionality:
+    # the probe entry must exist, and an implementation must match when present.
+    if optional and state == "missing":
+        if method.get("actualTypeEncoding") is not None:
+            errors.append(
+                f"PowerUI optional selector {selector} has an invalid missing-state ABI"
+            )
+        return
+    if state != "compatible":
+        errors.append(f"PowerUI selector {selector} is not ABI-compatible")
+        return
+    if method.get("actualTypeEncoding") not in _actual_encodings(contract):
+        errors.append(
+            f"PowerUI selector {selector} actual ABI does not match the profile"
+        )
 
 
 def validate_report(
@@ -68,6 +260,10 @@ def validate_report(
     elif app.get("minimumMacOSVersion") != profile.get("minimumMacOSVersion"):
         errors.append("packaged app minimum macOS version is incorrect")
 
+    # Hardware access may legitimately be unavailable on a hosted runner, but
+    # every factual probe section must still be present and structurally valid.
+    _validate_hardware_reports(report, errors)
+
     power_ui = report.get("powerUI")
     if not isinstance(power_ui, dict):
         errors.append("PowerUI probe report is missing")
@@ -82,11 +278,17 @@ def validate_report(
     if not isinstance(methods, list):
         errors.append("PowerUI method report is missing")
         methods = []
-    methods_by_selector = {
-        method.get("selector"): method
-        for method in methods
-        if isinstance(method, dict) and isinstance(method.get("selector"), str)
-    }
+    methods_by_selector: dict[str, dict[str, Any]] = {}
+    for method in methods:
+        if not isinstance(method, dict) or not isinstance(
+            method.get("selector"), str
+        ):
+            continue
+        selector = method["selector"]
+        if selector in methods_by_selector:
+            errors.append(f"PowerUI method report duplicates selector {selector}")
+            continue
+        methods_by_selector[selector] = method
 
     required_methods = profile.get("requiredPowerUIMethods")
     if not isinstance(required_methods, list):
@@ -94,30 +296,25 @@ def validate_report(
         required_methods = []
 
     for contract in required_methods:
-        if not isinstance(contract, dict):
-            errors.append("contract profile contains an invalid method entry")
-            continue
-        selector = contract.get("selector")
-        method = methods_by_selector.get(selector)
-        if method is None:
-            errors.append(f"PowerUI method report is missing selector {selector}")
-            continue
-        if method.get("dispatch") != contract.get("dispatch"):
-            errors.append(f"PowerUI selector {selector} has the wrong dispatch kind")
-        if method.get("expectedReturnTypes") != contract.get(
-            "expectedReturnTypes"
-        ):
-            errors.append(f"PowerUI selector {selector} changed expected return ABI")
-        if method.get("expectedArgumentTypes") != contract.get(
-            "expectedArgumentTypes"
-        ):
-            errors.append(f"PowerUI selector {selector} changed expected argument ABI")
-        if method.get("state") != "compatible":
-            errors.append(f"PowerUI selector {selector} is not ABI-compatible")
-        if method.get("actualTypeEncoding") not in _actual_encodings(contract):
-            errors.append(
-                f"PowerUI selector {selector} actual ABI does not match the profile"
-            )
+        _validate_powerui_method(
+            contract,
+            methods_by_selector,
+            errors,
+            optional=False,
+        )
+
+    optional_methods = profile.get("optionalPowerUIMethods")
+    if not isinstance(optional_methods, list):
+        errors.append("contract profile has no optional PowerUI methods")
+        optional_methods = []
+
+    for contract in optional_methods:
+        _validate_powerui_method(
+            contract,
+            methods_by_selector,
+            errors,
+            optional=True,
+        )
 
     runtime_observation = power_ui.get("runtimeObservation")
     if not isinstance(runtime_observation, dict):

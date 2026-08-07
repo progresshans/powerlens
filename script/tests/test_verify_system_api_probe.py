@@ -20,17 +20,21 @@ def profile():
 
 def compatible_report(contract_profile):
     methods = []
-    for contract in contract_profile["requiredPowerUIMethods"]:
-        methods.append(
-            {
-                **copy.deepcopy(contract),
-                "state": "compatible",
-                "actualTypeEncoding": (
-                    f"return={contract['expectedReturnTypes'][0]};args="
-                    + ",".join(contract["expectedArgumentTypes"])
-                ),
-            }
-        )
+    for contract_group in (
+        contract_profile["requiredPowerUIMethods"],
+        contract_profile["optionalPowerUIMethods"],
+    ):
+        for contract in contract_group:
+            methods.append(
+                {
+                    **copy.deepcopy(contract),
+                    "state": "compatible",
+                    "actualTypeEncoding": (
+                        f"return={contract['expectedReturnTypes'][0]};args="
+                        + ",".join(contract["expectedArgumentTypes"])
+                    ),
+                }
+            )
 
     return {
         "schemaVersion": 1,
@@ -72,7 +76,11 @@ def compatible_report(contract_profile):
         "appleSMC": {
             "serviceAvailable": False,
             "connectionState": "unavailable",
-            "keys": [],
+            "keys": [
+                {"key": "SBAP", "state": "notAttempted"},
+                {"key": "PDTR", "state": "notAttempted"},
+                {"key": "PSTR", "state": "notAttempted"},
+            ],
         },
     }
 
@@ -98,6 +106,56 @@ class VerifySystemAPIProbeTests(unittest.TestCase):
         errors = validate_report(report, contract_profile)
 
         self.assertTrue(any("isOBCEngaged:" in error for error in errors))
+
+    def test_optional_manual_selectors_may_be_absent(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        optional_selectors = {
+            contract["selector"]
+            for contract in contract_profile["optionalPowerUIMethods"]
+        }
+        for method in report["powerUI"]["methods"]:
+            if method["selector"] in optional_selectors:
+                method["state"] = "missing"
+                method["actualTypeEncoding"] = None
+        report["powerUI"]["runtimeObservation"]["classification"] = (
+            "optionalCapabilityMissing"
+        )
+
+        self.assertEqual(validate_report(report, contract_profile), [])
+
+    def test_optional_selector_incompatible_abi_fails(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        method = next(
+            item
+            for item in report["powerUI"]["methods"]
+            if item["selector"] == "isMCLCurrentlyEnabled:"
+        )
+        method["state"] = "incompatible"
+        method["actualTypeEncoding"] = "return=i;args=@,:,^@"
+
+        errors = validate_report(report, contract_profile)
+
+        self.assertTrue(
+            any("isMCLCurrentlyEnabled:" in error for error in errors)
+        )
+
+    def test_optional_selector_must_still_have_a_probe_entry(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["powerUI"]["methods"] = [
+            method
+            for method in report["powerUI"]["methods"]
+            if method["selector"] != "getMCLLimitWithError:"
+        ]
+
+        errors = validate_report(report, contract_profile)
+
+        self.assertIn(
+            "PowerUI method report is missing selector getMCLLimitWithError:",
+            errors,
+        )
 
     def test_missing_framework_fails(self):
         contract_profile = profile()
@@ -127,6 +185,51 @@ class VerifySystemAPIProbeTests(unittest.TestCase):
         errors = validate_report(report, contract_profile)
 
         self.assertTrue(any("runtime observation" in error for error in errors))
+
+    def test_invalid_response_runtime_classification_fails(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["powerUI"]["runtimeObservation"]["classification"] = (
+            "invalidResponse"
+        )
+
+        errors = validate_report(report, contract_profile)
+
+        self.assertTrue(any("runtime observation" in error for error in errors))
+
+    def test_hardware_probe_sections_are_required(self):
+        contract_profile = profile()
+        expected_errors = {
+            "ioPowerSources": "IOPowerSources probe report is missing",
+            "externalPowerAdapter": (
+                "external power adapter probe report is missing"
+            ),
+            "appleSmartBattery": "AppleSmartBattery probe report is missing",
+            "appleSMC": "AppleSMC probe report is missing",
+        }
+
+        for section, expected_error in expected_errors.items():
+            with self.subTest(section=section):
+                report = compatible_report(contract_profile)
+                del report[section]
+
+                errors = validate_report(report, contract_profile)
+
+                self.assertIn(expected_error, errors)
+
+    def test_hardware_probe_section_shapes_are_validated(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["ioPowerSources"]["sourceCount"] = "0"
+        report["appleSMC"]["keys"] = []
+
+        errors = validate_report(report, contract_profile)
+
+        self.assertIn(
+            "IOPowerSources probe field sourceCount is missing or invalid",
+            errors,
+        )
+        self.assertIn("AppleSMC key reports are incomplete", errors)
 
 
 if __name__ == "__main__":

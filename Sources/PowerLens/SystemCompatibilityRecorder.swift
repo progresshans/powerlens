@@ -151,6 +151,10 @@ actor SystemCompatibilityRecorder: SystemCompatibilityRecording {
             try persist(document)
             persistedObservationDates[diagnostic.subsystem] = observedAt
         } catch {
+            // The in-memory document already contains the latest observation.
+            // Forget the older on-disk timestamp so the next sample retries it
+            // immediately, including after a failed semantic transition.
+            persistedObservationDates[diagnostic.subsystem] = nil
             Self.logger.error(
                 "Compatibility record write failed; error: \(String(describing: error), privacy: .private)"
             )
