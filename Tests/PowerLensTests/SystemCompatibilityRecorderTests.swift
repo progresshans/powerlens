@@ -177,6 +177,51 @@ struct SystemCompatibilityRecorderTests {
     }
 
     @Test
+    func duplicateSubsystemStatesAreReplacedSafely() async throws {
+        let fileURL = temporaryFileURL()
+        defer { try? FileManager.default.removeItem(
+            at: fileURL.deletingLastPathComponent()
+        ) }
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let originalDate = Date(timeIntervalSince1970: 1_999_999_999)
+        let duplicateState = SystemCompatibilityCurrentState(
+            subsystem: .powerUI,
+            diagnostic: .compatiblePowerUI,
+            firstObservedAt: originalDate,
+            lastObservedAt: originalDate,
+            occurrenceCount: 1
+        )
+        let malformed = SystemCompatibilityRecordDocument(
+            schemaVersion: SystemCompatibilityRecordDocument
+                .currentSchemaVersion,
+            currentStates: [duplicateState, duplicateState],
+            recentTransitions: []
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(malformed).write(to: fileURL, options: .atomic)
+        let recorder = SystemCompatibilityRecorder(fileURL: fileURL)
+        let replacementDate = Date(timeIntervalSince1970: 2_000_000_000)
+
+        await recorder.record(
+            .compatiblePowerUI,
+            observedAt: replacementDate
+        )
+
+        let document = try decodeDocument(at: fileURL)
+        #expect(document.currentStates.count == 1)
+        #expect(document.currentStates[0].subsystem == .powerUI)
+        #expect(document.currentStates[0].firstObservedAt == replacementDate)
+        #expect(document.currentStates[0].lastObservedAt == replacementDate)
+        #expect(document.currentStates[0].occurrenceCount == 1)
+        #expect(document.recentTransitions.count == 1)
+        #expect(document.recentTransitions[0].previousClassification == nil)
+    }
+
+    @Test
     func unsupportedSchemaIsReplacedSafely() async throws {
         let fileURL = temporaryFileURL()
         defer { try? FileManager.default.removeItem(

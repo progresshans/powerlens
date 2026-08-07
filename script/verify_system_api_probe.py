@@ -28,6 +28,24 @@ SMC_ACCESS_STATES = {
     "readFailed",
 }
 EXPECTED_SMC_KEYS = {"SBAP", "PDTR", "PSTR"}
+POWER_UI_RUNTIME_REASON_CODES = {
+    "none",
+    "frameworkLoadFailed",
+    "clientClassMissing",
+    "methodMissing",
+    "methodSignatureMismatch",
+    "initializationFailed",
+    "queryFailed",
+    "invalidManualChargeLimit",
+}
+POWER_UI_RUNTIME_OPTIONAL_FIELDS = {
+    "component": str,
+    "expectedTypeEncoding": str,
+    "actualTypeEncoding": str,
+    "errorDomain": str,
+    "errorCode": int,
+    "observedInteger": int,
+}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -97,6 +115,48 @@ def _validate_expected_key_types(
         for key, value in values.items()
     ):
         errors.append(f"{label} expected-key type report is invalid")
+
+
+def _validate_powerui_runtime_observation(
+    observation: dict[str, Any],
+    profile: dict[str, Any],
+    errors: list[str],
+) -> None:
+    if observation.get("subsystem") != "powerUI":
+        errors.append(
+            "PowerUI runtime observation subsystem is missing or invalid"
+        )
+
+    classification = observation.get("classification")
+    if not isinstance(classification, str):
+        errors.append(
+            "PowerUI runtime observation classification is missing or invalid"
+        )
+    else:
+        allowed = profile.get("allowedPowerUIRuntimeClassifications")
+        if not isinstance(allowed, list) or not all(
+            isinstance(value, str) for value in allowed
+        ):
+            errors.append(
+                "contract profile has invalid allowed PowerUI runtime classifications"
+            )
+        elif classification not in allowed:
+            errors.append(
+                "PowerUI runtime observation indicates a contract mismatch"
+            )
+
+    reason = observation.get("reason")
+    if (
+        not isinstance(reason, str)
+        or reason not in POWER_UI_RUNTIME_REASON_CODES
+    ):
+        errors.append("PowerUI runtime observation reason is missing or invalid")
+
+    for field, expected_type in POWER_UI_RUNTIME_OPTIONAL_FIELDS.items():
+        if field in observation and not _matches_type(
+            observation[field], expected_type
+        ):
+            errors.append(f"PowerUI runtime observation field {field} is invalid")
 
 
 def _validate_hardware_reports(
@@ -320,9 +380,11 @@ def validate_report(
     if not isinstance(runtime_observation, dict):
         errors.append("PowerUI runtime observation is missing")
     else:
-        allowed = profile.get("allowedPowerUIRuntimeClassifications", [])
-        if runtime_observation.get("classification") not in allowed:
-            errors.append("PowerUI runtime observation indicates a contract mismatch")
+        _validate_powerui_runtime_observation(
+            runtime_observation,
+            profile,
+            errors,
+        )
 
     # Hardware-backed fields are deliberately observation-only. A hosted VM
     # may have no battery, external adapter, AppleSmartBattery, or AppleSMC.

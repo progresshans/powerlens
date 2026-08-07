@@ -39,6 +39,7 @@ struct SystemCompatibilityRecordDocument: Codable, Equatable, Sendable {
 actor SystemCompatibilityRecorder: SystemCompatibilityRecording {
     private enum RecordError: Error {
         case unsupportedSchema(Int)
+        case duplicateCurrentState(SystemCompatibilitySubsystem)
     }
 
     static let shared = SystemCompatibilityRecorder()
@@ -190,18 +191,31 @@ actor SystemCompatibilityRecorder: SystemCompatibilityRecording {
                 throw RecordError.unsupportedSchema(decoded.schemaVersion)
             }
 
-            document = decoded
-            persistedObservationDates = Dictionary(
-                uniqueKeysWithValues: decoded.currentStates.map {
-                    ($0.subsystem, $0.lastObservedAt)
-                }
+            let observationDates = try validatedObservationDates(
+                from: decoded.currentStates
             )
+            document = decoded
+            persistedObservationDates = observationDates
         } catch {
             document = .empty
+            persistedObservationDates = [:]
             Self.logger.error(
                 "Compatibility record could not be read and will be replaced; error: \(String(describing: error), privacy: .private)"
             )
         }
+    }
+
+    private func validatedObservationDates(
+        from currentStates: [SystemCompatibilityCurrentState]
+    ) throws -> [SystemCompatibilitySubsystem: Date] {
+        var dates: [SystemCompatibilitySubsystem: Date] = [:]
+        for state in currentStates {
+            guard dates[state.subsystem] == nil else {
+                throw RecordError.duplicateCurrentState(state.subsystem)
+            }
+            dates[state.subsystem] = state.lastObservedAt
+        }
+        return dates
     }
 
     private func appendTransition(

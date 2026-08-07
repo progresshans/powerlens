@@ -186,6 +186,92 @@ class VerifySystemAPIProbeTests(unittest.TestCase):
 
         self.assertTrue(any("runtime observation" in error for error in errors))
 
+    def test_runtime_observation_requires_mandatory_fields(self):
+        contract_profile = profile()
+        expected_errors = {
+            "subsystem": (
+                "PowerUI runtime observation subsystem is missing or invalid"
+            ),
+            "classification": (
+                "PowerUI runtime observation classification is missing or invalid"
+            ),
+            "reason": (
+                "PowerUI runtime observation reason is missing or invalid"
+            ),
+        }
+
+        for field, expected_error in expected_errors.items():
+            with self.subTest(field=field):
+                report = compatible_report(contract_profile)
+                del report["powerUI"]["runtimeObservation"][field]
+
+                errors = validate_report(report, contract_profile)
+
+                self.assertIn(expected_error, errors)
+
+    def test_runtime_observation_requires_powerui_subsystem(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["powerUI"]["runtimeObservation"]["subsystem"] = "battery"
+
+        errors = validate_report(report, contract_profile)
+
+        self.assertIn(
+            "PowerUI runtime observation subsystem is missing or invalid",
+            errors,
+        )
+
+    def test_runtime_observation_rejects_unknown_reason(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["powerUI"]["runtimeObservation"]["reason"] = "newReason"
+
+        errors = validate_report(report, contract_profile)
+
+        self.assertIn(
+            "PowerUI runtime observation reason is missing or invalid",
+            errors,
+        )
+
+    def test_runtime_observation_allows_typed_optional_fields(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["powerUI"]["runtimeObservation"].update(
+            {
+                "component": "PowerUI",
+                "expectedTypeEncoding": "return=B;args=@,:,^@",
+                "actualTypeEncoding": "return=B;args=@,:,^@",
+                "errorDomain": "PowerUI",
+                "errorCode": 1,
+                "observedInteger": 80,
+            }
+        )
+
+        self.assertEqual(validate_report(report, contract_profile), [])
+
+    def test_runtime_observation_rejects_invalid_optional_field_types(self):
+        contract_profile = profile()
+        invalid_values = {
+            "component": 1,
+            "expectedTypeEncoding": [],
+            "actualTypeEncoding": False,
+            "errorDomain": {},
+            "errorCode": True,
+            "observedInteger": 1.5,
+        }
+
+        for field, invalid_value in invalid_values.items():
+            with self.subTest(field=field):
+                report = compatible_report(contract_profile)
+                report["powerUI"]["runtimeObservation"][field] = invalid_value
+
+                errors = validate_report(report, contract_profile)
+
+                self.assertIn(
+                    f"PowerUI runtime observation field {field} is invalid",
+                    errors,
+                )
+
     def test_invalid_response_runtime_classification_fails(self):
         contract_profile = profile()
         report = compatible_report(contract_profile)
