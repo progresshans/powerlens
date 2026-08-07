@@ -41,6 +41,21 @@ PowerLens stores recent telemetry history in:
 ~/Library/Application Support/PowerLens/history.sqlite3
 ```
 
+PowerLens also stores a bounded system-interface compatibility record in:
+
+```text
+~/Library/Application Support/PowerLens/system-compatibility.json
+```
+
+This JSON file helps distinguish an unavailable hardware service from a macOS
+API or ABI change. It contains the current compatibility classification for
+each inspected subsystem and at most 50 state transitions. It may include a
+system component or selector name, expected and observed Objective-C type
+encodings, and a normalized error domain/code. It does not contain raw battery
+or adapter readings, battery identifiers, app names, user filesystem paths, or
+free-form system error descriptions. Repeated equal observations are
+deduplicated, and their stored observation time is refreshed at most hourly.
+
 The history database may include battery identifiers, adapter information,
 telemetry samples, and the frontmost high energy usage app name/bundle
 identifier. This data stays on the Mac unless you manually share, back up, or

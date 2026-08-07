@@ -61,6 +61,24 @@ plutil -lint \
 git diff --check
 ```
 
+The packaged app also exposes a headless, read-only compatibility probe:
+
+```bash
+release/stage/PowerLens.app/Contents/MacOS/PowerLens \
+  --system-api-probe \
+  --format json \
+  > release/system-api-probe.json
+
+python3 script/verify_system_api_probe.py \
+  --profile script/system-api-contracts/macos-26.json \
+  release/system-api-probe.json
+```
+
+The probe reports system-interface shape and service availability, not raw
+battery/adapter values or identifiers. CI runs the same macOS 26 contract on
+both `macos-26` and the `xcode-27` preview image. The latter is Xcode 27 and the
+macOS 27 SDK on a macOS 26 host; it is not macOS 27 runtime coverage.
+
 ## Change Guidelines
 
 - Preserve raw sensor readings and their provenance. Do not force independently

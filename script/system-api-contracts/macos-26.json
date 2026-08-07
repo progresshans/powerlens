@@ -1,0 +1,47 @@
+{
+  "profileSchemaVersion": 1,
+  "profileName": "macos-26",
+  "probeSchemaVersion": 1,
+  "hostMacOSMajorVersion": 26,
+  "architecture": "arm64",
+  "minimumMacOSVersion": "26.0",
+  "requiredPowerUIMethods": [
+    {
+      "selector": "alloc",
+      "dispatch": "classMethod",
+      "expectedReturnTypes": ["@"],
+      "expectedArgumentTypes": ["@", ":"]
+    },
+    {
+      "selector": "initWithClientName:",
+      "dispatch": "instanceMethod",
+      "expectedReturnTypes": ["@"],
+      "expectedArgumentTypes": ["@", ":", "@"]
+    },
+    {
+      "selector": "isMCLCurrentlyEnabled:",
+      "dispatch": "instanceMethod",
+      "expectedReturnTypes": ["Q"],
+      "expectedArgumentTypes": ["@", ":", "^@"]
+    },
+    {
+      "selector": "getMCLLimitWithError:",
+      "dispatch": "instanceMethod",
+      "expectedReturnTypes": ["C"],
+      "expectedArgumentTypes": ["@", ":", "^@"]
+    },
+    {
+      "selector": "isOBCEngaged:",
+      "dispatch": "instanceMethod",
+      "expectedReturnTypes": ["B", "c"],
+      "expectedArgumentTypes": ["@", ":", "^@"]
+    }
+  ],
+  "allowedPowerUIRuntimeClassifications": [
+    "compatible",
+    "optionalCapabilityMissing",
+    "environmentUnavailable",
+    "transientFailure",
+    "invalidResponse"
+  ]
+}

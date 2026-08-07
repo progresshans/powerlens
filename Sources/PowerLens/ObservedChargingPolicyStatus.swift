@@ -34,5 +34,12 @@ enum ObservedChargingPolicyStatus: Codable, Equatable, Sendable {
 
 /// An injectable, read-only boundary for charging-policy telemetry.
 protocol ChargingPolicyReading: Sendable {
-    func readChargingPolicyStatus() -> ObservedChargingPolicyStatus
+    func readChargingPolicyObservation() -> ChargingPolicyObservation
+}
+
+extension ChargingPolicyReading {
+    /// Convenience for consumers that only need the user-facing policy state.
+    func readChargingPolicyStatus() -> ObservedChargingPolicyStatus {
+        readChargingPolicyObservation().status
+    }
 }

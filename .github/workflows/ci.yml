@@ -16,8 +16,16 @@ concurrency:
 
 jobs:
   test:
-    name: Build, Test, and Package Smoke Check
-    runs-on: macos-26
+    name: ${{ matrix.check_name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            check_name: Build, Test, and Package Smoke Check
+          - runner: xcode-27
+            check_name: Xcode 27 Compatibility Check
 
     steps:
       - name: Check out repository
@@ -27,11 +35,15 @@ jobs:
         run: |
           test "$(uname -m)" = "arm64"
           uname -m
+          sw_vers
           swift --version
           xcodebuild -version
 
       - name: Run unit tests
         run: swift test --arch arm64
+
+      - name: Test system API contract verifier
+        run: python3 -m unittest discover -s script/tests -p 'test_*.py' -v
 
       - name: Validate scripts
         run: |
@@ -91,6 +103,25 @@ jobs:
             = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' release/stage/PowerLens.app/Contents/Info.plist)" \
             = "26.0"
+
+      - name: Probe macOS system API contracts
+        run: |
+          mkdir -p release/system-api-probe
+          release/stage/PowerLens.app/Contents/MacOS/PowerLens \
+            --system-api-probe \
+            --format json \
+            > "release/system-api-probe/${{ matrix.runner }}.json"
+          python3 script/verify_system_api_probe.py \
+            --profile script/system-api-contracts/macos-26.json \
+            "release/system-api-probe/${{ matrix.runner }}.json"
+
+      - name: Upload system API probe report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: system-api-probe-${{ matrix.runner }}
+          path: release/system-api-probe/${{ matrix.runner }}.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Launch packaged app
         run: ./script/smoke_launch_app.sh release/stage/PowerLens.app

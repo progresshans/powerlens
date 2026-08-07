@@ -32,9 +32,17 @@ struct ChargingPolicyReaderTests {
             optimizedChargingEngaged: .success(true)
         )
 
-        let status = ChargingPolicyStatusResolver.resolve(using: client)
+        let status = ChargingPolicyStatusResolver.resolve(using: client).status
+        let observation = ChargingPolicyStatusResolver.resolve(
+            using: SmartChargeQueryStub(
+                manualLimitEnabled: .success(true),
+                manualLimits: [.success(targetPercent)],
+                optimizedChargingEngaged: .success(true)
+            )
+        )
 
         #expect(status == .manualLimit(targetPercent: targetPercent))
+        #expect(observation.diagnostic == .compatiblePowerUI)
         #expect(client.calls == [.manualLimitEnabled, .manualLimit])
     }
 
@@ -48,6 +56,7 @@ struct ChargingPolicyReaderTests {
 
         #expect(
             ChargingPolicyStatusResolver.resolve(using: client)
+                .status
                 == .manualLimit(targetPercent: 80)
         )
         #expect(client.calls == [.manualLimitEnabled, .manualLimit])
@@ -63,6 +72,7 @@ struct ChargingPolicyReaderTests {
 
         #expect(
             ChargingPolicyStatusResolver.resolve(using: client)
+                .status
                 == .optimizedCharging
         )
         #expect(client.calls == [
@@ -79,9 +89,17 @@ struct ChargingPolicyReaderTests {
             optimizedChargingEngaged: .success(true)
         )
 
+        let observation = ChargingPolicyStatusResolver.resolve(using: client)
+
+        #expect(observation.status == .optimizedCharging)
         #expect(
-            ChargingPolicyStatusResolver.resolve(using: client)
-                == .optimizedCharging
+            observation.diagnostic.classification
+                == .optionalCapabilityMissing
+        )
+        #expect(observation.diagnostic.reason == .methodMissing)
+        #expect(
+            observation.diagnostic.component
+                == PowerUIRuntime.manualLimitEnabledContract.selectorName
         )
         #expect(client.calls == [
             .manualLimitEnabled,
@@ -97,7 +115,10 @@ struct ChargingPolicyReaderTests {
             optimizedChargingEngaged: .success(false)
         )
 
-        #expect(ChargingPolicyStatusResolver.resolve(using: client) == .inactive)
+        #expect(
+            ChargingPolicyStatusResolver.resolve(using: client).status
+                == .inactive
+        )
     }
 
     @Test(arguments: [0, 101, 255])
@@ -108,10 +129,12 @@ struct ChargingPolicyReaderTests {
             optimizedChargingEngaged: .success(false)
         )
 
-        #expect(
-            ChargingPolicyStatusResolver.resolve(using: client)
-                == .unavailable
-        )
+        let observation = ChargingPolicyStatusResolver.resolve(using: client)
+
+        #expect(observation.status == .unavailable)
+        #expect(observation.diagnostic.classification == .invalidResponse)
+        #expect(observation.diagnostic.reason == .invalidManualChargeLimit)
+        #expect(observation.diagnostic.observedInteger == targetPercent)
     }
 
     @Test
@@ -135,11 +158,46 @@ struct ChargingPolicyReaderTests {
         ]
 
         for client in clients {
-            #expect(
-                ChargingPolicyStatusResolver.resolve(using: client)
-                    == .unavailable
-            )
+            let observation = ChargingPolicyStatusResolver.resolve(using: client)
+            #expect(observation.status == .unavailable)
+            #expect(observation.diagnostic.classification == .transientFailure)
+            #expect(observation.diagnostic.reason == .queryFailed)
         }
+    }
+
+    @Test
+    func requiredOptimizedSelectorFailureIsAContractMismatch() {
+        let client = SmartChargeQueryStub(
+            manualLimitEnabled: .success(false),
+            manualLimits: [.success(80)],
+            optimizedChargingEngaged: .failure(.unsupported)
+        )
+
+        let observation = ChargingPolicyStatusResolver.resolve(using: client)
+
+        #expect(observation.status == .unavailable)
+        #expect(observation.diagnostic.classification == .contractMismatch)
+        #expect(observation.diagnostic.reason == .methodMissing)
+        #expect(
+            observation.diagnostic.component
+                == PowerUIRuntime.optimizedChargingContract.selectorName
+        )
+    }
+
+    @Test
+    func incompatibleQuerySignatureIsAContractMismatch() {
+        let client = SmartChargeQueryStub(
+            manualLimitEnabled: .failure(.incompatibleSignature),
+            manualLimits: [.success(80)],
+            optimizedChargingEngaged: .success(false)
+        )
+
+        let observation = ChargingPolicyStatusResolver.resolve(using: client)
+
+        #expect(observation.status == .unavailable)
+        #expect(observation.diagnostic.classification == .contractMismatch)
+        #expect(observation.diagnostic.reason == .methodSignatureMismatch)
+        #expect(observation.diagnostic.actualTypeEncoding == "return=i;args=@,:,^@")
     }
 
     @Test
@@ -180,6 +238,63 @@ struct ChargingPolicyReaderTests {
     }
 
     @Test
+    func failedSessionCreationReasonSurvivesBackoff() {
+        let failure = PowerUISessionCreationError.incompatibleSignature(
+            selector: "initWithClientName:",
+            expected: "return=@;args=@,:,@",
+            actual: "return=v;args=@,:,@"
+        )
+        let factory = SmartChargeSessionFactoryStub(
+            results: [.failure(failure)]
+        )
+        let reader = PowerUIChargingPolicyReader(sessionFactory: factory)
+
+        let first = reader.readChargingPolicyObservation()
+        let second = reader.readChargingPolicyObservation()
+
+        #expect(first == second)
+        #expect(first.status == .unavailable)
+        #expect(first.diagnostic.classification == .contractMismatch)
+        #expect(first.diagnostic.reason == .methodSignatureMismatch)
+        #expect(first.diagnostic.actualTypeEncoding == "return=v;args=@,:,@")
+        #expect(factory.makeSessionCallCount == 1)
+    }
+
+    @Test
+    func sessionCreationFailuresHaveStableSanitizedClassifications() {
+        let cases: [(PowerUISessionCreationError, SystemCompatibilityClassification, SystemCompatibilityReasonCode)] = [
+            (.frameworkLoadFailed, .contractMismatch, .frameworkLoadFailed),
+            (.clientClassMissing, .contractMismatch, .clientClassMissing),
+            (
+                .methodMissing(selector: "alloc"),
+                .contractMismatch,
+                .methodMissing
+            ),
+            (
+                .incompatibleSignature(
+                    selector: "alloc",
+                    expected: "return=@;args=@,:",
+                    actual: "return=v;args=@,:"
+                ),
+                .contractMismatch,
+                .methodSignatureMismatch
+            ),
+            (
+                .initializationFailed,
+                .environmentUnavailable,
+                .initializationFailed
+            ),
+        ]
+
+        for (error, classification, reason) in cases {
+            #expect(error.diagnostic.classification == classification)
+            #expect(error.diagnostic.reason == reason)
+            #expect(error.diagnostic.errorDomain == nil)
+            #expect(error.diagnostic.errorCode == nil)
+        }
+    }
+
+    @Test
     func readerRetriesAndRecoversWhenBackoffExpires() {
         let client = SmartChargeQueryStub(
             manualLimitEnabled: .success(true),
@@ -202,10 +317,9 @@ struct ChargingPolicyReaderTests {
         #expect(factory.makeSessionCallCount == 1)
 
         uptime.advance(by: 1)
-        #expect(
-            reader.readChargingPolicyStatus()
-                == .manualLimit(targetPercent: 87)
-        )
+        let recovered = reader.readChargingPolicyObservation()
+        #expect(recovered.status == .manualLimit(targetPercent: 87))
+        #expect(recovered.diagnostic == .compatiblePowerUI)
         #expect(factory.makeSessionCallCount == 2)
     }
 
@@ -228,6 +342,26 @@ struct ChargingPolicyReaderTests {
             #expect(decoded == status)
             #expect(decoded.targetPercent == status.targetPercent)
         }
+    }
+
+    @Test
+    func compatibilityDiagnosticSupportsCodableRoundTrips() throws {
+        let diagnostic = SystemCompatibilityDiagnostic(
+            subsystem: .powerUI,
+            classification: .contractMismatch,
+            reason: .methodSignatureMismatch,
+            component: "isOBCEngaged:",
+            expectedTypeEncoding: "return=B|c;args=@,:,^@",
+            actualTypeEncoding: "return=i;args=@,:,^@"
+        )
+
+        let data = try JSONEncoder().encode(diagnostic)
+        let decoded = try JSONDecoder().decode(
+            SystemCompatibilityDiagnostic.self,
+            from: data
+        )
+
+        #expect(decoded == diagnostic)
     }
 
     @Test
@@ -267,7 +401,9 @@ private final class SmartChargeQueryStub: PowerUISmartChargeQuerying {
 
     func isManualChargeLimitEnabled() throws -> Bool {
         calls.append(.manualLimitEnabled)
-        return try manualLimitEnabled.getForManualSupport()
+        return try manualLimitEnabled.getForPowerUI(
+            selector: PowerUIRuntime.manualLimitEnabledContract.selectorName
+        )
     }
 
     func manualChargeLimit() throws -> Int {
@@ -275,33 +411,53 @@ private final class SmartChargeQueryStub: PowerUISmartChargeQuerying {
         guard !manualLimits.isEmpty else {
             throw StubError.operationFailed
         }
-        return try manualLimits.removeFirst().get()
+        return try manualLimits.removeFirst().getForPowerUI(
+            selector: PowerUIRuntime.manualLimitContract.selectorName
+        )
     }
 
     func isOptimizedChargingEngaged() throws -> Bool {
         calls.append(.optimizedChargingEngaged)
-        return try optimizedChargingEngaged.get()
+        return try optimizedChargingEngaged.getForPowerUI(
+            selector: PowerUIRuntime.optimizedChargingContract.selectorName
+        )
     }
 }
 
 private final class SmartChargeSessionFactoryStub:
     PowerUISmartChargeSessionCreating
 {
-    private var sessions: [(any PowerUISmartChargeQuerying)?]
+    private var sessions: [Result<
+        any PowerUISmartChargeQuerying,
+        PowerUISessionCreationError
+    >]
     private(set) var makeSessionCallCount = 0
 
     init(session: (any PowerUISmartChargeQuerying)?) {
-        sessions = [session]
+        sessions = [session.map(Result.success)
+            ?? .failure(.frameworkLoadFailed)]
     }
 
     init(sessions: [(any PowerUISmartChargeQuerying)?]) {
-        self.sessions = sessions
+        self.sessions = sessions.map {
+            $0.map(Result.success) ?? .failure(.frameworkLoadFailed)
+        }
     }
 
-    func makeSession() -> (any PowerUISmartChargeQuerying)? {
+    init(results: [Result<
+        any PowerUISmartChargeQuerying,
+        PowerUISessionCreationError
+    >]) {
+        sessions = results
+    }
+
+    func makeSession() -> Result<
+        any PowerUISmartChargeQuerying,
+        PowerUISessionCreationError
+    > {
         makeSessionCallCount += 1
         guard sessions.count > 1 else {
-            return sessions.first ?? nil
+            return sessions.first ?? .failure(.frameworkLoadFailed)
         }
         return sessions.removeFirst()
     }
@@ -310,8 +466,11 @@ private final class SmartChargeSessionFactoryStub:
 private struct ChargingPolicyReaderStub: ChargingPolicyReading {
     let status: ObservedChargingPolicyStatus
 
-    func readChargingPolicyStatus() -> ObservedChargingPolicyStatus {
-        status
+    func readChargingPolicyObservation() -> ChargingPolicyObservation {
+        ChargingPolicyObservation(
+            status: status,
+            diagnostic: .compatiblePowerUI
+        )
     }
 }
 
@@ -338,15 +497,32 @@ private final class UptimeStub: @unchecked Sendable {
 
 private enum StubError: Error {
     case unsupported
+    case incompatibleSignature
     case operationFailed
 }
 
 private extension Result where Failure == StubError {
-    func getForManualSupport() throws -> Success {
+    func getForPowerUI(selector: String) throws -> Success {
         do {
             return try get()
         } catch StubError.unsupported {
-            throw PowerUIQueryError.unsupported
+            throw PowerUIQueryError.unsupported(
+                selector: selector
+            )
+        } catch StubError.incompatibleSignature {
+            throw PowerUIQueryError.incompatibleSignature(
+                selector: selector,
+                expected: "return=expected;args=@,:,^@",
+                actual: "return=i;args=@,:,^@"
+            )
+        } catch StubError.operationFailed {
+            throw PowerUIQueryError.operationFailed(
+                selector: selector,
+                NSError(
+                    domain: "PowerLensTests.PowerUI",
+                    code: 17
+                )
+            )
         }
     }
 }

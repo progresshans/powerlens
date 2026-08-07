@@ -57,6 +57,17 @@ enum TelemetryEngineKind: String, Codable, Equatable, Sendable {
 struct TelemetryReadResult: Sendable {
     let snapshot: TelemetrySnapshot
     let activeEngine: TelemetryEngineKind
+    let systemCompatibilityDiagnostics: [SystemCompatibilityDiagnostic]
+
+    init(
+        snapshot: TelemetrySnapshot,
+        activeEngine: TelemetryEngineKind,
+        systemCompatibilityDiagnostics: [SystemCompatibilityDiagnostic] = []
+    ) {
+        self.snapshot = snapshot
+        self.activeEngine = activeEngine
+        self.systemCompatibilityDiagnostics = systemCompatibilityDiagnostics
+    }
 }
 
 enum TelemetryReadError: Error {
@@ -117,11 +128,16 @@ struct TelemetryCoordinator {
             }
         }
 
+        let chargingPolicyObservation = chargingPolicyReader
+            .readChargingPolicyObservation()
         return TelemetryReadResult(
             snapshot: result.snapshot.withChargingPolicyStatus(
-                chargingPolicyReader.readChargingPolicyStatus()
+                chargingPolicyObservation.status
             ),
-            activeEngine: result.activeEngine
+            activeEngine: result.activeEngine,
+            systemCompatibilityDiagnostics: [
+                chargingPolicyObservation.diagnostic,
+            ]
         )
     }
 }

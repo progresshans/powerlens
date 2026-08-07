@@ -491,6 +491,49 @@ struct PowerLensStoreTests {
         #expect(store.telemetryHealth == .live)
         #expect(store.historyHealth == .degraded)
     }
+
+    @Test
+    @MainActor
+    func compatibilityDiagnosticsStaySeparateFromSnapshotHistory() async {
+        let snapshot = makeTelemetrySnapshot(
+            chargingPolicyStatus: .unavailable
+        )
+        let diagnostic = SystemCompatibilityDiagnostic(
+            subsystem: .powerUI,
+            classification: .contractMismatch,
+            reason: .methodMissing,
+            component: "isOBCEngaged:"
+        )
+        let recorder = StubSystemCompatibilityRecorder()
+        let historyStore = StubHistoryStore()
+        let observedAt = snapshot.timestamp.addingTimeInterval(30)
+        let store = PowerLensStore(
+            telemetryReader: StubTelemetryReader(
+                result: TelemetryReadResult(
+                    snapshot: snapshot,
+                    activeEngine: .compatible,
+                    systemCompatibilityDiagnostics: [diagnostic]
+                )
+            ),
+            historyStore: historyStore,
+            systemCompatibilityRecorder: recorder,
+            startsAutomatically: false,
+            now: { observedAt }
+        )
+
+        await store.refreshOnce(persistImmediately: true)
+
+        #expect(store.systemCompatibilityDiagnostics == [diagnostic])
+        #expect(
+            await recorder.recordedDiagnostics()
+                == [.init(diagnostic: diagnostic, observedAt: observedAt)]
+        )
+        #expect(store.history == [snapshot.withChargingPolicyStatus(nil)])
+        #expect(
+            await historyStore.appendedSnapshots()
+                == [snapshot.withChargingPolicyStatus(nil)]
+        )
+    }
 }
 
 private enum TelemetryOutcome: Sendable {
@@ -674,4 +717,24 @@ private actor StubHistoryStore: HistoryStoring {
 
 private enum StubHistoryError: Error {
     case writeFailed
+}
+
+private actor StubSystemCompatibilityRecorder: SystemCompatibilityRecording {
+    struct Entry: Equatable, Sendable {
+        let diagnostic: SystemCompatibilityDiagnostic
+        let observedAt: Date
+    }
+
+    private var entries: [Entry] = []
+
+    func record(
+        _ diagnostic: SystemCompatibilityDiagnostic,
+        observedAt: Date
+    ) async {
+        entries.append(Entry(diagnostic: diagnostic, observedAt: observedAt))
+    }
+
+    func recordedDiagnostics() -> [Entry] {
+        entries
+    }
 }

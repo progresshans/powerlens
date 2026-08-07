@@ -22,10 +22,13 @@ final class PowerLensStore: ObservableObject {
     @Published private(set) var requestedTelemetryEngine = TelemetryEnginePreference.current
     @Published private(set) var activeTelemetryEngine: TelemetryEngineKind = .compatible
     @Published private(set) var resolvedPowerState: ResolvedPowerState?
+    @Published private(set) var systemCompatibilityDiagnostics:
+        [SystemCompatibilityDiagnostic] = []
 
     private let telemetryReader: any TelemetryReading
     private let historyStore: any HistoryStoring
     private let energySampler: any ProcessEnergySampling
+    private let systemCompatibilityRecorder: any SystemCompatibilityRecording
     private let now: () -> Date
     private static let telemetryLogger = Logger(
         subsystem: "com.progresshans.powerlens",
@@ -53,6 +56,8 @@ final class PowerLensStore: ObservableObject {
         telemetryReader: any TelemetryReading = TelemetryReadService(),
         historyStore: any HistoryStoring = HistoryStore(),
         energySampler: any ProcessEnergySampling = ProcessEnergySampler(),
+        systemCompatibilityRecorder: any SystemCompatibilityRecording =
+            SystemCompatibilityRecorder.shared,
         startsAutomatically: Bool = true,
         now: @escaping () -> Date = Date.init,
         powerStateConfiguration: PowerStateHysteresisConfiguration = .init()
@@ -60,6 +65,7 @@ final class PowerLensStore: ObservableObject {
         self.telemetryReader = telemetryReader
         self.historyStore = historyStore
         self.energySampler = energySampler
+        self.systemCompatibilityRecorder = systemCompatibilityRecorder
         self.now = now
         self.powerStateTracker = PowerStateTracker(
             configuration: powerStateConfiguration
@@ -314,6 +320,17 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
+        let compatibilityObservedAt = now()
+        for diagnostic in result.systemCompatibilityDiagnostics {
+            await systemCompatibilityRecorder.record(
+                diagnostic,
+                observedAt: compatibilityObservedAt
+            )
+        }
+        guard sequence == refreshSequence else {
+            return
+        }
+
         telemetryHealth = .live
         lastRefreshAttemptAt = now()
 
@@ -338,6 +355,8 @@ final class PowerLensStore: ObservableObject {
         lastRefreshAt = snapshot.timestamp
         activeTelemetryEngine = result.activeEngine
         topEnergyApps = sampledEnergyApps
+        systemCompatibilityDiagnostics =
+            result.systemCompatibilityDiagnostics
 
         let shouldPersist = persistImmediately || shouldPersist(snapshot: snapshot)
         guard shouldPersist else {

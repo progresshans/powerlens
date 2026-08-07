@@ -4,9 +4,10 @@ import ObjectiveC
 
 /// Reads the charging policy currently applied by macOS without changing it.
 ///
-/// PowerUI is a private framework, so all of its dependencies are discovered
-/// and validated at runtime. A missing or incompatible dependency is a
-/// supported condition and produces `.unavailable`.
+/// PowerUI is a private framework, so all dependencies are discovered and
+/// validated at runtime. Unsafe or unreadable state remains user-facing
+/// `.unavailable`; the reason is carried separately for local diagnostics and
+/// compatibility CI.
 struct PowerUIChargingPolicyReader: ChargingPolicyReading, Sendable {
     private static let sharedSessionCache = PowerUISmartChargeSessionCache(
         factory: DynamicPowerUISmartChargeSessionFactory()
@@ -32,8 +33,8 @@ struct PowerUIChargingPolicyReader: ChargingPolicyReading, Sendable {
         )
     }
 
-    func readChargingPolicyStatus() -> ObservedChargingPolicyStatus {
-        sessionCache.readChargingPolicyStatus()
+    func readChargingPolicyObservation() -> ChargingPolicyObservation {
+        sessionCache.readChargingPolicyObservation()
     }
 }
 
@@ -44,33 +45,66 @@ protocol PowerUISmartChargeQuerying: AnyObject {
 }
 
 protocol PowerUISmartChargeSessionCreating: AnyObject {
-    func makeSession() -> (any PowerUISmartChargeQuerying)?
+    func makeSession() -> Result<
+        any PowerUISmartChargeQuerying,
+        PowerUISessionCreationError
+    >
 }
 
 enum ChargingPolicyStatusResolver {
     static func resolve(
         using client: any PowerUISmartChargeQuerying
-    ) -> ObservedChargingPolicyStatus {
+    ) -> ChargingPolicyObservation {
         let isManualLimitEnabled: Bool
         do {
             isManualLimitEnabled = try client.isManualChargeLimitEnabled()
-        } catch PowerUIQueryError.unsupported {
-            // Manual charge limits are not present on every supported macOS
-            // release. Optimized charging can still be observed independently.
-            return resolveOptimizedCharging(using: client)
+        } catch let error as PowerUIQueryError {
+            switch error {
+            case .unsupported:
+                // Manual charge limits are not present on every supported Mac.
+                // Optimized charging can still be observed independently.
+                return resolveOptimizedCharging(
+                    using: client,
+                    successDiagnostic: error.diagnostic(
+                        classification: .optionalCapabilityMissing
+                    )
+                )
+            case .incompatibleSignature, .operationFailed:
+                return unavailableObservation(for: error)
+            }
         } catch {
-            return .unavailable
+            return unavailableObservation(
+                for: error,
+                component: PowerUIRuntime.manualLimitEnabledContract.selectorName
+            )
         }
 
         if isManualLimitEnabled {
             do {
                 let targetPercent = try client.manualChargeLimit()
                 guard (1...100).contains(targetPercent) else {
-                    return .unavailable
+                    return ChargingPolicyObservation(
+                        status: .unavailable,
+                        diagnostic: SystemCompatibilityDiagnostic(
+                            subsystem: .powerUI,
+                            classification: .invalidResponse,
+                            reason: .invalidManualChargeLimit,
+                            component: PowerUIRuntime.manualLimitContract.selectorName,
+                            observedInteger: targetPercent
+                        )
+                    )
                 }
-                return .manualLimit(targetPercent: targetPercent)
+                return ChargingPolicyObservation(
+                    status: .manualLimit(targetPercent: targetPercent),
+                    diagnostic: .compatiblePowerUI
+                )
+            } catch let error as PowerUIQueryError {
+                return unavailableObservation(for: error)
             } catch {
-                return .unavailable
+                return unavailableObservation(
+                    for: error,
+                    component: PowerUIRuntime.manualLimitContract.selectorName
+                )
             }
         }
 
@@ -78,27 +112,153 @@ enum ChargingPolicyStatusResolver {
     }
 
     private static func resolveOptimizedCharging(
-        using client: any PowerUISmartChargeQuerying
-    ) -> ObservedChargingPolicyStatus {
+        using client: any PowerUISmartChargeQuerying,
+        successDiagnostic: SystemCompatibilityDiagnostic = .compatiblePowerUI
+    ) -> ChargingPolicyObservation {
         do {
-            return try client.isOptimizedChargingEngaged()
-                ? .optimizedCharging
-                : .inactive
+            return ChargingPolicyObservation(
+                status: try client.isOptimizedChargingEngaged()
+                    ? .optimizedCharging
+                    : .inactive,
+                diagnostic: successDiagnostic
+            )
+        } catch let error as PowerUIQueryError {
+            return unavailableObservation(for: error)
         } catch {
-            return .unavailable
+            return unavailableObservation(
+                for: error,
+                component: PowerUIRuntime.optimizedChargingContract.selectorName
+            )
         }
+    }
+
+    private static func unavailableObservation(
+        for error: PowerUIQueryError
+    ) -> ChargingPolicyObservation {
+        ChargingPolicyObservation(
+            status: .unavailable,
+            diagnostic: error.diagnostic()
+        )
+    }
+
+    private static func unavailableObservation(
+        for error: any Error,
+        component: String
+    ) -> ChargingPolicyObservation {
+        let error = error as NSError
+        return ChargingPolicyObservation(
+            status: .unavailable,
+            diagnostic: SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: .transientFailure,
+                reason: .queryFailed,
+                component: component,
+                errorDomain: error.domain,
+                errorCode: error.code
+            )
+        )
     }
 }
 
 enum PowerUIQueryError: Error {
     /// The selector is absent because this policy API is not available.
-    case unsupported
+    case unsupported(selector: String)
 
     /// A selector exists, but calling it with the known ABI would be unsafe.
-    case incompatibleSignature
+    case incompatibleSignature(
+        selector: String,
+        expected: String,
+        actual: String?
+    )
 
     /// PowerUI completed the query with an error.
-    case operationFailed(NSError)
+    case operationFailed(selector: String, NSError)
+
+    func diagnostic(
+        classification: SystemCompatibilityClassification? = nil
+    ) -> SystemCompatibilityDiagnostic {
+        switch self {
+        case .unsupported(let selector):
+            return SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: classification ?? .contractMismatch,
+                reason: .methodMissing,
+                component: selector
+            )
+        case let .incompatibleSignature(selector, expected, actual):
+            return SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: classification ?? .contractMismatch,
+                reason: .methodSignatureMismatch,
+                component: selector,
+                expectedTypeEncoding: expected,
+                actualTypeEncoding: actual
+            )
+        case let .operationFailed(selector, error):
+            return SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: classification ?? .transientFailure,
+                reason: .queryFailed,
+                component: selector,
+                errorDomain: error.domain,
+                errorCode: error.code
+            )
+        }
+    }
+}
+
+enum PowerUISessionCreationError: Error, Equatable, Sendable {
+    case frameworkLoadFailed
+    case clientClassMissing
+    case methodMissing(selector: String)
+    case incompatibleSignature(
+        selector: String,
+        expected: String,
+        actual: String?
+    )
+    case initializationFailed
+
+    var diagnostic: SystemCompatibilityDiagnostic {
+        switch self {
+        case .frameworkLoadFailed:
+            SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: .contractMismatch,
+                reason: .frameworkLoadFailed,
+                component: "PowerUI.framework"
+            )
+        case .clientClassMissing:
+            SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: .contractMismatch,
+                reason: .clientClassMissing,
+                component: PowerUIRuntime.clientClassName
+            )
+        case .methodMissing(let selector):
+            SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: .contractMismatch,
+                reason: .methodMissing,
+                component: selector
+            )
+        case let .incompatibleSignature(selector, expected, actual):
+            SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: .contractMismatch,
+                reason: .methodSignatureMismatch,
+                component: selector,
+                expectedTypeEncoding: expected,
+                actualTypeEncoding: actual
+            )
+        case .initializationFailed:
+            SystemCompatibilityDiagnostic(
+                subsystem: .powerUI,
+                classification: .environmentUnavailable,
+                reason: .initializationFailed,
+                component: PowerUIRuntime.initializeContract.selectorName
+            )
+        }
+    }
 }
 
 enum ObjectiveCBooleanReturnABI: Equatable, Sendable {
@@ -117,6 +277,151 @@ enum ObjectiveCBooleanReturnABI: Equatable, Sendable {
     }
 }
 
+enum ObjectiveCMethodDispatch: String, Codable, Sendable {
+    case classMethod
+    case instanceMethod
+}
+
+struct ObjectiveCMethodContract: Sendable {
+    let selectorName: String
+    let dispatch: ObjectiveCMethodDispatch
+    let allowedReturnTypes: [String]
+    let argumentTypes: [String]
+
+    var selector: Selector {
+        NSSelectorFromString(selectorName)
+    }
+
+    var expectedTypeEncoding: String {
+        "return=\(allowedReturnTypes.joined(separator: "|"));args=\(argumentTypes.joined(separator: ","))"
+    }
+}
+
+enum ObjectiveCMethodContractInspection: Equatable, Sendable {
+    case missing
+    case compatible(actualTypeEncoding: String)
+    case incompatible(actualTypeEncoding: String?)
+}
+
+enum ObjectiveCMethodInspector {
+    static func method(
+        on objectClass: AnyClass,
+        contract: ObjectiveCMethodContract
+    ) -> Method? {
+        switch contract.dispatch {
+        case .classMethod:
+            class_getClassMethod(objectClass, contract.selector)
+        case .instanceMethod:
+            class_getInstanceMethod(objectClass, contract.selector)
+        }
+    }
+
+    static func inspect(
+        on objectClass: AnyClass,
+        contract: ObjectiveCMethodContract
+    ) -> ObjectiveCMethodContractInspection {
+        guard let method = method(on: objectClass, contract: contract) else {
+            return .missing
+        }
+
+        let actual = typeEncoding(of: method)
+        guard contract.allowedReturnTypes.contains(returnType(of: method) ?? ""),
+              argumentTypes(of: method) == contract.argumentTypes
+        else {
+            return .incompatible(actualTypeEncoding: actual)
+        }
+
+        return .compatible(actualTypeEncoding: actual ?? "unknown")
+    }
+
+    static func returnType(of method: Method) -> String? {
+        copiedType(method_copyReturnType(method))
+    }
+
+    static func argumentTypes(of method: Method) -> [String]? {
+        let count = Int(method_getNumberOfArguments(method))
+        var result: [String] = []
+        result.reserveCapacity(count)
+
+        for index in 0..<count {
+            guard let value = copiedType(
+                method_copyArgumentType(method, UInt32(index))
+            ) else {
+                return nil
+            }
+            result.append(value)
+        }
+        return result
+    }
+
+    static func typeEncoding(of method: Method) -> String? {
+        guard let returnType = returnType(of: method),
+              let argumentTypes = argumentTypes(of: method)
+        else {
+            return nil
+        }
+        return "return=\(returnType);args=\(argumentTypes.joined(separator: ","))"
+    }
+
+    private static func copiedType(
+        _ pointer: UnsafeMutablePointer<CChar>?
+    ) -> String? {
+        guard let pointer else {
+            return nil
+        }
+        defer {
+            free(pointer)
+        }
+        return String(cString: pointer)
+    }
+}
+
+enum PowerUIRuntime {
+    static let frameworkPath =
+        "/System/Library/PrivateFrameworks/PowerUI.framework/PowerUI"
+    static let clientClassName = "PowerUISmartChargeClient"
+    static let clientName = "PowerLens"
+
+    static let allocateContract = ObjectiveCMethodContract(
+        selectorName: "alloc",
+        dispatch: .classMethod,
+        allowedReturnTypes: ["@"],
+        argumentTypes: ["@", ":"]
+    )
+    static let initializeContract = ObjectiveCMethodContract(
+        selectorName: "initWithClientName:",
+        dispatch: .instanceMethod,
+        allowedReturnTypes: ["@"],
+        argumentTypes: ["@", ":", "@"]
+    )
+    static let manualLimitEnabledContract = ObjectiveCMethodContract(
+        selectorName: "isMCLCurrentlyEnabled:",
+        dispatch: .instanceMethod,
+        allowedReturnTypes: ["Q"],
+        argumentTypes: ["@", ":", "^@"]
+    )
+    static let manualLimitContract = ObjectiveCMethodContract(
+        selectorName: "getMCLLimitWithError:",
+        dispatch: .instanceMethod,
+        allowedReturnTypes: ["C"],
+        argumentTypes: ["@", ":", "^@"]
+    )
+    static let optimizedChargingContract = ObjectiveCMethodContract(
+        selectorName: "isOBCEngaged:",
+        dispatch: .instanceMethod,
+        allowedReturnTypes: ["B", "c"],
+        argumentTypes: ["@", ":", "^@"]
+    )
+
+    static let contracts = [
+        allocateContract,
+        initializeContract,
+        manualLimitEnabledContract,
+        manualLimitContract,
+        optimizedChargingContract,
+    ]
+}
+
 /// Owns the process-long runtime session used by a reader.
 ///
 /// Calls are serialized because the private client's thread-safety contract is
@@ -126,7 +431,10 @@ private final class PowerUISmartChargeSessionCache: @unchecked Sendable {
     private enum State {
         case uninitialized
         case available(any PowerUISmartChargeQuerying)
-        case unavailable(retryAfterUptime: TimeInterval)
+        case unavailable(
+            error: PowerUISessionCreationError,
+            retryAfterUptime: TimeInterval
+        )
     }
 
     private let lock = NSLock()
@@ -147,7 +455,7 @@ private final class PowerUISmartChargeSessionCache: @unchecked Sendable {
         self.uptime = uptime
     }
 
-    func readChargingPolicyStatus() -> ObservedChargingPolicyStatus {
+    func readChargingPolicyObservation() -> ChargingPolicyObservation {
         lock.lock()
         defer {
             lock.unlock()
@@ -156,71 +464,74 @@ private final class PowerUISmartChargeSessionCache: @unchecked Sendable {
         let client: any PowerUISmartChargeQuerying
         switch state {
         case .uninitialized:
-            guard let newClient = factory.makeSession() else {
+            switch factory.makeSession() {
+            case .success(let newClient):
+                state = .available(newClient)
+                client = newClient
+            case .failure(let error):
                 state = .unavailable(
+                    error: error,
                     retryAfterUptime: uptime() + retryInterval
                 )
-                return .unavailable
+                return Self.unavailableObservation(for: error)
             }
-            state = .available(newClient)
-            client = newClient
         case .available(let existingClient):
             client = existingClient
-        case .unavailable(let retryAfterUptime):
+        case let .unavailable(error, retryAfterUptime):
             guard uptime() >= retryAfterUptime else {
-                return .unavailable
+                return Self.unavailableObservation(for: error)
             }
-            guard let newClient = factory.makeSession() else {
+            switch factory.makeSession() {
+            case .success(let newClient):
+                state = .available(newClient)
+                client = newClient
+            case .failure(let newError):
                 state = .unavailable(
+                    error: newError,
                     retryAfterUptime: uptime() + retryInterval
                 )
-                return .unavailable
+                return Self.unavailableObservation(for: newError)
             }
-            state = .available(newClient)
-            client = newClient
         }
 
         return autoreleasepool {
             ChargingPolicyStatusResolver.resolve(using: client)
         }
     }
-}
 
-private enum PowerUIRuntime {
-    static let frameworkPath =
-        "/System/Library/PrivateFrameworks/PowerUI.framework/PowerUI"
-    static let clientClassName = "PowerUISmartChargeClient"
-    static let clientName = "PowerLens"
-
-    static let allocateSelector = NSSelectorFromString("alloc")
-    static let initializeSelector = NSSelectorFromString("initWithClientName:")
-    static let manualLimitEnabledSelector =
-        NSSelectorFromString("isMCLCurrentlyEnabled:")
-    static let manualLimitSelector =
-        NSSelectorFromString("getMCLLimitWithError:")
-    static let optimizedChargingEngagedSelector =
-        NSSelectorFromString("isOBCEngaged:")
+    private static func unavailableObservation(
+        for error: PowerUISessionCreationError
+    ) -> ChargingPolicyObservation {
+        ChargingPolicyObservation(
+            status: .unavailable,
+            diagnostic: error.diagnostic
+        )
+    }
 }
 
 private final class DynamicPowerUISmartChargeSessionFactory:
     PowerUISmartChargeSessionCreating
 {
-    func makeSession() -> (any PowerUISmartChargeQuerying)? {
+    func makeSession() -> Result<
+        any PowerUISmartChargeQuerying,
+        PowerUISessionCreationError
+    > {
         guard let frameworkHandle = dlopen(
             PowerUIRuntime.frameworkPath,
             RTLD_LAZY | RTLD_LOCAL
         ) else {
-            return nil
+            return .failure(.frameworkLoadFailed)
         }
 
-        guard let client = DynamicPowerUISmartChargeClient.make(
+        switch DynamicPowerUISmartChargeClient.make(
             frameworkHandle: frameworkHandle
-        ) else {
+        ) {
+        case .success(let client):
+            return .success(client)
+        case .failure(let error):
             dlclose(frameworkHandle)
-            return nil
+            return .failure(error)
         }
-
-        return client
     }
 }
 
@@ -285,30 +596,33 @@ private final class DynamicPowerUISmartChargeClient:
 
     static func make(
         frameworkHandle: UnsafeMutableRawPointer
-    ) -> DynamicPowerUISmartChargeClient? {
+    ) -> Result<DynamicPowerUISmartChargeClient, PowerUISessionCreationError> {
         guard let clientClass = NSClassFromString(
-                  PowerUIRuntime.clientClassName
-              ),
-              let allocateMethod = class_getClassMethod(
-                  clientClass,
-                  PowerUIRuntime.allocateSelector
-              ),
-              hasExactSignature(
-                  allocateMethod,
-                  returnType: "@",
-                  argumentTypes: ["@", ":"]
-              ),
-              let initializeMethod = class_getInstanceMethod(
-                  clientClass,
-                  PowerUIRuntime.initializeSelector
-              ),
-              hasExactSignature(
-                  initializeMethod,
-                  returnType: "@",
-                  argumentTypes: ["@", ":", "@"]
-              )
-        else {
-            return nil
+            PowerUIRuntime.clientClassName
+        ) else {
+            return .failure(.clientClassMissing)
+        }
+
+        let allocateContract = PowerUIRuntime.allocateContract
+        guard let allocateMethod = try? validatedMethod(
+            on: clientClass,
+            contract: allocateContract
+        ) else {
+            return .failure(validationError(
+                on: clientClass,
+                contract: allocateContract
+            ))
+        }
+
+        let initializeContract = PowerUIRuntime.initializeContract
+        guard let initializeMethod = try? validatedMethod(
+            on: clientClass,
+            contract: initializeContract
+        ) else {
+            return .failure(validationError(
+                on: clientClass,
+                contract: initializeContract
+            ))
         }
 
         let allocate = unsafeBitCast(
@@ -321,31 +635,31 @@ private final class DynamicPowerUISmartChargeClient:
         )
         let allocatedObject = allocate(
             clientClass,
-            PowerUIRuntime.allocateSelector
+            allocateContract.selector
         ).toOpaque()
 
         guard let initializedObject = initialize(
             allocatedObject,
-            PowerUIRuntime.initializeSelector,
+            initializeContract.selector,
             PowerUIRuntime.clientName as NSString
         )?.takeRetainedValue() as? NSObject,
               let initializedClass = object_getClass(initializedObject)
         else {
-            return nil
+            return .failure(.initializationFailed)
         }
 
-        return DynamicPowerUISmartChargeClient(
+        return .success(DynamicPowerUISmartChargeClient(
             frameworkHandle: frameworkHandle,
             object: initializedObject,
             objectClass: initializedClass
-        )
+        ))
     }
 
     func isManualChargeLimitEnabled() throws -> Bool {
-        let selector = PowerUIRuntime.manualLimitEnabledSelector
-        let method = try queryMethod(
-            selector,
-            returnType: "Q"
+        let contract = PowerUIRuntime.manualLimitEnabledContract
+        let method = try Self.validatedQueryMethod(
+            on: objectClass,
+            contract: contract
         )
         let query = unsafeBitCast(
             method_getImplementation(method),
@@ -354,18 +668,20 @@ private final class DynamicPowerUISmartChargeClient:
 
         var error: NSError?
         guard let object else {
-            throw PowerUIQueryError.unsupported
+            throw PowerUIQueryError.unsupported(
+                selector: contract.selectorName
+            )
         }
-        let rawValue = query(object, selector, &error)
-        try throwIfNeeded(error)
+        let rawValue = query(object, contract.selector, &error)
+        try throwIfNeeded(error, selector: contract.selectorName)
         return rawValue != 0
     }
 
     func manualChargeLimit() throws -> Int {
-        let selector = PowerUIRuntime.manualLimitSelector
-        let method = try queryMethod(
-            selector,
-            returnType: "C"
+        let contract = PowerUIRuntime.manualLimitContract
+        let method = try Self.validatedQueryMethod(
+            on: objectClass,
+            contract: contract
         )
         let query = unsafeBitCast(
             method_getImplementation(method),
@@ -374,19 +690,38 @@ private final class DynamicPowerUISmartChargeClient:
 
         var error: NSError?
         guard let object else {
-            throw PowerUIQueryError.unsupported
+            throw PowerUIQueryError.unsupported(
+                selector: contract.selectorName
+            )
         }
-        let rawValue = query(object, selector, &error)
-        try throwIfNeeded(error)
+        let rawValue = query(object, contract.selector, &error)
+        try throwIfNeeded(error, selector: contract.selectorName)
         return Int(rawValue)
     }
 
     func isOptimizedChargingEngaged() throws -> Bool {
-        let selector = PowerUIRuntime.optimizedChargingEngagedSelector
+        let contract = PowerUIRuntime.optimizedChargingContract
         guard let object else {
-            throw PowerUIQueryError.unsupported
+            throw PowerUIQueryError.unsupported(
+                selector: contract.selectorName
+            )
         }
-        let (method, returnABI) = try booleanQueryMethod(selector)
+        let method = try Self.validatedQueryMethod(
+            on: objectClass,
+            contract: contract
+        )
+        let returnType = ObjectiveCMethodInspector.returnType(of: method)
+        guard let returnType,
+              let returnABI = ObjectiveCBooleanReturnABI(
+                  typeEncoding: returnType
+              )
+        else {
+            throw PowerUIQueryError.incompatibleSignature(
+                selector: contract.selectorName,
+                expected: contract.expectedTypeEncoding,
+                actual: ObjectiveCMethodInspector.typeEncoding(of: method)
+            )
+        }
         let implementation = method_getImplementation(method)
 
         switch returnABI {
@@ -396,8 +731,8 @@ private final class DynamicPowerUISmartChargeClient:
                 to: BooleanQueryFunction.self
             )
             var error: NSError?
-            let result = query(object, selector, &error)
-            try throwIfNeeded(error)
+            let result = query(object, contract.selector, &error)
+            try throwIfNeeded(error, selector: contract.selectorName)
             return result
         case .signedChar:
             let query = unsafeBitCast(
@@ -405,97 +740,94 @@ private final class DynamicPowerUISmartChargeClient:
                 to: SignedCharQueryFunction.self
             )
             var error: NSError?
-            let rawValue = query(object, selector, &error)
-            try throwIfNeeded(error)
+            let rawValue = query(object, contract.selector, &error)
+            try throwIfNeeded(error, selector: contract.selectorName)
             return rawValue != 0
         }
     }
 
-    private func queryMethod(
-        _ selector: Selector,
-        returnType: String
-    ) throws -> Method {
-        guard let method = class_getInstanceMethod(objectClass, selector) else {
-            throw PowerUIQueryError.unsupported
+    private func throwIfNeeded(
+        _ error: NSError?,
+        selector: String
+    ) throws {
+        if let error {
+            throw PowerUIQueryError.operationFailed(selector: selector, error)
         }
-        guard Self.hasExactSignature(
-            method,
-            returnType: returnType,
-            argumentTypes: ["@", ":", "^@"]
+    }
+
+    private static func validatedQueryMethod(
+        on objectClass: AnyClass,
+        contract: ObjectiveCMethodContract
+    ) throws -> Method {
+        do {
+            return try validatedMethod(on: objectClass, contract: contract)
+        } catch PowerUISessionCreationError.methodMissing {
+            throw PowerUIQueryError.unsupported(selector: contract.selectorName)
+        } catch let PowerUISessionCreationError.incompatibleSignature(
+            selector,
+            expected,
+            actual
+        ) {
+            throw PowerUIQueryError.incompatibleSignature(
+                selector: selector,
+                expected: expected,
+                actual: actual
+            )
+        } catch {
+            throw PowerUIQueryError.unsupported(selector: contract.selectorName)
+        }
+    }
+
+    private static func validatedMethod(
+        on objectClass: AnyClass,
+        contract: ObjectiveCMethodContract
+    ) throws -> Method {
+        guard let method = ObjectiveCMethodInspector.method(
+            on: objectClass,
+            contract: contract
         ) else {
-            throw PowerUIQueryError.incompatibleSignature
+            throw PowerUISessionCreationError.methodMissing(
+                selector: contract.selectorName
+            )
+        }
+
+        guard case .compatible = ObjectiveCMethodInspector.inspect(
+            on: objectClass,
+            contract: contract
+        ) else {
+            throw PowerUISessionCreationError.incompatibleSignature(
+                selector: contract.selectorName,
+                expected: contract.expectedTypeEncoding,
+                actual: ObjectiveCMethodInspector.typeEncoding(of: method)
+            )
         }
         return method
     }
 
-    private func booleanQueryMethod(
-        _ selector: Selector
-    ) throws -> (Method, ObjectiveCBooleanReturnABI) {
-        guard let method = class_getInstanceMethod(objectClass, selector) else {
-            throw PowerUIQueryError.unsupported
+    private static func validationError(
+        on objectClass: AnyClass,
+        contract: ObjectiveCMethodContract
+    ) -> PowerUISessionCreationError {
+        switch ObjectiveCMethodInspector.inspect(
+            on: objectClass,
+            contract: contract
+        ) {
+        case .missing:
+            .methodMissing(selector: contract.selectorName)
+        case .incompatible(let actualTypeEncoding):
+            .incompatibleSignature(
+                selector: contract.selectorName,
+                expected: contract.expectedTypeEncoding,
+                actual: actualTypeEncoding
+            )
+        case .compatible:
+            // This path is only reached after a failed validation attempt. If
+            // runtime metadata changed between checks, fail closed.
+            .incompatibleSignature(
+                selector: contract.selectorName,
+                expected: contract.expectedTypeEncoding,
+                actual: nil
+            )
         }
-        guard Self.hasExactArgumentTypes(
-            method,
-            argumentTypes: ["@", ":", "^@"]
-        ),
-              let returnType = Self.copiedType(
-                  method_copyReturnType(method)
-              ),
-              let returnABI = ObjectiveCBooleanReturnABI(
-                  typeEncoding: returnType
-              )
-        else {
-            throw PowerUIQueryError.incompatibleSignature
-        }
-        return (method, returnABI)
-    }
-
-    private func throwIfNeeded(_ error: NSError?) throws {
-        if let error {
-            throw PowerUIQueryError.operationFailed(error)
-        }
-    }
-
-    private static func hasExactSignature(
-        _ method: Method,
-        returnType: String,
-        argumentTypes: [String]
-    ) -> Bool {
-        guard copiedType(method_copyReturnType(method)) == returnType,
-              hasExactArgumentTypes(
-                  method,
-                  argumentTypes: argumentTypes
-              )
-        else {
-            return false
-        }
-
-        return true
-    }
-
-    private static func hasExactArgumentTypes(
-        _ method: Method,
-        argumentTypes: [String]
-    ) -> Bool {
-        guard method_getNumberOfArguments(method) == argumentTypes.count else {
-            return false
-        }
-
-        return argumentTypes.indices.allSatisfy { index in
-            copiedType(method_copyArgumentType(method, UInt32(index)))
-                == argumentTypes[index]
-        }
-    }
-
-    private static func copiedType(
-        _ pointer: UnsafeMutablePointer<CChar>?
-    ) -> String? {
-        guard let pointer else {
-            return nil
-        }
-        defer {
-            free(pointer)
-        }
-        return String(cString: pointer)
     }
 }

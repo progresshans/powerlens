@@ -43,6 +43,56 @@ struct SMCPowerReader: SMCPowerSnapshotReading {
 
         return power
     }
+
+    static func systemAPIProbeReport() -> SMCProbeReport {
+        let connection: io_connect_t
+        do {
+            connection = try SMCKit.openConnection()
+        } catch SMCReadError.driverNotFound {
+            return SMCProbeReport(
+                serviceAvailable: false,
+                connectionState: .unavailable,
+                keys: probeKeys(state: .notAttempted)
+            )
+        } catch {
+            return SMCProbeReport(
+                serviceAvailable: true,
+                connectionState: .accessFailed,
+                keys: probeKeys(state: .notAttempted)
+            )
+        }
+        defer {
+            _ = SMCKit.close(connection)
+        }
+
+        let keys: [(String, SMCKey)] = [
+            ("SBAP", .batteryPower),
+            ("PDTR", .externalPower),
+            ("PSTR", .systemPower),
+        ]
+        return SMCProbeReport(
+            serviceAvailable: true,
+            connectionState: .available,
+            keys: keys.map { name, key in
+                do {
+                    _ = try SMCKit.readData(connection: connection, key: key)
+                    return SMCKeyProbeReport(key: name, state: .available)
+                } catch SMCReadError.keyNotFound {
+                    return SMCKeyProbeReport(key: name, state: .keyMissing)
+                } catch {
+                    return SMCKeyProbeReport(key: name, state: .readFailed)
+                }
+            }
+        )
+    }
+
+    private static func probeKeys(
+        state: SystemAPIProbeAccessState
+    ) -> [SMCKeyProbeReport] {
+        ["SBAP", "PDTR", "PSTR"].map {
+            SMCKeyProbeReport(key: $0, state: state)
+        }
+    }
 }
 
 private typealias SMCBytes = (
