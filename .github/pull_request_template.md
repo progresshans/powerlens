@@ -14,7 +14,7 @@
 
 <!-- Check every applicable item. Briefly explain any important N/A item. -->
 
-- [ ] `swift test --arch arm64`
+- [ ] `./script/test_swiftpm.sh`
 - [ ] Relevant missing-sensor and state-transition cases are covered
 - [ ] English and Korean copy/placeholders were checked
 - [ ] `git diff --check`

@@ -45,10 +45,22 @@ become active after they are promoted to `main`.
 From the repository root:
 
 ```bash
-swift build --arch arm64
-swift test --arch arm64
+swift build --build-system native --arch arm64
+./script/test_swiftpm.sh
 ./script/build_and_run.sh
 ```
+
+Distribution and the default local test helper currently use SwiftPM's native
+build system. With Swift 6.3 or later, run the same SwiftBuild compatibility
+path used by CI with:
+
+```bash
+POWERLENS_BUILD_SYSTEM=swiftbuild ./script/test_swiftpm.sh
+```
+
+The helper builds tests with SwiftBuild, stages the generated Sparkle framework
+in the runtime location expected by the test bundle, and then executes the
+SwiftBuild-produced tests. It does not rebuild them with the native backend.
 
 Before opening a pull request, also run:
 
@@ -75,8 +87,9 @@ python3 script/verify_system_api_probe.py \
 ```
 
 The probe reports system-interface shape and service availability, not raw
-battery/adapter values or identifiers. CI runs the same macOS 26 contract on
-both `macos-26` and the `xcode-27` preview image. The latter is Xcode 27 and the
+battery/adapter values or identifiers. CI keeps the existing native macOS 26
+release check, adds an explicit SwiftBuild check on macOS 26, and runs the same
+SwiftBuild path on the `xcode-27` preview image. The latter is Xcode 27 and the
 macOS 27 SDK on a macOS 26 host; it is not macOS 27 runtime coverage.
 
 ## Change Guidelines

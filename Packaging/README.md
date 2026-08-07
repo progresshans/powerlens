@@ -19,7 +19,10 @@ Run `script/package_release.sh` to create release artifacts under `release/`.
 PowerLens release artifacts support Apple silicon Macs (M1 or later) running
 macOS 26 or later. The packaging script builds the PowerLens executable
 explicitly for arm64, then rejects the bundle unless that executable contains
-exactly the arm64 architecture. By default it builds an ad-hoc signed local
+exactly the arm64 architecture. Distribution builds use SwiftPM's `native`
+build system by default. `POWERLENS_BUILD_SYSTEM=swiftbuild` is reserved for
+the separate CI compatibility build and does not change the release workflow's
+explicit native setting. By default the script builds an ad-hoc signed local
 release and creates:
 
 - `PowerLens-<version>.app.zip`
@@ -128,7 +131,8 @@ PowerLens has two workflow layers:
 
 - `.github/workflows/ci.yml`
   - runs on pull requests and pushes to `main` and `develop`
-  - runs on an Apple silicon runner and executes `swift test --arch arm64`
+  - keeps the native macOS 26 release check and adds SwiftBuild checks on both
+    macOS 26 and the Xcode 27 preview image
   - validates scripts, metadata, and appcast XML
   - performs an ad-hoc package smoke build without notarization and verifies
     that the PowerLens executable is exactly arm64
@@ -139,7 +143,8 @@ PowerLens has two workflow layers:
   - atomically reserves run-owned tags for automatic alphas before building
     and for manual dispatches immediately before publication
   - verifies that explicit tag-triggered releases use the exact tagged commit
-  - builds an arm64 executable, then signs, notarizes, and packages the app
+  - builds an arm64 executable explicitly with SwiftPM's native build system,
+    then signs, notarizes, and packages the app
   - verifies that the packaged PowerLens executable is exactly arm64
   - serializes GitHub Release and GitHub Pages mutations in one publication
     queue

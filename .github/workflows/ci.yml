@@ -24,8 +24,16 @@ jobs:
         include:
           - runner: macos-26
             check_name: Build, Test, and Package Smoke Check
+            build_system: native
+          - runner: macos-26
+            check_name: macOS 26 SwiftBuild Compatibility Check
+            build_system: swiftbuild
           - runner: xcode-27
             check_name: Xcode 27 Compatibility Check
+            build_system: swiftbuild
+
+    env:
+      POWERLENS_BUILD_SYSTEM: ${{ matrix.build_system }}
 
     steps:
       - name: Check out repository
@@ -40,7 +48,7 @@ jobs:
           xcodebuild -version
 
       - name: Run unit tests
-        run: swift test --arch arm64
+        run: ./script/test_swiftpm.sh
 
       - name: Test system API contract verifier
         run: python3 -m unittest discover -s script/tests -p 'test_*.py' -v
@@ -59,6 +67,7 @@ jobs:
             script/test_generate_release_notes.sh \
             script/test_release_workflow.sh \
             script/test_sparkle_update.sh \
+            script/test_swiftpm.sh \
             script/validate_appcast_progression.sh \
             script/verify_distribution.sh \
             script/verify_release_tag.sh
@@ -110,16 +119,16 @@ jobs:
           release/stage/PowerLens.app/Contents/MacOS/PowerLens \
             --system-api-probe \
             --format json \
-            > "release/system-api-probe/${{ matrix.runner }}.json"
+            > "release/system-api-probe/${{ matrix.runner }}-${{ matrix.build_system }}.json"
           python3 script/verify_system_api_probe.py \
             --profile script/system-api-contracts/macos-26.json \
-            "release/system-api-probe/${{ matrix.runner }}.json"
+            "release/system-api-probe/${{ matrix.runner }}-${{ matrix.build_system }}.json"
 
       - name: Upload system API probe report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: system-api-probe-${{ matrix.runner }}
-          path: release/system-api-probe/${{ matrix.runner }}.json
+          name: system-api-probe-${{ matrix.runner }}-${{ matrix.build_system }}
+          path: release/system-api-probe/${{ matrix.runner }}-${{ matrix.build_system }}.json
           if-no-files-found: error
           retention-days: 14
 
