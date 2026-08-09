@@ -42,6 +42,15 @@ class CIWorkflowTests(unittest.TestCase):
             probe_step,
         )
 
+    def test_probe_verifier_uses_explicit_hosted_policy_and_summary(self):
+        probe_step = workflow_step("Probe macOS system API contracts")
+
+        self.assertIn("            --mode hosted \\", probe_step)
+        self.assertIn(
+            '            --summary-file "$GITHUB_STEP_SUMMARY" \\',
+            probe_step,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

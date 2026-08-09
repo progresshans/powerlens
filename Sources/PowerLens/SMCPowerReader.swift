@@ -66,21 +66,77 @@ struct SMCPowerReader: SMCPowerSnapshotReading {
         }
 
         let keys: [(String, SMCKey)] = [
-            ("SBAP", .batteryPower),
-            ("PDTR", .externalPower),
-            ("PSTR", .systemPower),
+            (
+                TelemetrySystemContract.AppleSMCKey.batteryPower.rawValue,
+                .batteryPower
+            ),
+            (
+                TelemetrySystemContract.AppleSMCKey.externalPower.rawValue,
+                .externalPower
+            ),
+            (
+                TelemetrySystemContract.AppleSMCKey.systemPower.rawValue,
+                .systemPower
+            ),
         ]
         return SMCProbeReport(
             serviceAvailable: true,
             connectionState: .available,
             keys: keys.map { name, key in
                 do {
-                    _ = try SMCKit.readData(connection: connection, key: key)
-                    return SMCKeyProbeReport(key: name, state: .available)
+                    let actualInfo = try SMCKit.readKeyInfo(
+                        connection: connection,
+                        key: key
+                    )
+                    guard actualInfo.isCompatible(with: key.info) else {
+                        return SMCKeyProbeReport(
+                            key: name,
+                            state: .typeMismatch,
+                            observedDataType: actualInfo.typeName,
+                            observedDataSize: actualInfo.dataSize
+                        )
+                    }
+                    do {
+                        _ = try SMCKit.readData(
+                            connection: connection,
+                            key: key,
+                            validatedInfo: actualInfo
+                        )
+                        return SMCKeyProbeReport(
+                            key: name,
+                            state: .available,
+                            observedDataType: actualInfo.typeName,
+                            observedDataSize: actualInfo.dataSize
+                        )
+                    } catch SMCReadError.keyNotFound {
+                        return SMCKeyProbeReport(
+                            key: name,
+                            state: .keyMissing,
+                            observedDataType: nil,
+                            observedDataSize: nil
+                        )
+                    } catch {
+                        return SMCKeyProbeReport(
+                            key: name,
+                            state: .readFailed,
+                            observedDataType: actualInfo.typeName,
+                            observedDataSize: actualInfo.dataSize
+                        )
+                    }
                 } catch SMCReadError.keyNotFound {
-                    return SMCKeyProbeReport(key: name, state: .keyMissing)
+                    return SMCKeyProbeReport(
+                        key: name,
+                        state: .keyMissing,
+                        observedDataType: nil,
+                        observedDataSize: nil
+                    )
                 } catch {
-                    return SMCKeyProbeReport(key: name, state: .readFailed)
+                    return SMCKeyProbeReport(
+                        key: name,
+                        state: .readFailed,
+                        observedDataType: nil,
+                        observedDataSize: nil
+                    )
                 }
             }
         )
@@ -89,8 +145,13 @@ struct SMCPowerReader: SMCPowerSnapshotReading {
     private static func probeKeys(
         state: SystemAPIProbeAccessState
     ) -> [SMCKeyProbeReport] {
-        ["SBAP", "PDTR", "PSTR"].map {
-            SMCKeyProbeReport(key: $0, state: state)
+        TelemetrySystemContract.AppleSMCKey.allCases.map {
+            SMCKeyProbeReport(
+                key: $0.rawValue,
+                state: state,
+                observedDataType: nil,
+                observedDataSize: nil
+            )
         }
     }
 }
@@ -102,22 +163,64 @@ private typealias SMCBytes = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
 )
 
-private struct DataType: Equatable {
+struct SMCDataType: Equatable, Sendable {
     let type: FourCharCode
     let size: UInt32
-}
 
-private enum DataTypes {
-    static let float = DataType(type: FourCharCode(fromStaticString: "flt "), size: 4)
+    init(typeName: String, dataSize: Int) {
+        precondition(dataSize >= 0 && dataSize <= Int(UInt32.max))
+        type = FourCharCode(fourCharacterString: typeName)
+        size = UInt32(dataSize)
+    }
+
+    fileprivate init(type: FourCharCode, size: UInt32) {
+        self.type = type
+        self.size = size
+    }
+
+    var typeName: String {
+        type.fourCharacterString
+    }
+
+    var dataSize: Int {
+        Int(size)
+    }
+
+    func isCompatible(with expected: SMCDataType) -> Bool {
+        self == expected
+    }
+
+    static let float = SMCDataType(
+        typeName: TelemetrySystemContract.smcFloatDataType,
+        dataSize: TelemetrySystemContract.smcFloatDataSize
+    )
 }
 
 private struct SMCKey {
     let code: FourCharCode
-    let info: DataType
+    let info: SMCDataType
 
-    static let batteryPower = Self(code: .init(fromStaticString: "SBAP"), info: DataTypes.float)
-    static let externalPower = Self(code: .init(fromStaticString: "PDTR"), info: DataTypes.float)
-    static let systemPower = Self(code: .init(fromStaticString: "PSTR"), info: DataTypes.float)
+    static let batteryPower = Self(
+        code: .init(
+            fourCharacterString:
+                TelemetrySystemContract.AppleSMCKey.batteryPower.rawValue
+        ),
+        info: .float
+    )
+    static let externalPower = Self(
+        code: .init(
+            fourCharacterString:
+                TelemetrySystemContract.AppleSMCKey.externalPower.rawValue
+        ),
+        info: .float
+    )
+    static let systemPower = Self(
+        code: .init(
+            fourCharacterString:
+                TelemetrySystemContract.AppleSMCKey.systemPower.rawValue
+        ),
+        info: .float
+    )
 }
 
 private struct SMCParamStruct {
@@ -173,6 +276,7 @@ private enum SMCReadError: Error {
     case driverNotFound
     case failedToOpen
     case keyNotFound
+    case typeMismatch
     case readFailed(kern_return_t)
 }
 
@@ -205,11 +309,56 @@ private enum SMCKit {
     }
 
     static func readData(connection: io_connect_t, key: SMCKey) throws -> SMCBytes {
+        let actualInfo = try readKeyInfo(connection: connection, key: key)
+        return try readData(
+            connection: connection,
+            key: key,
+            validatedInfo: actualInfo
+        )
+    }
+
+    static func readKeyInfo(
+        connection: io_connect_t,
+        key: SMCKey
+    ) throws -> SMCDataType {
         var inputStruct = SMCParamStruct()
         inputStruct.key = key.code
-        inputStruct.keyInfo.dataSize = key.info.size
+        inputStruct.data8 = SMCParamStruct.Selector.getKeyInfo.rawValue
+
+        let outputStruct = try call(
+            connection: connection,
+            inputStruct: &inputStruct
+        )
+        return SMCDataType(
+            type: outputStruct.keyInfo.dataType,
+            size: outputStruct.keyInfo.dataSize
+        )
+    }
+
+    static func readData(
+        connection: io_connect_t,
+        key: SMCKey,
+        validatedInfo: SMCDataType
+    ) throws -> SMCBytes {
+        guard validatedInfo.isCompatible(with: key.info) else {
+            throw SMCReadError.typeMismatch
+        }
+
+        var inputStruct = SMCParamStruct()
+        inputStruct.key = key.code
+        inputStruct.keyInfo.dataSize = validatedInfo.size
         inputStruct.data8 = SMCParamStruct.Selector.readKey.rawValue
 
+        return try call(
+            connection: connection,
+            inputStruct: &inputStruct
+        ).bytes
+    }
+
+    private static func call(
+        connection: io_connect_t,
+        inputStruct: inout SMCParamStruct
+    ) throws -> SMCParamStruct {
         var outputStruct = SMCParamStruct()
         let inputStructSize = MemoryLayout<SMCParamStruct>.stride
         var outputStructSize = MemoryLayout<SMCParamStruct>.stride
@@ -234,21 +383,28 @@ private enum SMCKit {
             throw SMCReadError.readFailed(result)
         }
 
-        return outputStruct.bytes
+        return outputStruct
     }
 }
 
 private extension FourCharCode {
-    init(fromStaticString str: StaticString) {
-        precondition(str.utf8CodeUnitCount == 4)
+    init(fourCharacterString string: String) {
+        let bytes = Array(string.utf8)
+        precondition(bytes.count == 4)
+        self = UInt32(bytes[0]) << 24
+            | UInt32(bytes[1]) << 16
+            | UInt32(bytes[2]) << 8
+            | UInt32(bytes[3])
+    }
 
-        self = str.withUTF8Buffer { buffer in
-            let byte0 = UInt32(buffer[0]) << 24
-            let byte1 = UInt32(buffer[1]) << 16
-            let byte2 = UInt32(buffer[2]) << 8
-            let byte3 = UInt32(buffer[3])
-            return byte0 | byte1 | byte2 | byte3
-        }
+    var fourCharacterString: String {
+        let bytes = [
+            UInt8((self >> 24) & 0xff),
+            UInt8((self >> 16) & 0xff),
+            UInt8((self >> 8) & 0xff),
+            UInt8(self & 0xff),
+        ]
+        return String(decoding: bytes, as: UTF8.self)
     }
 }
 

@@ -18,6 +18,13 @@ enum SystemAPIProbeAccessState: String, Codable, Sendable {
     case keyMissing
     case accessFailed
     case readFailed
+    case typeMismatch
+}
+
+enum SystemAPIProbeKeyState: String, Codable, Sendable {
+    case available
+    case keyMissing
+    case notAttempted
 }
 
 struct SystemAPIProbeHostReport: Codable, Equatable, Sendable {
@@ -48,27 +55,35 @@ struct PowerUIProbeReport: Codable, Equatable, Sendable {
     let runtimeObservation: SystemCompatibilityDiagnostic
 }
 
+struct SystemAPIProbeKeyObservation: Codable, Equatable, Sendable {
+    let path: String
+    let state: SystemAPIProbeKeyState
+    let observedType: String?
+}
+
 struct IOPowerSourcesProbeReport: Codable, Equatable, Sendable {
     let infoAvailable: Bool
     let sourceCount: Int
     let firstDescriptionAvailable: Bool
-    let expectedKeyTypes: [String: String]
+    let keys: [SystemAPIProbeKeyObservation]
 }
 
 struct IOAdapterProbeReport: Codable, Equatable, Sendable {
     let dictionaryAvailable: Bool
-    let expectedKeyTypes: [String: String]
+    let keys: [SystemAPIProbeKeyObservation]
 }
 
 struct AppleSmartBatteryProbeReport: Codable, Equatable, Sendable {
     let serviceAvailable: Bool
     let propertiesReadable: Bool
-    let expectedKeyTypes: [String: String]
+    let keys: [SystemAPIProbeKeyObservation]
 }
 
 struct SMCKeyProbeReport: Codable, Equatable, Sendable {
     let key: String
     let state: SystemAPIProbeAccessState
+    let observedDataType: String?
+    let observedDataSize: Int?
 }
 
 struct SMCProbeReport: Codable, Equatable, Sendable {
@@ -78,7 +93,7 @@ struct SMCProbeReport: Codable, Equatable, Sendable {
 }
 
 struct SystemAPIProbeReport: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     let host: SystemAPIProbeHostReport
@@ -224,7 +239,10 @@ enum SystemAPIProbe {
                 infoAvailable: false,
                 sourceCount: 0,
                 firstDescriptionAvailable: false,
-                expectedKeyTypes: [:]
+                keys: keyObservations(
+                    dictionary: nil,
+                    keyPaths: TelemetrySystemContract.ioPowerSourceKeyPaths
+                )
             )
         }
 
@@ -236,7 +254,10 @@ enum SystemAPIProbe {
                 infoAvailable: true,
                 sourceCount: list.count,
                 firstDescriptionAvailable: false,
-                expectedKeyTypes: [:]
+                keys: keyObservations(
+                    dictionary: nil,
+                    keyPaths: TelemetrySystemContract.ioPowerSourceKeyPaths
+                )
             )
         }
 
@@ -244,16 +265,9 @@ enum SystemAPIProbe {
             infoAvailable: true,
             sourceCount: list.count,
             firstDescriptionAvailable: true,
-            expectedKeyTypes: typeReport(
+            keys: keyObservations(
                 dictionary: description,
-                keys: [
-                    kIOPSCurrentCapacityKey,
-                    kIOPSPowerSourceStateKey,
-                    kIOPSIsChargingKey,
-                    kIOPSIsChargedKey,
-                    kIOPSTimeToEmptyKey,
-                    kIOPSTimeToFullChargeKey,
-                ]
+                keyPaths: TelemetrySystemContract.ioPowerSourceKeyPaths
             )
         )
     }
@@ -264,15 +278,20 @@ enum SystemAPIProbe {
         else {
             return IOAdapterProbeReport(
                 dictionaryAvailable: false,
-                expectedKeyTypes: [:]
+                keys: keyObservations(
+                    dictionary: nil,
+                    keyPaths:
+                        TelemetrySystemContract.externalPowerAdapterKeyPaths
+                )
             )
         }
 
         return IOAdapterProbeReport(
             dictionaryAvailable: true,
-            expectedKeyTypes: typeReport(
+            keys: keyObservations(
                 dictionary: adapter,
-                keys: ["Description", "Watts", "Voltage", "Current"]
+                keyPaths:
+                    TelemetrySystemContract.externalPowerAdapterKeyPaths
             )
         )
     }
@@ -286,7 +305,11 @@ enum SystemAPIProbe {
             return AppleSmartBatteryProbeReport(
                 serviceAvailable: false,
                 propertiesReadable: false,
-                expectedKeyTypes: [:]
+                keys: keyObservations(
+                    dictionary: nil,
+                    keyPaths:
+                        TelemetrySystemContract.appleSmartBatteryKeyPaths
+                )
             )
         }
         defer {
@@ -307,35 +330,66 @@ enum SystemAPIProbe {
             return AppleSmartBatteryProbeReport(
                 serviceAvailable: true,
                 propertiesReadable: false,
-                expectedKeyTypes: [:]
+                keys: keyObservations(
+                    dictionary: nil,
+                    keyPaths:
+                        TelemetrySystemContract.appleSmartBatteryKeyPaths
+                )
             )
         }
 
         return AppleSmartBatteryProbeReport(
             serviceAvailable: true,
             propertiesReadable: true,
-            expectedKeyTypes: typeReport(
+            keys: keyObservations(
                 dictionary: dictionary,
-                keys: [
-                    "Voltage",
-                    "Amperage",
-                    "PowerTelemetryData",
-                    "ExternalConnected",
-                ]
+                keyPaths: TelemetrySystemContract.appleSmartBatteryKeyPaths
             )
         )
     }
 
-    private static func typeReport(
-        dictionary: [String: Any],
-        keys: [String]
-    ) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: keys.compactMap { key in
-            guard let value = dictionary[key] else {
-                return nil
+    static func keyObservations(
+        dictionary: [String: Any]?,
+        keyPaths: [TelemetrySystemKeyPath]
+    ) -> [SystemAPIProbeKeyObservation] {
+        keyPaths.map { keyPath in
+            guard let dictionary else {
+                return SystemAPIProbeKeyObservation(
+                    path: keyPath.path,
+                    state: .notAttempted,
+                    observedType: nil
+                )
             }
-            return (key, sanitizedTypeName(value))
-        })
+
+            var container = dictionary
+            for (index, component) in keyPath.components.enumerated() {
+                let isLeaf = index == keyPath.components.count - 1
+                guard let value = container[component] else {
+                    return SystemAPIProbeKeyObservation(
+                        path: keyPath.path,
+                        state: isLeaf ? .keyMissing : .notAttempted,
+                        observedType: nil
+                    )
+                }
+                if isLeaf {
+                    return SystemAPIProbeKeyObservation(
+                        path: keyPath.path,
+                        state: .available,
+                        observedType: sanitizedTypeName(value)
+                    )
+                }
+                guard let nested = value as? [String: Any] else {
+                    return SystemAPIProbeKeyObservation(
+                        path: keyPath.path,
+                        state: .notAttempted,
+                        observedType: nil
+                    )
+                }
+                container = nested
+            }
+
+            preconditionFailure("Telemetry key paths must not be empty")
+        }
     }
 
     private static func sanitizedTypeName(_ value: Any) -> String {

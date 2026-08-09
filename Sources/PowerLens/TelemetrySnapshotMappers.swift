@@ -1,5 +1,4 @@
 import Foundation
-import IOKit.ps
 
 struct CompatibleTelemetrySnapshotMapper {
     let powerSourceInfo: [String: Any]
@@ -11,41 +10,67 @@ struct CompatibleTelemetrySnapshotMapper {
             throw TelemetryReadError.unavailable
         }
 
-        let powerSource = TelemetryValueParser.parsePowerSource(powerSourceInfo[kIOPSPowerSourceStateKey] as? String)
+        let powerSource = TelemetryValueParser.parsePowerSource(
+            powerSourceInfo[key(.powerSourceState)] as? String
+        )
         let frontmostApp = environment.frontmostApplication
 
         return TelemetrySnapshot(
-            batteryLevel: TelemetryValueParser.doubleValue(powerSourceInfo[kIOPSCurrentCapacityKey]),
+            batteryLevel: TelemetryValueParser.doubleValue(
+                powerSourceInfo[key(.currentCapacity)]
+            ),
             powerSource: powerSource,
-            isCharging: TelemetryValueParser.boolValue(powerSourceInfo[kIOPSIsChargingKey]) ?? false,
-            isCharged: TelemetryValueParser.boolValue(powerSourceInfo[kIOPSIsChargedKey]) ?? false,
+            isCharging: TelemetryValueParser.boolValue(
+                powerSourceInfo[key(.isCharging)]
+            ) ?? false,
+            isCharged: TelemetryValueParser.boolValue(
+                powerSourceInfo[key(.isCharged)]
+            ) ?? false,
             externalConnected: powerSource == .ac,
             timeToEmptyMinutes: TelemetryValueParser.sanitize(
-                minutes: TelemetryValueParser.intValue(powerSourceInfo[kIOPSTimeToEmptyKey])
+                minutes: TelemetryValueParser.intValue(
+                    powerSourceInfo[key(.timeToEmpty)]
+                )
             ),
             timeToFullMinutes: TelemetryValueParser.sanitize(
-                minutes: TelemetryValueParser.intValue(powerSourceInfo[kIOPSTimeToFullChargeKey])
+                minutes: TelemetryValueParser.intValue(
+                    powerSourceInfo[key(.timeToFullCharge)]
+                )
             ),
             designCapacityMah: nil,
             fullChargeCapacityMah: nil,
             nominalCapacityMah: nil,
             cycleCount: nil,
             designCycleCount: nil,
-            batteryHealthText: TelemetryValueParser.nonEmptyString(powerSourceInfo["BatteryHealth"]),
-            batteryHealthCondition: TelemetryValueParser.nonEmptyString(powerSourceInfo["BatteryHealthCondition"]),
+            batteryHealthText: TelemetryValueParser.nonEmptyString(
+                powerSourceInfo[key(.batteryHealth)]
+            ),
+            batteryHealthCondition: TelemetryValueParser.nonEmptyString(
+                powerSourceInfo[key(.batteryHealthCondition)]
+            ),
             batteryTemperatureC: nil,
             batteryVoltageV: nil,
             batteryCurrentA: nil,
             batteryPowerW: nil,
-            adapterDescription: TelemetryValueParser.nonEmptyString(adapterDetails["Description"]),
-            adapterMaxPowerW: TelemetryValueParser.doubleValue(adapterDetails["Watts"]),
+            adapterDescription: TelemetryValueParser.nonEmptyString(
+                adapterDetails[adapterKey(.description)]
+            ),
+            adapterMaxPowerW: TelemetryValueParser.doubleValue(
+                adapterDetails[adapterKey(.watts)]
+            ),
             adapterInputPowerW: nil,
-            adapterVoltageV: positiveElectricalValue(adapterDetails["Voltage"]),
-            adapterCurrentA: positiveElectricalValue(adapterDetails["Current"]),
+            adapterVoltageV: positiveElectricalValue(
+                adapterDetails[adapterKey(.voltage)]
+            ),
+            adapterCurrentA: positiveElectricalValue(
+                adapterDetails[adapterKey(.current)]
+            ),
             systemLoadW: nil,
             lowPowerModeEnabled: environment.lowPowerModeEnabled,
             thermalState: TelemetryValueParser.describe(environment.thermalState),
-            serialNumber: TelemetryValueParser.nonEmptyString(powerSourceInfo["Hardware Serial Number"]),
+            serialNumber: TelemetryValueParser.nonEmptyString(
+                powerSourceInfo[key(.hardwareSerialNumber)]
+            ),
             frontmostAppBundleID: frontmostApp?.bundleIdentifier,
             frontmostAppName: frontmostApp?.localizedName
         )
@@ -72,10 +97,17 @@ struct LivePrecisionTelemetrySnapshotMapper {
             throw TelemetryReadError.unavailable
         }
 
-        let telemetry = batteryRegistry["PowerTelemetryData"] as? [String: Any] ?? [:]
-        let powerSource = TelemetryValueParser.parsePowerSource(powerSourceInfo[kIOPSPowerSourceStateKey] as? String)
-        let batteryVoltageV = TelemetryValueParser.doubleValue(batteryRegistry["Voltage"]).map { $0 / 1000 }
-        let batteryCurrentA = TelemetryValueParser.doubleValue(batteryRegistry["Amperage"]).map { $0 / 1000 }
+        let telemetry = batteryRegistry[batteryKey(.powerTelemetryData)]
+            as? [String: Any] ?? [:]
+        let powerSource = TelemetryValueParser.parsePowerSource(
+            powerSourceInfo[key(.powerSourceState)] as? String
+        )
+        let batteryVoltageV = TelemetryValueParser.doubleValue(
+            batteryRegistry[batteryKey(.voltage)]
+        ).map { $0 / 1000 }
+        let batteryCurrentA = TelemetryValueParser.doubleValue(
+            batteryRegistry[batteryKey(.amperage)]
+        ).map { $0 / 1000 }
         let powerMeasurements = resolvePowerMeasurements(
             telemetry: telemetry,
             voltageV: batteryVoltageV,
@@ -84,52 +116,92 @@ struct LivePrecisionTelemetrySnapshotMapper {
         let frontmostApp = environment.frontmostApplication
 
         return TelemetrySnapshot(
-            batteryLevel: TelemetryValueParser.doubleValue(powerSourceInfo[kIOPSCurrentCapacityKey]),
+            batteryLevel: TelemetryValueParser.doubleValue(
+                powerSourceInfo[key(.currentCapacity)]
+            ),
             powerSource: powerSource,
-            isCharging: TelemetryValueParser.boolValue(powerSourceInfo[kIOPSIsChargingKey])
-                ?? TelemetryValueParser.boolValue(batteryRegistry["IsCharging"])
+            isCharging: TelemetryValueParser.boolValue(
+                powerSourceInfo[key(.isCharging)]
+            )
+                ?? TelemetryValueParser.boolValue(
+                    batteryRegistry[batteryKey(.isCharging)]
+                )
                 ?? false,
-            isCharged: TelemetryValueParser.boolValue(powerSourceInfo[kIOPSIsChargedKey])
-                ?? TelemetryValueParser.boolValue(batteryRegistry["FullyCharged"])
+            isCharged: TelemetryValueParser.boolValue(
+                powerSourceInfo[key(.isCharged)]
+            )
+                ?? TelemetryValueParser.boolValue(
+                    batteryRegistry[batteryKey(.fullyCharged)]
+                )
                 ?? false,
-            externalConnected: TelemetryValueParser.boolValue(batteryRegistry["ExternalConnected"]) ?? (powerSource == .ac),
+            externalConnected: TelemetryValueParser.boolValue(
+                batteryRegistry[batteryKey(.externalConnected)]
+            ) ?? (powerSource == .ac),
             timeToEmptyMinutes: TelemetryValueParser.sanitize(
-                minutes: TelemetryValueParser.intValue(powerSourceInfo[kIOPSTimeToEmptyKey])
+                minutes: TelemetryValueParser.intValue(
+                    powerSourceInfo[key(.timeToEmpty)]
+                )
             ),
             timeToFullMinutes: TelemetryValueParser.sanitize(
-                minutes: TelemetryValueParser.intValue(powerSourceInfo[kIOPSTimeToFullChargeKey])
+                minutes: TelemetryValueParser.intValue(
+                    powerSourceInfo[key(.timeToFullCharge)]
+                )
             ),
-            designCapacityMah: TelemetryValueParser.intValue(batteryRegistry["DesignCapacity"]),
-            fullChargeCapacityMah: TelemetryValueParser.intValue(batteryRegistry["AppleRawMaxCapacity"]),
-            nominalCapacityMah: TelemetryValueParser.intValue(batteryRegistry["NominalChargeCapacity"]),
-            cycleCount: TelemetryValueParser.intValue(batteryRegistry["CycleCount"]),
-            designCycleCount: TelemetryValueParser.intValue(batteryRegistry["DesignCycleCount9C"]),
-            batteryHealthText: TelemetryValueParser.nonEmptyString(powerSourceInfo["BatteryHealth"])
+            designCapacityMah: TelemetryValueParser.intValue(
+                batteryRegistry[batteryKey(.designCapacity)]
+            ),
+            fullChargeCapacityMah: TelemetryValueParser.intValue(
+                batteryRegistry[batteryKey(.rawMaxCapacity)]
+            ),
+            nominalCapacityMah: TelemetryValueParser.intValue(
+                batteryRegistry[batteryKey(.nominalChargeCapacity)]
+            ),
+            cycleCount: TelemetryValueParser.intValue(
+                batteryRegistry[batteryKey(.cycleCount)]
+            ),
+            designCycleCount: TelemetryValueParser.intValue(
+                batteryRegistry[batteryKey(.designCycleCount)]
+            ),
+            batteryHealthText: TelemetryValueParser.nonEmptyString(
+                powerSourceInfo[key(.batteryHealth)]
+            )
                 ?? TelemetryValueParser.inferredHealthText(from: batteryRegistry),
-            batteryHealthCondition: TelemetryValueParser.nonEmptyString(powerSourceInfo["BatteryHealthCondition"]),
-            batteryTemperatureC: TelemetryValueParser.doubleValue(batteryRegistry["Temperature"]).map { $0 / 100 },
+            batteryHealthCondition: TelemetryValueParser.nonEmptyString(
+                powerSourceInfo[key(.batteryHealthCondition)]
+            ),
+            batteryTemperatureC: TelemetryValueParser.doubleValue(
+                batteryRegistry[batteryKey(.temperature)]
+            ).map { $0 / 100 },
             batteryVoltageV: batteryVoltageV,
             batteryCurrentA: batteryCurrentA,
             batteryPowerW: powerMeasurements.batteryPowerW,
             batteryPowerSource: powerMeasurements.batteryPowerSource,
-            adapterDescription: TelemetryValueParser.nonEmptyString(adapterDetails["Description"])
-                ?? TelemetryValueParser.nonEmptyString(batteryRegistry["DeviceName"]),
-            adapterMaxPowerW: TelemetryValueParser.doubleValue(adapterDetails["Watts"]),
+            adapterDescription: TelemetryValueParser.nonEmptyString(
+                adapterDetails[adapterKey(.description)]
+            ) ?? TelemetryValueParser.nonEmptyString(
+                batteryRegistry[batteryKey(.deviceName)]
+            ),
+            adapterMaxPowerW: TelemetryValueParser.doubleValue(
+                adapterDetails[adapterKey(.watts)]
+            ),
             adapterInputPowerW: powerMeasurements.adapterInputPowerW,
             adapterVoltageV: positiveElectricalValue(
-                telemetry["SystemVoltageIn"],
+                telemetry[telemetryKey(.systemVoltageIn)],
                 dividedBy: 1000
             ),
             adapterCurrentA: positiveElectricalValue(
-                telemetry["SystemCurrentIn"],
+                telemetry[telemetryKey(.systemCurrentIn)],
                 dividedBy: 1000
             ),
             systemLoadW: powerMeasurements.systemLoadW,
             powerMeasurementSetSource: powerMeasurements.setSource,
             lowPowerModeEnabled: environment.lowPowerModeEnabled,
             thermalState: TelemetryValueParser.describe(environment.thermalState),
-            serialNumber: TelemetryValueParser.nonEmptyString(powerSourceInfo["Hardware Serial Number"])
-                ?? TelemetryValueParser.nonEmptyString(batteryRegistry["Serial"]),
+            serialNumber: TelemetryValueParser.nonEmptyString(
+                powerSourceInfo[key(.hardwareSerialNumber)]
+            ) ?? TelemetryValueParser.nonEmptyString(
+                batteryRegistry[batteryKey(.serial)]
+            ),
             frontmostAppBundleID: frontmostApp?.bundleIdentifier,
             frontmostAppName: frontmostApp?.localizedName
         )
@@ -144,13 +216,13 @@ struct LivePrecisionTelemetrySnapshotMapper {
         // negative charging). PowerTelemetryData follows battery amperage, so
         // its BatteryPower sign must be inverted at the provider boundary.
         let telemetryBatteryPowerW = TelemetryValueParser.milliwattsValue(
-            telemetry["BatteryPower"]
+            telemetry[telemetryKey(.batteryPower)]
         ).map { -$0 }
         let telemetryInputPowerW = TelemetryValueParser.milliwattsValue(
-            telemetry["SystemPowerIn"]
+            telemetry[telemetryKey(.systemPowerIn)]
         )
         let telemetrySystemLoadW = TelemetryValueParser.milliwattsValue(
-            telemetry["SystemLoad"]
+            telemetry[telemetryKey(.systemLoad)]
         )
 
         if let batteryPowerW = smcPower?.batteryPowerW,
@@ -212,6 +284,30 @@ struct LivePrecisionTelemetrySnapshotMapper {
         // negative = charging.
         return (-(currentA * voltageV), .currentAndVoltage)
     }
+}
+
+private func key(
+    _ key: TelemetrySystemContract.IOPowerSourceKey
+) -> String {
+    key.rawValue
+}
+
+private func adapterKey(
+    _ key: TelemetrySystemContract.ExternalPowerAdapterKey
+) -> String {
+    key.rawValue
+}
+
+private func batteryKey(
+    _ key: TelemetrySystemContract.AppleSmartBatteryKey
+) -> String {
+    key.rawValue
+}
+
+private func telemetryKey(
+    _ key: TelemetrySystemContract.PowerTelemetryKey
+) -> String {
+    key.rawValue
 }
 
 private func positiveElectricalValue(

@@ -122,8 +122,10 @@ jobs:
             > "release/system-api-probe/${{ matrix.runner }}-${{ matrix.build_system }}.json"
           python3 script/verify_system_api_probe.py \
             --profile script/system-api-contracts/macos-26.json \
+            --mode hosted \
             --expected-app-version 0.0.0-ci \
             --expected-app-build "${{ github.run_number }}" \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
             "release/system-api-probe/${{ matrix.runner }}-${{ matrix.build_system }}.json"
 
       - name: Upload system API probe report
