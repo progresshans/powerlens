@@ -35,6 +35,10 @@ and any manually initiated alpha release remain deliberate and wait for the
 
 - [ ] Launch a packaged build on the current supported macOS release.
 - [ ] Launch on macOS 26.0 using a physical Mac or maintained test machine.
+- [ ] Capture the packaged app's sanitized system-API probe and verify it with
+      `python3 script/verify_system_api_probe.py --profile
+      script/system-api-contracts/macos-26.json --mode physical <report.json>`.
+      Do not substitute a green hosted-runner probe for this physical check.
 - [ ] Verify a battery-equipped Mac can read IOKit telemetry.
 - [ ] Exercise Compatible and Live Precision modes with one unavailable or
       partial sensor path and confirm fallback does not crash.
