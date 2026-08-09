@@ -100,6 +100,14 @@ def _validate_section_fields(
             errors.append(f"{label} probe field {field} is missing or invalid")
 
 
+def _is_available_string(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and value.strip().casefold() != "unknown"
+    )
+
+
 def _validate_expected_key_types(
     section: dict[str, Any],
     label: str,
@@ -115,6 +123,95 @@ def _validate_expected_key_types(
         for key, value in values.items()
     ):
         errors.append(f"{label} expected-key type report is invalid")
+
+
+def _validate_host_report(
+    report: dict[str, Any],
+    profile: dict[str, Any],
+    errors: list[str],
+) -> None:
+    host = _require_report_section(report, "host", "host", errors)
+    if host is None:
+        return
+
+    _validate_section_fields(
+        host,
+        "host",
+        {
+            "operatingSystemVersion": str,
+            "operatingSystemBuild": str,
+            "architecture": str,
+        },
+        errors,
+    )
+
+    version = host.get("operatingSystemVersion")
+    if isinstance(version, str):
+        try:
+            major = int(version.split(".", maxsplit=1)[0])
+        except ValueError:
+            errors.append("host operating-system version is invalid")
+        else:
+            if major != profile.get("hostMacOSMajorVersion"):
+                errors.append(
+                    "host macOS major version does not match the contract profile"
+                )
+
+    build = host.get("operatingSystemBuild")
+    if isinstance(build, str) and not _is_available_string(build):
+        errors.append("host operating-system build is empty or unknown")
+
+    architecture = host.get("architecture")
+    if (
+        isinstance(architecture, str)
+        and architecture != profile.get("architecture")
+    ):
+        errors.append("host architecture does not match the contract profile")
+
+
+def _validate_app_report(
+    report: dict[str, Any],
+    profile: dict[str, Any],
+    errors: list[str],
+    *,
+    expected_version: str | None,
+    expected_build: str | None,
+) -> None:
+    app = _require_report_section(report, "app", "app", errors)
+    if app is None:
+        return
+
+    _validate_section_fields(
+        app,
+        "app",
+        {
+            "version": str,
+            "build": str,
+            "minimumMacOSVersion": str,
+        },
+        errors,
+    )
+
+    version = app.get("version")
+    if isinstance(version, str):
+        if not _is_available_string(version):
+            errors.append("packaged app version is empty or unknown")
+        elif expected_version is not None and version != expected_version:
+            errors.append("packaged app version does not match the expected value")
+
+    build = app.get("build")
+    if isinstance(build, str):
+        if not _is_available_string(build):
+            errors.append("packaged app build is empty or unknown")
+        elif expected_build is not None and build != expected_build:
+            errors.append("packaged app build does not match the expected value")
+
+    minimum_version = app.get("minimumMacOSVersion")
+    if (
+        isinstance(minimum_version, str)
+        and minimum_version != profile.get("minimumMacOSVersion")
+    ):
+        errors.append("packaged app minimum macOS version is incorrect")
 
 
 def _validate_powerui_runtime_observation(
@@ -287,38 +384,37 @@ def _validate_powerui_method(
 def validate_report(
     report: dict[str, Any],
     profile: dict[str, Any],
+    *,
+    expected_app_version: str | None = None,
+    expected_app_build: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
 
-    if profile.get("profileSchemaVersion") != SUPPORTED_PROFILE_SCHEMA_VERSION:
+    profile_schema_version = profile.get("profileSchemaVersion")
+    if (
+        not _matches_type(profile_schema_version, int)
+        or profile_schema_version != SUPPORTED_PROFILE_SCHEMA_VERSION
+    ):
         errors.append("unsupported contract profile schema version")
         return errors
 
-    if report.get("schemaVersion") != profile.get("probeSchemaVersion"):
+    report_schema_version = report.get("schemaVersion")
+    profile_probe_schema_version = profile.get("probeSchemaVersion")
+    if (
+        not _matches_type(report_schema_version, int)
+        or not _matches_type(profile_probe_schema_version, int)
+        or report_schema_version != profile_probe_schema_version
+    ):
         errors.append("probe schema version does not match the contract profile")
 
-    host = report.get("host")
-    if not isinstance(host, dict):
-        errors.append("probe host report is missing")
-    else:
-        version = host.get("operatingSystemVersion")
-        try:
-            major = int(str(version).split(".", maxsplit=1)[0])
-        except (TypeError, ValueError):
-            errors.append("host operating-system version is invalid")
-        else:
-            if major != profile.get("hostMacOSMajorVersion"):
-                errors.append(
-                    "host macOS major version does not match the contract profile"
-                )
-        if host.get("architecture") != profile.get("architecture"):
-            errors.append("host architecture does not match the contract profile")
-
-    app = report.get("app")
-    if not isinstance(app, dict):
-        errors.append("probe app report is missing")
-    elif app.get("minimumMacOSVersion") != profile.get("minimumMacOSVersion"):
-        errors.append("packaged app minimum macOS version is incorrect")
+    _validate_host_report(report, profile, errors)
+    _validate_app_report(
+        report,
+        profile,
+        errors,
+        expected_version=expected_app_version,
+        expected_build=expected_app_build,
+    )
 
     # Hardware access may legitimately be unavailable on a hosted runner, but
     # every factual probe section must still be present and structurally valid.
@@ -394,6 +490,8 @@ def validate_report(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", type=Path, required=True)
+    parser.add_argument("--expected-app-version")
+    parser.add_argument("--expected-app-build")
     parser.add_argument("report", type=Path)
     arguments = parser.parse_args()
 
@@ -404,7 +502,12 @@ def main() -> int:
         print(f"ERROR: unable to read probe input: {error}")
         return 2
 
-    errors = validate_report(report, profile)
+    errors = validate_report(
+        report,
+        profile,
+        expected_app_version=arguments.expected_app_version,
+        expected_app_build=arguments.expected_app_build,
+    )
     if errors:
         for error in errors:
             print(f"ERROR: {error}")

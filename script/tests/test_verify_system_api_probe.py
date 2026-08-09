@@ -92,6 +92,157 @@ class VerifySystemAPIProbeTests(unittest.TestCase):
 
         self.assertEqual(validate_report(report, contract_profile), [])
 
+    def test_schema_versions_require_integers(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+        report["schemaVersion"] = True
+
+        self.assertIn(
+            "probe schema version does not match the contract profile",
+            validate_report(report, contract_profile),
+        )
+
+        contract_profile = profile()
+        contract_profile["profileSchemaVersion"] = True
+        report = compatible_report(contract_profile)
+
+        self.assertEqual(
+            validate_report(report, contract_profile),
+            ["unsupported contract profile schema version"],
+        )
+
+        contract_profile = profile()
+        contract_profile["probeSchemaVersion"] = True
+        report = compatible_report(contract_profile)
+
+        self.assertIn(
+            "probe schema version does not match the contract profile",
+            validate_report(report, contract_profile),
+        )
+
+    def test_host_report_requires_v1_fields(self):
+        contract_profile = profile()
+
+        for field in (
+            "operatingSystemVersion",
+            "operatingSystemBuild",
+            "architecture",
+        ):
+            with self.subTest(field=field):
+                report = compatible_report(contract_profile)
+                del report["host"][field]
+
+                self.assertIn(
+                    f"host probe field {field} is missing or invalid",
+                    validate_report(report, contract_profile),
+                )
+
+    def test_host_report_rejects_invalid_field_types(self):
+        contract_profile = profile()
+        invalid_values = {
+            "operatingSystemVersion": 26,
+            "operatingSystemBuild": 25,
+            "architecture": ["arm64"],
+        }
+
+        for field, invalid_value in invalid_values.items():
+            with self.subTest(field=field):
+                report = compatible_report(contract_profile)
+                report["host"][field] = invalid_value
+
+                self.assertIn(
+                    f"host probe field {field} is missing or invalid",
+                    validate_report(report, contract_profile),
+                )
+
+    def test_host_report_rejects_empty_or_unknown_build(self):
+        contract_profile = profile()
+
+        for invalid_value in ("", "  ", "unknown", " UNKNOWN "):
+            with self.subTest(value=invalid_value):
+                report = compatible_report(contract_profile)
+                report["host"]["operatingSystemBuild"] = invalid_value
+
+                self.assertIn(
+                    "host operating-system build is empty or unknown",
+                    validate_report(report, contract_profile),
+                )
+
+    def test_app_report_requires_v1_fields(self):
+        contract_profile = profile()
+
+        for field in ("version", "build", "minimumMacOSVersion"):
+            with self.subTest(field=field):
+                report = compatible_report(contract_profile)
+                del report["app"][field]
+
+                self.assertIn(
+                    f"app probe field {field} is missing or invalid",
+                    validate_report(report, contract_profile),
+                )
+
+    def test_app_report_rejects_invalid_field_types(self):
+        contract_profile = profile()
+        invalid_values = {
+            "version": 1,
+            "build": 1,
+            "minimumMacOSVersion": 26.0,
+        }
+
+        for field, invalid_value in invalid_values.items():
+            with self.subTest(field=field):
+                report = compatible_report(contract_profile)
+                report["app"][field] = invalid_value
+
+                self.assertIn(
+                    f"app probe field {field} is missing or invalid",
+                    validate_report(report, contract_profile),
+                )
+
+    def test_app_report_rejects_empty_or_unknown_provenance(self):
+        contract_profile = profile()
+
+        for field in ("version", "build"):
+            for invalid_value in ("", "  ", "unknown", " UNKNOWN "):
+                with self.subTest(field=field, value=invalid_value):
+                    report = compatible_report(contract_profile)
+                    report["app"][field] = invalid_value
+
+                    self.assertIn(
+                        f"packaged app {field} is empty or unknown",
+                        validate_report(report, contract_profile),
+                    )
+
+    def test_app_report_validates_expected_provenance(self):
+        contract_profile = profile()
+        report = compatible_report(contract_profile)
+
+        self.assertEqual(
+            validate_report(
+                report,
+                contract_profile,
+                expected_app_version="0.0.0-ci",
+                expected_app_build="1",
+            ),
+            [],
+        )
+
+        errors = validate_report(
+            report,
+            contract_profile,
+            expected_app_version="0.0.0-other",
+            expected_app_build="2",
+        )
+
+        self.assertIn(
+            "packaged app version does not match the expected value",
+            errors,
+        )
+        self.assertIn(
+            "packaged app build does not match the expected value",
+            errors,
+        )
+
     def test_powerui_signature_mismatch_fails(self):
         contract_profile = profile()
         report = compatible_report(contract_profile)
