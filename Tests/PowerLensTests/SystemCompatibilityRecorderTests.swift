@@ -43,6 +43,69 @@ struct SystemCompatibilityRecorderTests {
     }
 
     @Test
+    func changingDetailsWithinTheSameClassificationIsNotATransition() async throws {
+        let fileURL = temporaryFileURL()
+        defer { try? FileManager.default.removeItem(
+            at: fileURL.deletingLastPathComponent()
+        ) }
+        let recorder = SystemCompatibilityRecorder(
+            fileURL: fileURL,
+            observationWriteInterval: 3600,
+            transitionLimit: 50
+        )
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        let first = SystemCompatibilityDiagnostic(
+            subsystem: .powerUI,
+            classification: .transientFailure,
+            reason: .queryFailed,
+            component: "isOBCEngaged:",
+            errorDomain: "PowerUI",
+            errorCode: 1
+        )
+        let latest = SystemCompatibilityDiagnostic(
+            subsystem: .powerUI,
+            classification: .transientFailure,
+            reason: .queryFailed,
+            component: "isOBCEngaged:",
+            errorDomain: "PowerUI",
+            errorCode: 2
+        )
+
+        await recorder.record(first, observedAt: start)
+        let persistedBeforeDetailChange = try Data(contentsOf: fileURL)
+        await recorder.record(
+            latest,
+            observedAt: start.addingTimeInterval(30)
+        )
+
+        let inMemory = await recorder.currentDocumentForTesting()
+        #expect(inMemory.currentStates[0].diagnostic == latest)
+        #expect(inMemory.currentStates[0].firstObservedAt == start)
+        #expect(inMemory.currentStates[0].occurrenceCount == 2)
+        #expect(inMemory.recentTransitions.count == 1)
+        #expect(try Data(contentsOf: fileURL) == persistedBeforeDetailChange)
+
+        let hourlyDetail = SystemCompatibilityDiagnostic(
+            subsystem: .powerUI,
+            classification: .transientFailure,
+            reason: .queryFailed,
+            component: "isOBCEngaged:",
+            errorDomain: "PowerUI",
+            errorCode: 3
+        )
+        await recorder.record(
+            hourlyDetail,
+            observedAt: start.addingTimeInterval(3600)
+        )
+
+        let persisted = try decodeDocument(at: fileURL)
+        #expect(persisted.currentStates[0].diagnostic == hourlyDetail)
+        #expect(persisted.currentStates[0].firstObservedAt == start)
+        #expect(persisted.currentStates[0].occurrenceCount == 3)
+        #expect(persisted.recentTransitions.count == 1)
+    }
+
+    @Test
     func failedTransitionWriteRetriesOnTheNextEqualObservation() async throws {
         let fileManager = FileManager.default
         let fileURL = temporaryFileURL()

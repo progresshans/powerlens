@@ -85,7 +85,12 @@ actor SystemCompatibilityRecorder: SystemCompatibilityRecording {
 
         if let stateIndex {
             let previous = document.currentStates[stateIndex]
-            if previous.diagnostic == diagnostic {
+            if previous.diagnostic.classification
+                == diagnostic.classification {
+                // Classification is the persisted semantic state. Retain the
+                // latest bounded detail without turning changing error codes
+                // or observed values into new transitions.
+                document.currentStates[stateIndex].diagnostic = diagnostic
                 document.currentStates[stateIndex].lastObservedAt = observedAt
                 document.currentStates[stateIndex].occurrenceCount += 1
 

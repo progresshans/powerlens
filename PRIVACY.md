@@ -53,8 +53,9 @@ each inspected subsystem and at most 50 state transitions. It may include a
 system component or selector name, expected and observed Objective-C type
 encodings, and a normalized error domain/code. It does not contain raw battery
 or adapter readings, battery identifiers, app names, user filesystem paths, or
-free-form system error descriptions. Repeated equal observations are
-deduplicated, and their stored observation time is refreshed at most hourly.
+free-form system error descriptions. Repeated observations with the same
+compatibility classification are deduplicated even when bounded diagnostic
+details change, and their stored observation time is refreshed at most hourly.
 
 The history database may include battery identifiers, adapter information,
 telemetry samples, and the frontmost high energy usage app name/bundle
