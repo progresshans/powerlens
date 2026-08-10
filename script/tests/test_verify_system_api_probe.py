@@ -557,6 +557,68 @@ class VerifySystemAPIProbeTests(unittest.TestCase):
             any("manualChargeLimit" in item for item in result.warnings)
         )
 
+    def test_optional_capability_absence_does_not_mask_runtime_failures(self):
+        contract_profile = profile()
+        optional_selectors = {
+            item["selector"]
+            for item in contract_profile["powerUI"]["optionalCapabilities"][0][
+                "methods"
+            ]
+        }
+        runtime_failures = [
+            {
+                "subsystem": "powerUI",
+                "classification": "transientFailure",
+                "reason": "queryFailed",
+                "component": "isOBCEngaged:",
+                "errorDomain": "PowerUISmartChargingErrorDomain",
+                "errorCode": 4,
+            },
+            {
+                "subsystem": "powerUI",
+                "classification": "environmentUnavailable",
+                "reason": "initializationFailed",
+                "component": "PowerUISmartChargeClient",
+            },
+        ]
+
+        for runtime in runtime_failures:
+            with self.subTest(classification=runtime["classification"]):
+                report = physical_report(contract_profile)
+                for observed in report["powerUI"]["methods"]:
+                    if observed["selector"] in optional_selectors:
+                        observed["state"] = "missing"
+                        del observed["actualTypeEncoding"]
+                report["powerUI"]["runtimeObservation"] = runtime
+
+                hosted = verification_result(
+                    report, contract_profile, mode="hosted"
+                )
+                physical = verification_result(
+                    report, contract_profile, mode="physical"
+                )
+
+                self.assertEqual(hosted.errors, ())
+                self.assertTrue(
+                    any(
+                        "manualChargeLimit" in item
+                        for item in hosted.warnings
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        runtime["classification"] in item
+                        for item in hosted.warnings
+                    )
+                )
+                self.assertEqual(
+                    physical.errors,
+                    (
+                        "PowerUI runtime classification "
+                        f"{runtime['classification']} is not allowed in physical mode",
+                    ),
+                )
+
     def test_runtime_observation_matches_optional_capability_availability(self):
         contract_profile = profile()
         report = compatible_report(contract_profile)

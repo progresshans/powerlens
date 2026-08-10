@@ -1135,7 +1135,17 @@ def evaluate(
             )
 
     runtime = report.runtime_observation
-    if unavailable_capabilities and runtime.classification != "optionalCapabilityMissing":
+    runtime_reports_success = runtime.classification in {
+        "compatible",
+        "optionalCapabilityMissing",
+    }
+    # Runtime failures take precedence over an optional-capability diagnostic;
+    # the method observations still preserve the capability's static absence.
+    if (
+        unavailable_capabilities
+        and runtime_reports_success
+        and runtime.classification != "optionalCapabilityMissing"
+    ):
         errors.append(
             "PowerUI runtime observation must report optionalCapabilityMissing "
             "when an optional capability is absent"
