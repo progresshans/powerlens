@@ -8,7 +8,7 @@ let package = Package(
         .macOS("26.0"),
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.5"),
     ],
     targets: [
         .executableTarget(
