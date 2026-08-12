@@ -91,12 +91,27 @@ enum TelemetryValueParser {
     }
 
     static func inferredHealthText(from batteryRegistry: [String: Any]) -> String? {
-        if intValue(batteryRegistry["PermanentFailureStatus"]) ?? 0 > 0 {
+        if intValue(
+            batteryRegistry[
+                TelemetrySystemContract.AppleSmartBatteryKey
+                    .permanentFailureStatus.rawValue
+            ]
+        ) ?? 0 > 0 {
             return "Service Recommended"
         }
 
-        if let design = intValue(batteryRegistry["DesignCapacity"]),
-           let max = intValue(batteryRegistry["AppleRawMaxCapacity"]),
+        if let design = intValue(
+            batteryRegistry[
+                TelemetrySystemContract.AppleSmartBatteryKey
+                    .designCapacity.rawValue
+            ]
+        ),
+           let max = intValue(
+               batteryRegistry[
+                   TelemetrySystemContract.AppleSmartBatteryKey
+                       .rawMaxCapacity.rawValue
+               ]
+           ),
            design > 0 {
             let ratio = Double(max) / Double(design) * 100
             if ratio >= 85 {

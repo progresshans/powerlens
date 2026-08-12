@@ -45,10 +45,22 @@ become active after they are promoted to `main`.
 From the repository root:
 
 ```bash
-swift build --arch arm64
-swift test --arch arm64
+swift build --build-system native --arch arm64
+./script/test_swiftpm.sh
 ./script/build_and_run.sh
 ```
+
+Distribution and the default local test helper currently use SwiftPM's native
+build system. With Swift 6.3 or later, run the same SwiftBuild compatibility
+path used by CI with:
+
+```bash
+POWERLENS_BUILD_SYSTEM=swiftbuild ./script/test_swiftpm.sh
+```
+
+The helper builds tests with SwiftBuild, stages the generated Sparkle framework
+in the runtime location expected by the test bundle, and then executes the
+SwiftBuild-produced tests. It does not rebuild them with the native backend.
 
 Before opening a pull request, also run:
 
@@ -60,6 +72,36 @@ plutil -lint \
   Sources/PowerLens/Resources/ko.lproj/Localizable.strings
 git diff --check
 ```
+
+The packaged app also exposes a headless, read-only compatibility probe:
+
+```bash
+release/stage/PowerLens.app/Contents/MacOS/PowerLens \
+  --system-api-probe \
+  --format json \
+  > release/system-api-probe.json
+
+python3 script/verify_system_api_probe.py \
+  --profile script/system-api-contracts/macos-26.json \
+  --mode physical \
+  release/system-api-probe.json
+```
+
+The probe reports system-interface shape and service availability, not raw
+battery/adapter values or identifiers. `physical` mode requires the battery
+providers expected on a supported Mac and rejects transient PowerUI queries.
+CI uses `hosted` mode: it verifies packaging, the report schema, and static ABI
+while reporting unavailable VM hardware as warnings rather than claiming it
+was exercised. CI keeps the existing native macOS 26 release check, adds an
+explicit SwiftBuild check on macOS 26, and runs the same SwiftBuild path on the
+`xcode-27` preview image. The latter is Xcode 27 and the macOS 27 SDK on a macOS
+26 host; it is not macOS 27 runtime coverage.
+
+If physical compatibility checks are automated later, do not attach a
+self-hosted Mac to the public `pull_request` trigger. Run untrusted code only on
+GitHub-hosted workers; restrict a dedicated physical runner to protected
+branches, tags, or an authorized `workflow_dispatch`, with a separate local
+account and no personal data or release credentials.
 
 ## Change Guidelines
 

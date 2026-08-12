@@ -1,6 +1,5 @@
 import SwiftUI
 
-@main
 struct PowerLensApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow

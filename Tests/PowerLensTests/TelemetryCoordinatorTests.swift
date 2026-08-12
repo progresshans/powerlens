@@ -19,6 +19,9 @@ struct TelemetryCoordinatorTests {
         #expect(result.activeEngine == .livePrecision)
         #expect(result.snapshot.systemLoadW == 22.0)
         #expect(result.snapshot.chargingPolicyStatus == .manualLimit(targetPercent: 85))
+        #expect(
+            result.systemCompatibilityDiagnostics == [.compatiblePowerUI]
+        )
         #expect(policyReader.readCount == 1)
     }
 
@@ -134,11 +137,14 @@ private final class StubChargingPolicyReader:
         }
     }
 
-    func readChargingPolicyStatus() -> ObservedChargingPolicyStatus {
+    func readChargingPolicyObservation() -> ChargingPolicyObservation {
         lock.withLock {
             storedReadCount += 1
         }
-        return status
+        return ChargingPolicyObservation(
+            status: status,
+            diagnostic: .compatiblePowerUI
+        )
     }
 }
 

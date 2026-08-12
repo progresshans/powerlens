@@ -153,8 +153,8 @@ To delete local history and preferences as well, follow the steps in
 ## Build From Source
 
 ```bash
-swift build --arch arm64
-swift test --arch arm64
+swift build --build-system native --arch arm64
+./script/test_swiftpm.sh
 ./script/build_and_run.sh
 ```
 
@@ -163,6 +163,10 @@ and launches it. It must run from a native Apple silicon shell; Rosetta and
 Intel hosts are rejected because PowerLens app bundles are arm64-only. Pass
 `debug`, `logs`, `telemetry`, or `verify` for the helper modes documented in
 the script.
+
+With Swift 6.3 or later, exercise SwiftBuild explicitly, matching the
+compatibility path in CI, by running
+`POWERLENS_BUILD_SYSTEM=swiftbuild ./script/test_swiftpm.sh`.
 
 Release packaging notes for maintainers live in
 [Packaging/README.md](Packaging/README.md).

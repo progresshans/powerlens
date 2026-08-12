@@ -1,0 +1,275 @@
+{
+  "profileSchemaVersion": 2,
+  "profileName": "macos-26-arm64",
+  "probeSchemaVersion": 2,
+  "host": {
+    "macOSMajorVersion": 26,
+    "architecture": "arm64"
+  },
+  "app": {
+    "minimumMacOSVersion": "26.0"
+  },
+  "powerUI": {
+    "requiredMethods": [
+      {
+        "selector": "alloc",
+        "dispatch": "classMethod",
+        "expectedReturnTypes": ["@"],
+        "expectedArgumentTypes": ["@", ":"]
+      },
+      {
+        "selector": "initWithClientName:",
+        "dispatch": "instanceMethod",
+        "expectedReturnTypes": ["@"],
+        "expectedArgumentTypes": ["@", ":", "@"]
+      },
+      {
+        "selector": "isOBCEngaged:",
+        "dispatch": "instanceMethod",
+        "expectedReturnTypes": ["B", "c"],
+        "expectedArgumentTypes": ["@", ":", "^@"]
+      }
+    ],
+    "optionalCapabilities": [
+      {
+        "name": "manualChargeLimit",
+        "availabilityRule": "allOrNone",
+        "methods": [
+          {
+            "selector": "isMCLCurrentlyEnabled:",
+            "dispatch": "instanceMethod",
+            "expectedReturnTypes": ["Q"],
+            "expectedArgumentTypes": ["@", ":", "^@"]
+          },
+          {
+            "selector": "getMCLLimitWithError:",
+            "dispatch": "instanceMethod",
+            "expectedReturnTypes": ["C"],
+            "expectedArgumentTypes": ["@", ":", "^@"]
+          }
+        ]
+      }
+    ],
+    "runtimePolicies": {
+      "hosted": {
+        "allowedClassifications": [
+          "compatible",
+          "optionalCapabilityMissing",
+          "environmentUnavailable",
+          "transientFailure"
+        ]
+      },
+      "physical": {
+        "allowedClassifications": [
+          "compatible",
+          "optionalCapabilityMissing"
+        ]
+      }
+    }
+  },
+  "hardware": {
+    "ioPowerSources": {
+      "requiredInPhysicalMode": true,
+      "keys": [
+        {
+          "path": "Current Capacity",
+          "allowedTypes": ["number"],
+          "presence": "requiredWhenContainerAvailable"
+        },
+        {
+          "path": "Power Source State",
+          "allowedTypes": ["string"],
+          "presence": "requiredWhenContainerAvailable"
+        },
+        {
+          "path": "Is Charging",
+          "allowedTypes": ["boolean"],
+          "presence": "optional"
+        },
+        {
+          "path": "Is Charged",
+          "allowedTypes": ["boolean"],
+          "presence": "optional"
+        },
+        {
+          "path": "Time to Empty",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "Time to Full Charge",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "BatteryHealth",
+          "allowedTypes": ["string"],
+          "presence": "optional"
+        },
+        {
+          "path": "BatteryHealthCondition",
+          "allowedTypes": ["string"],
+          "presence": "optional"
+        },
+        {
+          "path": "Hardware Serial Number",
+          "allowedTypes": ["string"],
+          "presence": "optional"
+        }
+      ]
+    },
+    "externalPowerAdapter": {
+      "requiredInPhysicalMode": false,
+      "keys": [
+        {
+          "path": "Description",
+          "allowedTypes": ["string"],
+          "presence": "optional"
+        },
+        {
+          "path": "Watts",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "Voltage",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "Current",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        }
+      ]
+    },
+    "appleSmartBattery": {
+      "requiredInPhysicalMode": true,
+      "keys": [
+        {
+          "path": "Voltage",
+          "allowedTypes": ["number"],
+          "presence": "requiredWhenContainerAvailable"
+        },
+        {
+          "path": "Amperage",
+          "allowedTypes": ["number"],
+          "presence": "requiredWhenContainerAvailable"
+        },
+        {
+          "path": "PowerTelemetryData",
+          "allowedTypes": ["dictionary"],
+          "presence": "optional"
+        },
+        {
+          "path": "ExternalConnected",
+          "allowedTypes": ["boolean"],
+          "presence": "optional"
+        },
+        {
+          "path": "IsCharging",
+          "allowedTypes": ["boolean"],
+          "presence": "optional"
+        },
+        {
+          "path": "FullyCharged",
+          "allowedTypes": ["boolean"],
+          "presence": "optional"
+        },
+        {
+          "path": "DesignCapacity",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "AppleRawMaxCapacity",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "NominalChargeCapacity",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "CycleCount",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "DesignCycleCount9C",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "Temperature",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "DeviceName",
+          "allowedTypes": ["string"],
+          "presence": "optional"
+        },
+        {
+          "path": "Serial",
+          "allowedTypes": ["string"],
+          "presence": "optional"
+        },
+        {
+          "path": "PermanentFailureStatus",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "PowerTelemetryData.BatteryPower",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "PowerTelemetryData.SystemPowerIn",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "PowerTelemetryData.SystemLoad",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "PowerTelemetryData.SystemVoltageIn",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        },
+        {
+          "path": "PowerTelemetryData.SystemCurrentIn",
+          "allowedTypes": ["number"],
+          "presence": "optional"
+        }
+      ]
+    },
+    "appleSMC": {
+      "requiredInPhysicalMode": false,
+      "keys": [
+        {
+          "key": "SBAP",
+          "expectedDataType": "flt ",
+          "expectedDataSize": 4,
+          "presence": "optional"
+        },
+        {
+          "key": "PDTR",
+          "expectedDataType": "flt ",
+          "expectedDataSize": 4,
+          "presence": "optional"
+        },
+        {
+          "key": "PSTR",
+          "expectedDataType": "flt ",
+          "expectedDataSize": 4,
+          "presence": "optional"
+        }
+      ]
+    }
+  }
+}
