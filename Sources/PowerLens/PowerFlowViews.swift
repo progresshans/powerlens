@@ -52,7 +52,7 @@ struct PowerFlowCard: View {
 
                 Spacer()
 
-                Text(model.state.localizedTitle)
+                Text(model.statusTitle)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(stateTint)
                     .padding(.horizontal, 8)
@@ -62,7 +62,7 @@ struct PowerFlowCard: View {
 
             BatteryLevelStrip(
                 level: snapshot.batteryLevel,
-                isCharging: snapshot.isBatteryChargingForDisplay,
+                isCharging: model.state == .charging,
                 isCharged: snapshot.isCharged
             )
 
@@ -70,6 +70,15 @@ struct PowerFlowCard: View {
                 rows: model.routes,
                 density: density
             )
+
+            if model.showsIndependentReadingsNotice {
+                Label(
+                    L10n.text("ui.flow.independentReadingsNotice"),
+                    systemImage: "info.circle"
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
         }
         .padding(density.cardPadding)
         .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 16, style: .continuous))

@@ -16,7 +16,14 @@ This folder holds distribution metadata for `PowerLens`.
 ## Release Packaging
 
 Run `script/package_release.sh` to create release artifacts under `release/`.
-By default it builds an ad-hoc signed local release and creates:
+PowerLens release artifacts support Apple silicon Macs (M1 or later) running
+macOS 26 or later. The packaging script builds the PowerLens executable
+explicitly for arm64, then rejects the bundle unless that executable contains
+exactly the arm64 architecture. Distribution builds use SwiftPM's `native`
+build system by default. `POWERLENS_BUILD_SYSTEM=swiftbuild` is reserved for
+the separate CI compatibility build and does not change the release workflow's
+explicit native setting. By default the script builds an ad-hoc signed local
+release and creates:
 
 - `PowerLens-<version>.app.zip`
 - `PowerLens-<version>.dmg`
@@ -47,6 +54,9 @@ set +a
   checksum generation when local environment variables are provided
 - release packaging embeds Sparkle and can optionally generate an appcast when
   local Sparkle signing material is available
+- PowerLens's main executable is arm64-only; the embedded Sparkle framework may
+  remain universal because only the app executable defines PowerLens's supported
+  architecture
 - signing certificates and notarization credentials are intentionally local and
   are not stored in the repository
 
@@ -121,27 +131,85 @@ PowerLens has two workflow layers:
 
 - `.github/workflows/ci.yml`
   - runs on pull requests and pushes to `main` and `develop`
-  - runs `swift test`
+  - keeps the native macOS 26 release check and adds SwiftBuild checks on both
+    macOS 26 and the Xcode 27 preview image
   - validates scripts, metadata, and appcast XML
-  - performs an ad-hoc package smoke build without notarization
+  - performs an ad-hoc package smoke build without notarization and verifies
+    that the PowerLens executable is exactly arm64
 - `.github/workflows/release.yml`
-  - runs on `v*` tags, `develop` pushes, or manual dispatch
-  - builds, signs, notarizes, and packages the app
-  - creates or updates a GitHub Release
-  - regenerates the stable or alpha Sparkle appcast
-  - deploys the appcast site through GitHub Pages Actions
+  - runs on pushes to `develop`, `v*` tags, or an explicit manual dispatch
+  - waits for approval on the protected `release` environment, then builds on
+    an Apple silicon runner
+  - atomically reserves run-owned tags for automatic alphas before building
+    and for manual dispatches immediately before publication
+  - verifies that explicit tag-triggered releases use the exact tagged commit
+  - builds an arm64 executable explicitly with SwiftPM's native build system,
+    then signs, notarizes, and packages the app
+  - verifies that the packaged PowerLens executable is exactly arm64
+  - serializes GitHub Release and GitHub Pages mutations in one publication
+    queue
+  - creates or safely resumes the run-owned GitHub Release
+  - regenerates the stable or alpha Sparkle appcast while preserving the other
+    channel
+  - deploys the complete appcast site through GitHub Pages Actions
+
+Merging a reviewed change into `develop` automatically schedules a numbered
+alpha release. A running automatic alpha is allowed to finish; if two or more
+new `develop` pushes arrive while it is running or awaiting approval, GitHub
+Actions intentionally keeps only the newest pending commit. Intermediate
+pending commits therefore do not each produce an alpha. Explicit tag and
+manual-dispatch releases use independent request groups and are not coalesced.
+
+After approval, an automatic alpha reserves its annotated remote tag before
+building because that tag determines the generated version. An explicit tag
+release verifies the existing tag and tagged commit. A manual dispatch already
+has an explicit version, so it validates the release notes and builds without
+reserving a tag. Inside the durable publication queue, it first preserves the
+live feeds and validates appcast progression, then reserves its annotated tag
+immediately before creating the GitHub Release. This avoids leaving a tag
+behind when a manual version cannot advance the current feed.
+
+Each reservation records the GitHub Actions run ID. If a later publication
+stage fails, a rerun of that workflow recovers the same reservation, while a
+different run cannot reuse it. All GitHub Release and Pages mutations pass
+through the same global publication queue.
+
+The alpha base version comes from the optional
+`POWERLENS_ALPHA_BASE_VERSION` repository variable or, when it is unset, the
+next patch after the latest stable tag. The alpha suffix starts at `1` for a new
+base version and then increments from the highest existing matching alpha tag.
+The configured base must be newer than the latest stable tag. Reserved or
+published tags for a base version are never renumbered, and the base cannot be
+moved behind a newer alpha series that already exists.
 
 Stable releases should normally be published by pushing a version tag such as
-`v0.9.1`, or by manually dispatching the release workflow. Develop branch pushes
-publish alpha prereleases with the GitHub Actions run number, for example
-`0.9.2-alpha.123`. By default, the alpha base version is inferred from the
-latest stable tag by bumping the patch version. Set the optional repository
-variable `POWERLENS_ALPHA_BASE_VERSION` only when the next alpha line should
-target a minor or major version such as `0.10.0` or `1.0.0`.
+`v0.9.3`. Maintainers can also publish an explicit alpha tag such as
+`v0.9.3-alpha.1`, or manually dispatch the workflow with a matching version and
+channel. Branch pushes other than `develop` do not publish a release. If a
+release fails after reserving a tag, rerun the original workflow so its run ID
+can safely resume that reservation. A manual version that would move its
+appcast display version or Sparkle build number backward fails before reserving
+its tag.
+
+Release notes are generated from the matching version section in
+`CHANGELOG.md`. Stable versions require an exact, non-empty version section.
+Alpha versions fall back to the base-version section and then to `[Unreleased]`;
+an automatic `develop` alpha uses a short generic preview note when all three
+sections are empty. Explicit tag and manual-dispatch releases remain strict and
+fail instead of publishing an empty note.
 
 Set the repository's GitHub Pages source to `GitHub Actions`. The release
-workflow publishes the `docs/` site as a Pages artifact after preserving the
-currently published feed for the other update channel.
+workflow publishes the `docs/` site as a Pages artifact after preserving both
+currently published feeds. A missing feed may use the repository placeholder;
+transient HTTP or invalid-XML responses stop the Pages deployment instead of
+silently replacing the other channel. A release also stops before publication
+if it would move the target channel's display version backward. A new release's
+machine-readable Sparkle build number must exceed the highest build already
+published in either the stable or alpha feed, because users can switch channels
+and Sparkle compares `CFBundleVersion`/`sparkle:version` when deciding whether
+an update is newer. An exact rerun of an item already present in its target feed
+is allowed. Before editing an existing release, the workflow verifies the
+remote tag commit and the release's recorded run ID and source SHA.
 
 The release workflow requires these GitHub Secrets:
 
@@ -179,11 +247,7 @@ to 96 bytes and are still accepted by the release tooling.
 
 ## Release Checklist
 
-1. build a release with `POWERLENS_SIGN_IDENTITY` and
-   `POWERLENS_NOTARY_PROFILE`
-2. validate the resulting app bundle with `script/verify_distribution.sh`
-3. install the DMG on a clean macOS user account and confirm first-launch
-   Gatekeeper behavior
-4. generate and publish the Sparkle appcast when the release should be visible
-   to in-app update checks
-5. publish the DMG, ZIP, checksum file, and release notes together
+Follow [the complete release checklist](../docs/RELEASE_CHECKLIST.md), including
+macOS 26 launch validation, telemetry fallbacks, signing, notarization, Sparkle
+update smoke testing, protected-environment approval, and post-publication
+asset/feed verification.

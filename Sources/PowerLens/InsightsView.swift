@@ -25,6 +25,24 @@ struct InsightsView: View {
                 exportMenu
             }
 
+            if store.historyHealth == .degraded {
+                Label(
+                    L10n.text("history.status.degraded.detail"),
+                    systemImage: "externaldrive.badge.exclamationmark"
+                )
+                .font(.callout)
+                .foregroundStyle(.red)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    .red.opacity(0.08),
+                    in: RoundedRectangle(
+                        cornerRadius: 12,
+                        style: .continuous
+                    )
+                )
+            }
+
             if let data {
                 if data.hasSeries {
                     summaryGrid(data.summary)
@@ -509,11 +527,9 @@ enum InsightsCharts {
         }
     }
 
-    /// A selection rule line with a value callout. On macOS 14+ the callout uses
-    /// overflow resolution so reaching the chart edges slides the callout inward
-    /// instead of resizing the plot area (which would make the graph appear to
-    /// shift). Selection only occurs on macOS 14+, so the macOS 13 branch is a
-    /// non-overflow fallback for compilation.
+    /// A selection rule line with a value callout. When available, overflow
+    /// resolution slides the callout inward at the chart edges instead of
+    /// resizing the plot area and making the graph appear to shift.
     @ChartContentBuilder
     static func selectionRule(timeLabel: String, date: Date, rows: [(String, String)]) -> some ChartContent {
         if #available(macOS 14.0, *) {
@@ -567,8 +583,7 @@ private struct InsightsCallout: View {
     }
 }
 
-/// Applies interactive X-axis selection on macOS 14+, and is a no-op on macOS 13
-/// where the chart simply renders without scrubbing.
+/// Applies interactive X-axis selection when the chart API is available.
 private struct ChartXSelectionModifier: ViewModifier {
     @Binding var selection: Date?
 

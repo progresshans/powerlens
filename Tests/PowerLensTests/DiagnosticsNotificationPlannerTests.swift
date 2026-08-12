@@ -22,6 +22,54 @@ struct DiagnosticsNotificationPlannerTests {
     }
 
     @Test
+    func managedChargingInfoIsNotNotifiedAlongsideAWarning() {
+        let planner = DiagnosticsNotificationPlanner()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let managedChargingTitle = L10n.tr("status.manualLimit.active", "87%")
+        let warningTitle = L10n.text(
+            "diag.powerDeliveryShortfall.title"
+        )
+
+        let result = planner.plan(
+            diagnostics: [
+                item(managedChargingTitle, severity: .info),
+                item(warningTitle),
+            ],
+            lastNotified: [:],
+            now: now
+        )
+
+        #expect(result.notifications.map(\.title) == [warningTitle])
+        #expect(result.lastNotified.keys.contains(warningTitle))
+        #expect(!result.lastNotified.keys.contains(managedChargingTitle))
+    }
+
+    @Test
+    func managedChargingInfoDoesNotDisplacePowerWarnings() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 70,
+            batteryCurrentA: -0.5,
+            batteryPowerW: 6,
+            adapterInputPowerW: 20,
+            systemLoadW: 28,
+            adapterMaxPowerW: 100,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+
+        #expect(
+            snapshot.diagnostics.map(\.severity)
+                == [.warning, .info]
+        )
+
+        #expect(
+            snapshot.diagnostics.prefix(1).map(\.title)
+                == [
+                    L10n.text("diag.powerDeliveryShortfall.title"),
+                ]
+        )
+    }
+
+    @Test
     func warningIsNotifiedThenDebounced() {
         let planner = DiagnosticsNotificationPlanner()
         let now = Date(timeIntervalSince1970: 1_000_000)

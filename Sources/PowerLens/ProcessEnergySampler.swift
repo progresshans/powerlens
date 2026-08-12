@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OSLog
 
 /// A single app's recent energy impact, used for the "high energy usage"
 /// readout. `energyImpact` approximates Activity Monitor's energy-impact score
@@ -14,12 +15,27 @@ struct AppEnergyUsage: Identifiable, Equatable, Sendable {
     var id: String { appPath }
 }
 
+protocol ProcessEnergySampling: Sendable {
+    func sample(now: Date) async -> [AppEnergyUsage]
+}
+
+struct ProcessEnergyProcessSample: Sendable {
+    let pid: pid_t
+    let cpuNanoseconds: UInt64
+    let idleWakeups: UInt64
+    let appPath: String?
+}
+
 /// Samples per-process CPU time and aggregates it per `.app` bundle so that
 /// multi-process apps (browsers and their renderers, for example) are counted
 /// together. CPU usage is the dominant, publicly measurable proxy for energy
 /// impact; true per-app wattage is not exposed by a public macOS API.
-@MainActor
-final class ProcessEnergySampler {
+actor ProcessEnergySampler: ProcessEnergySampling {
+    private static let performanceLog = OSLog(
+        subsystem: "com.progresshans.powerlens",
+        category: "ProcessEnergy"
+    )
+
     private struct Sample {
         let cpuNanoseconds: UInt64
         let idleWakeups: UInt64
@@ -29,28 +45,80 @@ final class ProcessEnergySampler {
     /// Monitor's energy impact. CPU load (percent of one core) is the dominant
     /// term; wakeups add a secondary cost so chatty, low-CPU apps still register.
     private let idleWakeupWeight = 0.45
+    private let minimumSampleInterval: TimeInterval
+    private let limit: Int
+    private let minimumImpact: Double
+    private let snapshotProvider: @Sendable () -> [ProcessEnergyProcessSample]
 
     private var previous: [pid_t: Sample] = [:]
     private var previousSampleTime: Date?
+    private var lastResult: [AppEnergyUsage] = []
 
-    func sample(limit: Int = 3, minimumImpact: Double = 0.1, now: Date = .now) -> [AppEnergyUsage] {
-        let pids = Self.runningPIDs()
+    init(
+        minimumSampleInterval: TimeInterval = 10,
+        limit: Int = 3,
+        minimumImpact: Double = 0.1
+    ) {
+        self.minimumSampleInterval = minimumSampleInterval
+        self.limit = limit
+        self.minimumImpact = minimumImpact
+        self.snapshotProvider = Self.captureProcessSnapshot
+    }
+
+    init(
+        minimumSampleInterval: TimeInterval,
+        limit: Int = 3,
+        minimumImpact: Double = 0.1,
+        snapshotProvider: @escaping @Sendable () -> [ProcessEnergyProcessSample]
+    ) {
+        self.minimumSampleInterval = minimumSampleInterval
+        self.limit = limit
+        self.minimumImpact = minimumImpact
+        self.snapshotProvider = snapshotProvider
+    }
+
+    func sample(now: Date = .now) async -> [AppEnergyUsage] {
+        if let previousSampleTime {
+            let elapsed = now.timeIntervalSince(previousSampleTime)
+            if elapsed >= 0, elapsed < minimumSampleInterval {
+                return lastResult
+            }
+        }
+
+        let signpostID = OSSignpostID(log: Self.performanceLog)
+        os_signpost(
+            .begin,
+            log: Self.performanceLog,
+            name: "Process Energy Sample",
+            signpostID: signpostID
+        )
+        defer {
+            os_signpost(
+                .end,
+                log: Self.performanceLog,
+                name: "Process Energy Sample",
+                signpostID: signpostID
+            )
+        }
+
+        let processSamples = snapshotProvider()
         let wallSeconds = previousSampleTime.map { now.timeIntervalSince($0) } ?? 0
 
         var current: [pid_t: Sample] = [:]
-        current.reserveCapacity(pids.count)
+        current.reserveCapacity(processSamples.count)
         var perApp: [String: (name: String, cpuDelta: UInt64, wakeupDelta: UInt64)] = [:]
 
-        for pid in pids {
-            guard let sample = Self.metrics(pid: pid) else {
-                continue
-            }
-            current[pid] = sample
+        for process in processSamples {
+            let sample = Sample(
+                cpuNanoseconds: process.cpuNanoseconds,
+                idleWakeups: process.idleWakeups
+            )
+            current[process.pid] = sample
 
             guard wallSeconds > 0,
-                  let previousSample = previous[pid],
+                  let previousSample = previous[process.pid],
                   sample.cpuNanoseconds >= previousSample.cpuNanoseconds,
-                  let appPath = Self.appBundlePath(pid: pid) else {
+                  let appPath = process.appPath else {
                 continue
             }
 
@@ -70,12 +138,13 @@ final class ProcessEnergySampler {
         previousSampleTime = now
 
         guard wallSeconds > 0 else {
+            lastResult = []
             return []
         }
 
         let intervalNanoseconds = wallSeconds * 1_000_000_000
 
-        return perApp
+        lastResult = perApp
             .map { path, value in
                 let cpuPercent = Double(value.cpuDelta) / intervalNanoseconds * 100
                 let wakeupsPerSecond = Double(value.wakeupDelta) / wallSeconds
@@ -89,9 +158,24 @@ final class ProcessEnergySampler {
             .sorted { $0.energyImpact > $1.energyImpact }
             .prefix(limit)
             .map { $0 }
+        return lastResult
     }
 
     // MARK: - System access
+
+    private static func captureProcessSnapshot() -> [ProcessEnergyProcessSample] {
+        runningPIDs().compactMap { pid in
+            guard let sample = metrics(pid: pid) else {
+                return nil
+            }
+            return ProcessEnergyProcessSample(
+                pid: pid,
+                cpuNanoseconds: sample.cpuNanoseconds,
+                idleWakeups: sample.idleWakeups,
+                appPath: appBundlePath(pid: pid)
+            )
+        }
+    }
 
     private static func runningPIDs() -> [pid_t] {
         let suggested = proc_listallpids(nil, 0)
@@ -135,7 +219,10 @@ final class ProcessEnergySampler {
             return nil
         }
 
-        let path = String(cString: buffer)
+        let bytes = buffer.prefix(Int(length)).map {
+            UInt8(bitPattern: $0)
+        }
+        let path = String(decoding: bytes, as: UTF8.self)
         guard let range = path.range(of: ".app/") else {
             return nil
         }

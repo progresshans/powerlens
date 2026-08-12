@@ -41,11 +41,13 @@ enum PowerLensResources {
     private static func buildDirectoryCandidates() -> [URL] {
         let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let buildRoot = workingDirectory.appendingPathComponent(".build", isDirectory: true)
+        return buildDirectoryCandidates(buildRoot: buildRoot)
+    }
+
+    static func buildDirectoryCandidates(buildRoot: URL) -> [URL] {
         var candidates: [URL] = []
 
-        for configuration in ["debug", "release"] {
-            append(buildRoot.appendingPathComponent(configuration, isDirectory: true).appendingPathComponent(bundleName), to: &candidates)
-        }
+        appendBuildProductCandidates(below: buildRoot, to: &candidates)
 
         guard let platformDirectories = try? FileManager.default.contentsOfDirectory(
             at: buildRoot,
@@ -61,12 +63,26 @@ enum PowerLensResources {
                 continue
             }
 
-            for configuration in ["debug", "release"] {
-                append(platformDirectory.appendingPathComponent(configuration, isDirectory: true).appendingPathComponent(bundleName), to: &candidates)
-            }
+            appendBuildProductCandidates(below: platformDirectory, to: &candidates)
         }
 
         return candidates
+    }
+
+    private static func appendBuildProductCandidates(below directory: URL, to candidates: inout [URL]) {
+        // Native SwiftPM uses lower-case configuration directories, either
+        // directly below .build or below a target-triple directory.
+        for configuration in ["debug", "release"] {
+            append(directory.appendingPathComponent(configuration, isDirectory: true).appendingPathComponent(bundleName), to: &candidates)
+        }
+
+        // SwiftBuild uses Xcode's Products/{Debug,Release} layout. The first
+        // directory below .build is normally "out", but discover it rather
+        // than depending on that implementation-specific name.
+        let productsDirectory = directory.appendingPathComponent("Products", isDirectory: true)
+        for configuration in ["Debug", "Release"] {
+            append(productsDirectory.appendingPathComponent(configuration, isDirectory: true).appendingPathComponent(bundleName), to: &candidates)
+        }
     }
 
     private static func append(_ url: URL?, to candidates: inout [URL]) {

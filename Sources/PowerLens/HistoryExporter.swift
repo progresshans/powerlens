@@ -39,6 +39,7 @@ enum HistoryExporter {
         "full_charge_capacity_mah",
         "thermal_state",
         "frontmost_app",
+        "battery_power_source",
     ]
 
     static func csv(_ snapshots: [TelemetrySnapshot]) -> String {
@@ -63,6 +64,7 @@ enum HistoryExporter {
                 snapshot.fullChargeCapacityMah.map(String.init) ?? "",
                 escape(snapshot.thermalState),
                 escape(snapshot.frontmostAppName ?? ""),
+                snapshot.batteryPowerSource?.rawValue ?? "",
             ].joined(separator: ",")
         }
 
@@ -73,7 +75,9 @@ enum HistoryExporter {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(snapshots)
+        return try encoder.encode(
+            snapshots.map { $0.withChargingPolicyStatus(nil) }
+        )
     }
 
     static func data(for snapshots: [TelemetrySnapshot], format: HistoryExportFormat) throws -> Data {

@@ -28,7 +28,8 @@ final class MenuBarStatusItemController: NSObject {
     func update(
         snapshot: TelemetrySnapshot?,
         symbolName: String,
-        batteryBadge: MenuBarStatusItemRenderer.Badge
+        batteryBadge: MenuBarStatusItemRenderer.Badge,
+        statusHeadline: String?
     ) {
         guard let button else {
             return
@@ -43,7 +44,7 @@ final class MenuBarStatusItemController: NSObject {
         )
         button.imagePosition = imagePosition(for: style)
         button.attributedTitle = menuBarTitle(for: style, snapshot: snapshot)
-        button.toolTip = snapshot?.statusHeadline ?? "PowerLens"
+        button.toolTip = statusHeadline ?? "PowerLens"
     }
 
     @objc

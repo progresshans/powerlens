@@ -5,17 +5,26 @@ import Testing
 struct MenuBarStatusItemRendererTests {
     @Test
     func assetSelectionRoundsBatteryLevelToNearestFivePercent() {
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 78, badge: .none) == "default/battery.80percent")
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 76, badge: .none) == "default/battery.75percent")
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: -10, badge: .none) == "default/battery.0percent")
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 102, badge: .none) == "default/battery.100percent")
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 78, badge: .none) == "battery.80percent")
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 76, badge: .none) == "battery.75percent")
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: -10, badge: .none) == "battery.0percent")
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 102, badge: .none) == "battery.100percent")
     }
 
     @Test
-    func assetSelectionUsesBadgeSpecificFoldersAndNames() {
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 80, badge: .none) == "default/battery.80percent")
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 80, badge: .chargingBolt) == "bolt/battery.80percent.bolt")
-        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 80, badge: .pluggedHolding) == "powerplug/battery.80percent.powerplug")
+    func cacheAndFallbackShareOneCanonicalFivePercentLevel() {
+        #expect(MenuBarStatusItemRenderer.canonicalAssetPercent(level: nil) == 0)
+        #expect(MenuBarStatusItemRenderer.canonicalAssetPercent(level: 63) == 65)
+        #expect(MenuBarStatusItemRenderer.canonicalAssetPercent(level: 65) == 65)
+        #expect(MenuBarStatusItemRenderer.canonicalAssetPercent(level: 67) == 65)
+        #expect(MenuBarStatusItemRenderer.canonicalAssetPercent(level: 105) == 100)
+    }
+
+    @Test
+    func everyBadgeComposesOntoTheSameBatteryAsset() {
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 80, badge: .none) == "battery.80percent")
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 80, badge: .chargingBolt) == "battery.80percent")
+        #expect(MenuBarStatusItemRenderer.assetIdentifier(level: 80, badge: .pluggedHolding) == "battery.80percent")
     }
 
     @Test

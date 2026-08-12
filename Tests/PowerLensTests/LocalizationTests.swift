@@ -1,7 +1,121 @@
+import Foundation
 import Testing
 @testable import PowerLens
 
 struct LocalizationTests {
+    @Test
+    func managedChargingAndFlowCopyExistsInEnglishAndKorean() {
+        let keys = [
+            "status.manualLimit.charging",
+            "status.manualLimit.chargingBeyond",
+            "status.manualLimit.above",
+            "status.manualLimit.reducing",
+            "status.manualLimit.holding",
+            "status.manualLimit.active",
+            "status.optimizedCharging.active",
+            "status.optimizedCharging.holding",
+            "status.subheadline.manualLimit.charging",
+            "status.subheadline.manualLimit.chargingBeyond",
+            "status.subheadline.manualLimit.above",
+            "status.subheadline.manualLimit.reducing",
+            "status.subheadline.manualLimit.holding",
+            "status.subheadline.manualLimit.active",
+            "status.subheadline.optimizedCharging.active",
+            "status.subheadline.optimizedCharging.holding",
+            "status.subheadline.optimizedCharging.activeFlowUnknown",
+            "status.subheadline.manualLimit.transientAssist",
+            "status.subheadline.optimizedCharging.transientAssist",
+            "diag.manualLimit.chargingBeyond.message",
+            "diag.manualLimit.above.message",
+            "ui.flow.unknown",
+            "ui.flow.independentReadingsNotice",
+            "telemetry.status.waiting",
+            "telemetry.status.delayed",
+            "telemetry.status.unavailable",
+            "telemetry.delayed",
+            "telemetry.unavailable",
+            "telemetry.delayed.detail",
+            "settings.pane.data",
+            "settings.pane.updates",
+            "settings.section.menuBarAndDock",
+            "settings.section.system",
+            "settings.section.telemetry",
+            "settings.section.history",
+            "settings.section.telemetry.footer",
+            "settings.row.status",
+            "history.status.checking",
+            "history.status.available",
+            "history.status.degraded",
+            "history.status.checking.detail",
+            "history.status.available.detail",
+            "history.status.degraded.detail",
+            "history.longTerm.off.detail",
+            "history.longTerm.off.confirm.title",
+            "history.longTerm.off.confirm.message",
+            "history.longTerm.off.confirm.action",
+            "common.cancel",
+        ]
+
+        for language in [AppLanguage.english, .korean] {
+            for key in keys {
+                let localized = language.bundle.localizedString(
+                    forKey: key,
+                    value: nil,
+                    table: "Localizable"
+                )
+
+                #expect(!localized.isEmpty)
+                #expect(localized != key)
+            }
+        }
+    }
+
+    @Test
+    func chargingBeyondLimitCopyDoesNotClaimAnUnobservableDestination() {
+        let keys = [
+            "status.manualLimit.chargingBeyond",
+            "status.subheadline.manualLimit.chargingBeyond",
+            "diag.manualLimit.chargingBeyond.message",
+            "diag.manualLimit.above.message",
+        ]
+
+        for language in [AppLanguage.english, .korean] {
+            for key in keys {
+                let localized = language.bundle.localizedString(
+                    forKey: key,
+                    value: nil,
+                    table: "Localizable"
+                )
+
+                #expect(!localized.contains("100%"))
+            }
+        }
+    }
+
+    @Test
+    func longTermHistoryDiscardConfirmationNamesTheRetainedWindow() {
+        for language in [AppLanguage.english, .korean] {
+            let format = language.bundle.localizedString(
+                forKey: "history.longTerm.off.confirm.message",
+                value: nil,
+                table: "Localizable"
+            )
+            let windowTitle = language.bundle.localizedString(
+                forKey: "history.window.days90",
+                value: nil,
+                table: "Localizable"
+            )
+            let message = String(
+                format: format,
+                locale: language.locale,
+                arguments: [windowTitle]
+            )
+
+            #expect(message.contains(windowTitle))
+            #expect(!message.contains("%@"))
+        }
+    }
+
     @Test
     func batteryHealthSummaryPrefersComputedCapacityWhenRawStatusConflicts() {
         let snapshot = sampleSnapshot(

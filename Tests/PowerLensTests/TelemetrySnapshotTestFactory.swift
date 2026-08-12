@@ -2,6 +2,7 @@ import Foundation
 @testable import PowerLens
 
 func makeTelemetrySnapshot(
+    timestamp: Date = Date(timeIntervalSince1970: 1_775_000_000),
     batteryLevel: Double? = 80,
     powerSource: PowerSourceKind = .ac,
     isCharging: Bool = false,
@@ -9,14 +10,18 @@ func makeTelemetrySnapshot(
     externalConnected: Bool = true,
     timeToEmptyMinutes: Int? = nil,
     timeToFullMinutes: Int? = nil,
+    batteryVoltageV: Double? = 12.25,
     batteryCurrentA: Double? = 0,
     batteryPowerW: Double? = 0,
+    batteryPowerSource: BatteryPowerSource? = nil,
     adapterInputPowerW: Double? = 11,
     systemLoadW: Double? = 10,
-    adapterMaxPowerW: Double? = 97
+    powerMeasurementSetSource: PowerMeasurementSetSource? = nil,
+    adapterMaxPowerW: Double? = 97,
+    chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
-        timestamp: Date(timeIntervalSince1970: 1_775_000_000),
+        timestamp: timestamp,
         batteryLevel: batteryLevel,
         powerSource: powerSource,
         isCharging: isCharging,
@@ -32,18 +37,21 @@ func makeTelemetrySnapshot(
         batteryHealthText: "Normal",
         batteryHealthCondition: nil,
         batteryTemperatureC: 30.2,
-        batteryVoltageV: 12.25,
+        batteryVoltageV: batteryVoltageV,
         batteryCurrentA: batteryCurrentA,
         batteryPowerW: batteryPowerW,
+        batteryPowerSource: batteryPowerSource,
         adapterDescription: "PD Charger",
         adapterMaxPowerW: adapterMaxPowerW,
         adapterInputPowerW: adapterInputPowerW,
         adapterVoltageV: 19.5,
         adapterCurrentA: 0.6,
         systemLoadW: systemLoadW,
+        powerMeasurementSetSource: powerMeasurementSetSource,
         lowPowerModeEnabled: false,
         thermalState: "Nominal",
         serialNumber: "SERIAL",
-        frontmostAppName: "PowerLens"
+        frontmostAppName: "PowerLens",
+        chargingPolicyStatus: chargingPolicyStatus
     )
 }

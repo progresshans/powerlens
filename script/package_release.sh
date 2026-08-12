@@ -19,7 +19,7 @@ SOURCE_INFO_PLIST="$POWERLENS_SOURCE_INFO_PLIST"
 ENTITLEMENTS="$POWERLENS_ENTITLEMENTS"
 SPARKLE_GENERATE_APPCAST_TOOL="$POWERLENS_SPARKLE_GENERATE_APPCAST_TOOL"
 
-DEFAULT_VERSION="0.9.2"
+DEFAULT_VERSION="0.9.3"
 DEFAULT_BUILD="$(powerlens_default_build_number)"
 VERSION="${POWERLENS_VERSION:-$DEFAULT_VERSION}"
 BUILD_NUMBER="${POWERLENS_BUILD:-$DEFAULT_BUILD}"
@@ -32,6 +32,7 @@ NOTARY_PROFILE="${POWERLENS_NOTARY_PROFILE:-}"
 NOTARY_KEYCHAIN="${POWERLENS_NOTARY_KEYCHAIN:-}"
 SKIP_NOTARIZATION="${POWERLENS_SKIP_NOTARIZATION:-0}"
 CLEAN_BUILD="${POWERLENS_CLEAN_BUILD:-1}"
+BUILD_SYSTEM="${POWERLENS_BUILD_SYSTEM:-native}"
 SPARKLE_FEED_URL="${POWERLENS_SPARKLE_FEED_URL:-https://progresshans.github.io/powerlens/appcast.xml}"
 SPARKLE_ALPHA_FEED_URL="${POWERLENS_SPARKLE_ALPHA_FEED_URL:-https://progresshans.github.io/powerlens/appcast-alpha.xml}"
 SPARKLE_PUBLIC_ED_KEY="${POWERLENS_SPARKLE_PUBLIC_ED_KEY:-}"
@@ -43,6 +44,16 @@ SPARKLE_RELEASE_NOTES_URL_PREFIX="${POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX:-
 SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
 SPARKLE_PRIVATE_ED_KEY="${POWERLENS_SPARKLE_PRIVATE_ED_KEY:-}"
 SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
+
+case "$BUILD_SYSTEM" in
+  native|swiftbuild)
+    ;;
+  *)
+    echo "unsupported SwiftPM build system: $BUILD_SYSTEM" >&2
+    echo "expected native or swiftbuild" >&2
+    exit 2
+    ;;
+esac
 
 normalize_base64_key() {
   local key_name="$1"
@@ -121,7 +132,7 @@ SWIFT
 
 validate_sparkle_key_pair() {
   if [[ -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
-    return
+    return 0
   fi
 
   local private_key=""
@@ -131,7 +142,7 @@ validate_sparkle_key_pair() {
     powerlens_require_file "$SPARKLE_ED_KEY_FILE"
     private_key="$(< "$SPARKLE_ED_KEY_FILE")"
   else
-    return
+    return 0
   fi
 
   local derived_public_key
@@ -197,15 +208,23 @@ build_app_bundle() {
     swift package clean
   fi
 
-  swift build -c release
+  local build_args=(
+    --build-system "$BUILD_SYSTEM"
+    -c release
+    --arch "$POWERLENS_BUILD_ARCH"
+  )
+
+  echo "swiftpm: building release with $BUILD_SYSTEM"
+  swift build "${build_args[@]}"
 
   local build_dir
   local build_binary
-  build_dir="$(swift build -c release --show-bin-path)"
+  build_dir="$(swift build "${build_args[@]}" --show-bin-path)"
   build_binary="$build_dir/$APP_NAME"
 
   cp "$build_binary" "$APP_BINARY"
   chmod +x "$APP_BINARY"
+  powerlens_require_exact_executable_architecture "$APP_BINARY" "$POWERLENS_BUILD_ARCH"
   powerlens_copy_sparkle_framework "$APP_FRAMEWORKS" "$APP_BINARY"
   powerlens_copy_resource_bundle "$build_dir" "$APP_RESOURCES"
 

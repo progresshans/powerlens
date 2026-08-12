@@ -7,7 +7,8 @@
 
   <p>
     <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue"></a>
-    <img alt="macOS target: 13+" src="https://img.shields.io/badge/macOS%20target-13%2B-black">
+    <img alt="macOS target: 26+" src="https://img.shields.io/badge/macOS%20target-26%2B-black">
+    <img alt="Architecture: Apple silicon" src="https://img.shields.io/badge/architecture-Apple%20silicon-black">
     <img alt="Tested on macOS 26" src="https://img.shields.io/badge/tested-macOS%2026-lightgrey">
     <img alt="Swift 6.2" src="https://img.shields.io/badge/Swift-6.2-orange">
   </p>
@@ -26,7 +27,7 @@ your Mac is connected to a charger, dock, display, or running on battery:
 
 - Is the adapter covering the system load, or is the battery helping?
 - Is the battery charging, holding, or discharging?
-- Is the negotiated charger power lower than expected?
+- Is external power persistently falling short of the current system load?
 - Which app is currently using the most energy?
 - Is the battery health, temperature, and cycle count still in a normal range?
 
@@ -62,7 +63,10 @@ work as a small utility first, with the Dock icon optional.
 The popover is the fast check: battery level, power-flow diagram, diagnostics,
 high-energy app, battery snapshot, and raw power details. The flow diagram
 distinguishes adapter-only power, battery-only power, battery assist, charging,
-and holding-current states.
+and holding-current states. When independently sampled sensors do not line up,
+the diagram keeps its additive layout and preserves the observed readings
+instead of forcing the totals to balance. It discloses the timing mismatch and
+marks values derived from other readings with `≈`.
 
 ### Dashboard
 
@@ -80,7 +84,7 @@ PowerLens watches for common power situations:
 | Battery assist | Battery supplements the adapter when load spikes. |
 | Charging | Input power splits between system load and battery charging. |
 | Holding current level | Adapter covers the system while the battery stays nearly still. |
-| Negotiated power looks low | Charger, cable, dock, or display path may be limiting throughput. |
+| Sustained external-power shortfall | External input remains below system load while the battery assists; PowerLens reports the observed flow without assigning a cause to the adapter, cable, or dock. |
 
 ### Settings
 
@@ -100,16 +104,20 @@ Recent telemetry is stored locally in a SQLite history, so PowerLens can show
 trends and comparisons without sending your data anywhere. The Insights view
 offers selectable time ranges (24 hours, 7 days, 30 days, or all), summary
 statistics, interactive charts you can scrub, and a long-term battery health and
-charge-cycle trend. Old samples are pruned automatically so the database stays
-bounded, and you can export the history as CSV or JSON.
+charge-cycle trend. You choose how long minute-level samples remain. Older
+samples can be rolled up hourly or daily; choosing **Don't keep** also removes
+older rollups and battery-health and cycle history outside the full-detail
+window, plus app, adapter, and battery metadata that retained samples no longer
+reference. PowerLens asks for confirmation before applying this irreversible
+change.
+Hourly or daily rollups retain battery-health states for the long-term health
+trend. You can export retained raw history as CSV or JSON.
 
 ## Requirements
 
-- Build target: macOS 13.0 or later.
+- A Mac with Apple silicon (M1 or later). Intel Macs are not supported.
+- macOS 26.0 or later.
 - Tested environment: macOS 26.
-- Release validation currently focuses on macOS 26. PowerLens may run on
-  earlier target-supported versions, but behavior can vary by macOS release and
-  hardware model.
 - A battery-equipped Mac for battery telemetry.
 - Xcode command line tools or Xcode for building from source.
 
@@ -145,17 +153,34 @@ To delete local history and preferences as well, follow the steps in
 ## Build From Source
 
 ```bash
-swift build
-swift test
+swift build --build-system native --arch arm64
+./script/test_swiftpm.sh
 ./script/build_and_run.sh
 ```
 
 `./script/build_and_run.sh` builds a local app bundle at `dist/PowerLens.app`
-and launches it. Pass `debug`, `logs`, `telemetry`, or `verify` for the helper
-modes documented in the script.
+and launches it. It must run from a native Apple silicon shell; Rosetta and
+Intel hosts are rejected because PowerLens app bundles are arm64-only. Pass
+`debug`, `logs`, `telemetry`, or `verify` for the helper modes documented in
+the script.
+
+With Swift 6.3 or later, exercise SwiftBuild explicitly, matching the
+compatibility path in CI, by running
+`POWERLENS_BUILD_SYSTEM=swiftbuild ./script/test_swiftpm.sh`.
 
 Release packaging notes for maintainers live in
 [Packaging/README.md](Packaging/README.md).
+
+## Contributing and Security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+Ordinary changes target `develop`; maintainers promote reviewed releases from
+`develop` to `main` before creating a version tag.
+
+Report suspected vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/progresshans/powerlens/security/advisories/new)
+instead of opening a public issue. The response process is documented in
+[SECURITY.md](SECURITY.md).
 
 ## Privacy
 

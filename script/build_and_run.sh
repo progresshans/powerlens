@@ -16,7 +16,7 @@ APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 SOURCE_INFO_PLIST="$POWERLENS_SOURCE_INFO_PLIST"
-DEFAULT_VERSION="0.9.2"
+DEFAULT_VERSION="0.9.3"
 DEFAULT_BUILD="$(powerlens_default_build_number)"
 VERSION="${POWERLENS_VERSION:-$DEFAULT_VERSION}"
 BUILD_NUMBER="${POWERLENS_BUILD:-$DEFAULT_BUILD}"
@@ -38,17 +38,18 @@ sign_bundle_for_local_run() {
 
 build_bundle() {
   cd "$ROOT_DIR"
-  swift build
+  swift build --arch "$POWERLENS_BUILD_ARCH"
 
   local build_dir
   local build_binary
-  build_dir="$(swift build --show-bin-path)"
+  build_dir="$(swift build --arch "$POWERLENS_BUILD_ARCH" --show-bin-path)"
   build_binary="$build_dir/$APP_NAME"
 
   rm -rf "$APP_BUNDLE"
   mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
   cp "$build_binary" "$APP_BINARY"
   chmod +x "$APP_BINARY"
+  powerlens_require_exact_executable_architecture "$APP_BINARY" "$POWERLENS_BUILD_ARCH"
   powerlens_copy_sparkle_framework "$APP_FRAMEWORKS" "$APP_BINARY"
   powerlens_copy_resource_bundle "$build_dir" "$APP_RESOURCES"
   cp "$SOURCE_INFO_PLIST" "$INFO_PLIST"
@@ -62,6 +63,7 @@ open_app() {
 }
 
 require_packaging_inputs
+powerlens_require_native_apple_silicon_host
 kill_running_app
 build_bundle
 sign_bundle_for_local_run

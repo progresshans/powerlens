@@ -14,10 +14,10 @@ actor HistoryStore: HistoryStoring {
         }
     }
 
-    func loadRecent(since cutoffDate: Date) async -> [TelemetrySnapshot] {
-        guard let db = openDatabase() else {
-            return []
-        }
+    func loadRecent(
+        since cutoffDate: Date
+    ) async throws -> [TelemetrySnapshot] {
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
@@ -54,7 +54,8 @@ actor HistoryStore: HistoryStoring {
             a.description,
             a.max_power_mw,
             ap.bundle_identifier,
-            ap.display_name
+            ap.display_name,
+            s.battery_power_source_code
         FROM telemetry_samples s
         LEFT JOIN batteries b ON b.battery_id = s.battery_id
         LEFT JOIN battery_states bs ON bs.battery_state_id = s.battery_state_id
@@ -64,10 +65,11 @@ actor HistoryStore: HistoryStoring {
         ORDER BY s.ts ASC
         """
 
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            return []
-        }
+        let statement = try SQLiteStatement.prepare(
+            sql,
+            using: db,
+            operation: "load recent history"
+        )
 
         defer {
             sqlite3_finalize(statement)
@@ -76,25 +78,34 @@ actor HistoryStore: HistoryStoring {
         sqlite3_bind_int64(statement, 1, sqlite3_int64(cutoffDate.timeIntervalSince1970.rounded()))
 
         var snapshots: [TelemetrySnapshot] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             if let snapshot = snapshot(from: statement) {
                 snapshots.append(snapshot)
             }
+            result = sqlite3_step(statement)
         }
+        try SQLiteStatement.requireDone(
+            result,
+            using: db,
+            operation: "load recent history"
+        )
 
         return snapshots
     }
 
-    func append(_ snapshot: TelemetrySnapshot) async {
-        guard let db = openDatabase() else {
-            return
-        }
+    func append(_ snapshot: TelemetrySnapshot) async throws {
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
         }
 
-        SQLiteStatement.execute("BEGIN IMMEDIATE TRANSACTION;", using: db)
+        try SQLiteStatement.execute(
+            "BEGIN IMMEDIATE TRANSACTION;",
+            using: db,
+            operation: "begin history append"
+        )
 
         let timestamp = Int64(snapshot.timestamp.timeIntervalSince1970.rounded())
         do {
@@ -113,61 +124,163 @@ actor HistoryStore: HistoryStoring {
                 using: db
             )
 
-            SQLiteStatement.execute("COMMIT;", using: db)
+            try SQLiteStatement.execute(
+                "COMMIT;",
+                using: db,
+                operation: "commit history append"
+            )
         } catch {
-            SQLiteStatement.execute("ROLLBACK;", using: db)
+            try? SQLiteStatement.execute(
+                "ROLLBACK;",
+                using: db,
+                operation: "roll back history append"
+            )
+            throw error
         }
     }
 
-    func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async {
-        guard let db = openDatabase() else {
-            return
-        }
+    func purge(
+        olderThan cutoffDate: Date,
+        rollupBucketSeconds: Int?
+    ) async throws {
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
         }
 
         let cutoff = Int64(cutoffDate.timeIntervalSince1970.rounded())
+        let retainsBatteryHealth = rollupBucketSeconds.map { $0 > 0 } ?? false
 
-        if let bucketSeconds = rollupBucketSeconds, bucketSeconds > 0 {
-            // Only roll up and delete buckets that are fully older than the cutoff
-            // so a bucket straddling the cutoff is never split across two runs.
-            let effectiveCutoff = (cutoff / Int64(bucketSeconds)) * Int64(bucketSeconds)
-            SQLiteStatement.execute("BEGIN IMMEDIATE TRANSACTION;", using: db)
-            do {
+        try SQLiteStatement.execute(
+            "BEGIN IMMEDIATE TRANSACTION;",
+            using: db,
+            operation: "begin history purge"
+        )
+        do {
+            if let bucketSeconds = rollupBucketSeconds, bucketSeconds > 0 {
+                // Only roll up and delete buckets that are fully older than the
+                // cutoff so a straddling bucket is never split across two runs.
+                let effectiveCutoff =
+                    (cutoff / Int64(bucketSeconds)) * Int64(bucketSeconds)
                 try rollUpSamples(before: effectiveCutoff, bucketSeconds: bucketSeconds, using: db)
                 try SQLiteStatement.executePrepared(
                     "DELETE FROM telemetry_samples WHERE ts < ?",
-                    using: db
+                    using: db,
+                    operation: "delete rolled-up samples"
                 ) { statement in
                     sqlite3_bind_int64(statement, 1, effectiveCutoff)
                 }
-                SQLiteStatement.execute("COMMIT;", using: db)
-            } catch {
-                SQLiteStatement.execute("ROLLBACK;", using: db)
+            } else {
+                // Long-term resolution is off: discard old samples without
+                // downsampling, including rollups from a previous setting.
+                try SQLiteStatement.executePrepared(
+                    "DELETE FROM telemetry_samples WHERE ts < ?",
+                    using: db,
+                    operation: "delete expired samples"
+                ) { statement in
+                    sqlite3_bind_int64(statement, 1, cutoff)
+                }
+                try SQLiteStatement.executePrepared(
+                    "DELETE FROM history_rollups WHERE bucket_start < ?",
+                    using: db,
+                    operation: "delete expired rollups"
+                ) { statement in
+                    sqlite3_bind_int64(statement, 1, cutoff)
+                }
             }
-        } else {
-            // Long-term resolution is off: discard old samples without downsampling,
-            // including any rollups retained from a previous resolution setting.
-            try? SQLiteStatement.executePrepared(
-                "DELETE FROM telemetry_samples WHERE ts < ?",
+
+            try purgeOrphanedReferences(
+                retainingBatteryHealth: retainsBatteryHealth,
                 using: db
-            ) { statement in
-                sqlite3_bind_int64(statement, 1, cutoff)
-            }
-            try? SQLiteStatement.executePrepared(
-                "DELETE FROM history_rollups WHERE bucket_start < ?",
-                using: db
-            ) { statement in
-                sqlite3_bind_int64(statement, 1, cutoff)
-            }
+            )
+            try SQLiteStatement.execute(
+                "COMMIT;",
+                using: db,
+                operation: "commit history purge"
+            )
+        } catch {
+            try? SQLiteStatement.execute(
+                "ROLLBACK;",
+                using: db,
+                operation: "roll back history purge"
+            )
+            throw error
         }
 
         // Reclaim freed pages when incremental auto-vacuum is enabled. This is a
         // no-op on databases created before auto-vacuum was enabled, and on
         // those the file simply stops growing rather than shrinking.
-        SQLiteStatement.execute("PRAGMA incremental_vacuum;", using: db)
+        try SQLiteStatement.execute(
+            "PRAGMA incremental_vacuum;",
+            using: db,
+            operation: "reclaim history pages"
+        )
+    }
+
+    private func purgeOrphanedReferences(
+        retainingBatteryHealth: Bool,
+        using db: OpaquePointer
+    ) throws {
+        try SQLiteStatement.execute(
+            """
+            DELETE FROM apps
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM telemetry_samples
+                WHERE telemetry_samples.app_id = apps.app_id
+            );
+            """,
+            using: db,
+            operation: "delete unreferenced apps"
+        )
+        try SQLiteStatement.execute(
+            """
+            DELETE FROM adapters
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM telemetry_samples
+                WHERE telemetry_samples.adapter_id = adapters.adapter_id
+            );
+            """,
+            using: db,
+            operation: "delete unreferenced adapters"
+        )
+
+        guard !retainingBatteryHealth else {
+            return
+        }
+
+        try SQLiteStatement.execute(
+            """
+            DELETE FROM battery_states
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM telemetry_samples
+                WHERE telemetry_samples.battery_state_id =
+                    battery_states.battery_state_id
+            );
+            """,
+            using: db,
+            operation: "delete unreferenced battery states"
+        )
+        try SQLiteStatement.execute(
+            """
+            DELETE FROM batteries
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM telemetry_samples
+                WHERE telemetry_samples.battery_id = batteries.battery_id
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM battery_states
+                WHERE battery_states.battery_id = batteries.battery_id
+            );
+            """,
+            using: db,
+            operation: "delete unreferenced batteries"
+        )
     }
 
     private func rollUpSamples(before cutoff: Int64, bucketSeconds: Int, using db: OpaquePointer) throws {
@@ -224,7 +337,11 @@ actor HistoryStore: HistoryStoring {
         GROUP BY bucket
         """
 
-        try SQLiteStatement.executePrepared(sql, using: db) { statement in
+        try SQLiteStatement.executePrepared(
+            sql,
+            using: db,
+            operation: "roll up history samples"
+        ) { statement in
             let bucket = sqlite3_int64(bucketSeconds)
             sqlite3_bind_int64(statement, 1, bucket)
             sqlite3_bind_int64(statement, 2, bucket)
@@ -233,10 +350,16 @@ actor HistoryStore: HistoryStoring {
         }
     }
 
-    func aggregatedSeries(for range: DateInterval, bucketSeconds: Int) async -> [AggregatedTelemetryPoint] {
-        guard bucketSeconds > 0, let db = openDatabase() else {
-            return []
+    func aggregatedSeries(
+        for range: DateInterval,
+        bucketSeconds: Int
+    ) async throws -> [AggregatedTelemetryPoint] {
+        guard bucketSeconds > 0 else {
+            throw HistoryStoreError.invalidConfiguration(
+                "History bucket duration must be greater than zero."
+            )
         }
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
@@ -261,10 +384,11 @@ actor HistoryStore: HistoryStoring {
         ORDER BY bucket_start ASC
         """
 
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            return []
-        }
+        let statement = try SQLiteStatement.prepare(
+            sql,
+            using: db,
+            operation: "load aggregated history"
+        )
 
         defer {
             sqlite3_finalize(statement)
@@ -277,7 +401,8 @@ actor HistoryStore: HistoryStoring {
         sqlite3_bind_int64(statement, 4, Int64(range.end.timeIntervalSince1970.rounded()))
 
         var points: [AggregatedTelemetryPoint] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             let bucketStart = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0)))
             points.append(
                 AggregatedTelemetryPoint(
@@ -294,15 +419,21 @@ actor HistoryStore: HistoryStoring {
                     sampleCount: Int(sqlite3_column_int64(statement, 10))
                 )
             )
+            result = sqlite3_step(statement)
         }
+        try SQLiteStatement.requireDone(
+            result,
+            using: db,
+            operation: "load aggregated history"
+        )
 
         return points
     }
 
-    func rollupSeries(for range: DateInterval) async -> [AggregatedTelemetryPoint] {
-        guard let db = openDatabase() else {
-            return []
-        }
+    func rollupSeries(
+        for range: DateInterval
+    ) async throws -> [AggregatedTelemetryPoint] {
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
@@ -326,10 +457,11 @@ actor HistoryStore: HistoryStoring {
         ORDER BY bucket_start ASC
         """
 
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            return []
-        }
+        let statement = try SQLiteStatement.prepare(
+            sql,
+            using: db,
+            operation: "load rolled-up history"
+        )
 
         defer {
             sqlite3_finalize(statement)
@@ -339,7 +471,8 @@ actor HistoryStore: HistoryStoring {
         sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
 
         var points: [AggregatedTelemetryPoint] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             points.append(
                 AggregatedTelemetryPoint(
                     bucketStart: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
@@ -355,15 +488,21 @@ actor HistoryStore: HistoryStoring {
                     sampleCount: Int(sqlite3_column_int64(statement, 1))
                 )
             )
+            result = sqlite3_step(statement)
         }
+        try SQLiteStatement.requireDone(
+            result,
+            using: db,
+            operation: "load rolled-up history"
+        )
 
         return points
     }
 
-    func batteryHealthTrend(since cutoffDate: Date) async -> [BatteryHealthPoint] {
-        guard let db = openDatabase() else {
-            return []
-        }
+    func batteryHealthTrend(
+        since cutoffDate: Date
+    ) async throws -> [BatteryHealthPoint] {
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
@@ -382,10 +521,11 @@ actor HistoryStore: HistoryStoring {
         ORDER BY bs.first_seen_ts ASC
         """
 
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            return []
-        }
+        let statement = try SQLiteStatement.prepare(
+            sql,
+            using: db,
+            operation: "load battery-health trend"
+        )
 
         defer {
             sqlite3_finalize(statement)
@@ -394,7 +534,8 @@ actor HistoryStore: HistoryStoring {
         sqlite3_bind_int64(statement, 1, Int64(cutoffDate.timeIntervalSince1970.rounded()))
 
         var points: [BatteryHealthPoint] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             points.append(
                 BatteryHealthPoint(
                     date: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
@@ -404,15 +545,19 @@ actor HistoryStore: HistoryStoring {
                     cycleCount: SQLiteStatement.optionalIntValue(statement, index: 3)
                 )
             )
+            result = sqlite3_step(statement)
         }
+        try SQLiteStatement.requireDone(
+            result,
+            using: db,
+            operation: "load battery-health trend"
+        )
 
         return points
     }
 
-    func summary(for range: DateInterval) async -> HistorySummary {
-        guard let db = openDatabase() else {
-            return .empty(range: range)
-        }
+    func summary(for range: DateInterval) async throws -> HistorySummary {
+        let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
@@ -432,10 +577,11 @@ actor HistoryStore: HistoryStoring {
         ORDER BY ts ASC
         """
 
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            return .empty(range: range)
-        }
+        let statement = try SQLiteStatement.prepare(
+            sql,
+            using: db,
+            operation: "load history summary"
+        )
 
         defer {
             sqlite3_finalize(statement)
@@ -467,7 +613,8 @@ actor HistoryStore: HistoryStoring {
         var previousExternal = false
         var previousCharging = false
 
-        while sqlite3_step(statement) == SQLITE_ROW {
+        var result = sqlite3_step(statement)
+        while result == SQLITE_ROW {
             sampleCount += 1
             let timestamp = TimeInterval(sqlite3_column_int64(statement, 0))
             let external = sqlite3_column_int(statement, 1) == 1
@@ -516,7 +663,13 @@ actor HistoryStore: HistoryStoring {
             previousTimestamp = timestamp
             previousExternal = external
             previousCharging = charging
+            result = sqlite3_step(statement)
         }
+        try SQLiteStatement.requireDone(
+            result,
+            using: db,
+            operation: "load history summary"
+        )
 
         // Fold in downsampled rollups so a long range's summary covers the full
         // record, not just the full-detail window. Raw samples and rollups never
@@ -541,55 +694,67 @@ actor HistoryStore: HistoryStoring {
         WHERE bucket_start >= ? AND bucket_start < ?
         """
 
-        var rollupStatement: OpaquePointer?
-        if sqlite3_prepare_v2(db, rollupSQL, -1, &rollupStatement, nil) == SQLITE_OK {
-            sqlite3_bind_int64(rollupStatement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
-            sqlite3_bind_int64(rollupStatement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
-
-            if sqlite3_step(rollupStatement) == SQLITE_ROW {
-                let rollupCount = Int(sqlite3_column_int64(rollupStatement, 0))
-                if rollupCount > 0 {
-                    sampleCount += rollupCount
-
-                    if let loadSumMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 1) {
-                        loadSum += loadSumMilliwatts / 1000
-                    }
-                    loadSamples += Int(sqlite3_column_int64(rollupStatement, 2))
-                    if let loadMaxMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 3) {
-                        let value = loadMaxMilliwatts / 1000
-                        loadMax = Swift.max(loadMax ?? value, value)
-                    }
-
-                    if let inputSumMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 4) {
-                        inputSum += inputSumMilliwatts / 1000
-                    }
-                    inputSamples += Int(sqlite3_column_int64(rollupStatement, 5))
-
-                    if let tempSumHundredths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 6) {
-                        tempSum += tempSumHundredths / 100
-                    }
-                    tempSamples += Int(sqlite3_column_int64(rollupStatement, 7))
-                    if let tempMaxHundredths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 8) {
-                        let value = tempMaxHundredths / 100
-                        tempMax = Swift.max(tempMax ?? value, value)
-                    }
-
-                    if let levelMinTenths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 9) {
-                        let value = levelMinTenths / 10
-                        levelMin = Swift.min(levelMin ?? value, value)
-                    }
-                    if let levelMaxTenths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 10) {
-                        let value = levelMaxTenths / 10
-                        levelMax = Swift.max(levelMax ?? value, value)
-                    }
-
-                    timeOnBattery += Double(sqlite3_column_int64(rollupStatement, 11))
-                    timeOnExternal += Double(sqlite3_column_int64(rollupStatement, 12))
-                    chargeSessions += Int(sqlite3_column_int64(rollupStatement, 13))
-                }
-            }
+        let rollupStatement = try SQLiteStatement.prepare(
+            rollupSQL,
+            using: db,
+            operation: "load rolled-up history summary"
+        )
+        defer {
+            sqlite3_finalize(rollupStatement)
         }
-        sqlite3_finalize(rollupStatement)
+        sqlite3_bind_int64(rollupStatement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+        sqlite3_bind_int64(rollupStatement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+
+        let rollupResult = sqlite3_step(rollupStatement)
+        guard rollupResult == SQLITE_ROW else {
+            try SQLiteStatement.requireDone(
+                rollupResult,
+                using: db,
+                operation: "load rolled-up history summary"
+            )
+            return .empty(range: range)
+        }
+
+        let rollupCount = Int(sqlite3_column_int64(rollupStatement, 0))
+        if rollupCount > 0 {
+            sampleCount += rollupCount
+
+            if let loadSumMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 1) {
+                loadSum += loadSumMilliwatts / 1000
+            }
+            loadSamples += Int(sqlite3_column_int64(rollupStatement, 2))
+            if let loadMaxMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 3) {
+                let value = loadMaxMilliwatts / 1000
+                loadMax = Swift.max(loadMax ?? value, value)
+            }
+
+            if let inputSumMilliwatts = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 4) {
+                inputSum += inputSumMilliwatts / 1000
+            }
+            inputSamples += Int(sqlite3_column_int64(rollupStatement, 5))
+
+            if let tempSumHundredths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 6) {
+                tempSum += tempSumHundredths / 100
+            }
+            tempSamples += Int(sqlite3_column_int64(rollupStatement, 7))
+            if let tempMaxHundredths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 8) {
+                let value = tempMaxHundredths / 100
+                tempMax = Swift.max(tempMax ?? value, value)
+            }
+
+            if let levelMinTenths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 9) {
+                let value = levelMinTenths / 10
+                levelMin = Swift.min(levelMin ?? value, value)
+            }
+            if let levelMaxTenths = SQLiteStatement.optionalDoubleValue(rollupStatement, index: 10) {
+                let value = levelMaxTenths / 10
+                levelMax = Swift.max(levelMax ?? value, value)
+            }
+
+            timeOnBattery += Double(sqlite3_column_int64(rollupStatement, 11))
+            timeOnExternal += Double(sqlite3_column_int64(rollupStatement, 12))
+            chargeSessions += Int(sqlite3_column_int64(rollupStatement, 13))
+        }
 
         guard sampleCount > 0 else {
             return .empty(range: range)
@@ -611,28 +776,161 @@ actor HistoryStore: HistoryStoring {
         )
     }
 
-    private func openDatabase() -> OpaquePointer? {
+    private func openDatabase() throws -> OpaquePointer {
         let directory = databaseURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        var db: OpaquePointer?
-        guard sqlite3_open(databaseURL.path, &db) == SQLITE_OK, let db else {
-            if let db {
-                sqlite3_close(db)
-            }
-            return nil
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            throw HistoryStoreError.fileSystem(
+                operation: "Create history directory",
+                description: error.localizedDescription
+            )
         }
 
-        SQLiteStatement.execute("PRAGMA journal_mode=WAL;", using: db)
-        SQLiteStatement.execute("PRAGMA synchronous=NORMAL;", using: db)
-        SQLiteStatement.execute("PRAGMA foreign_keys=ON;", using: db)
-        SQLiteStatement.execute("PRAGMA auto_vacuum=INCREMENTAL;", using: db)
+        var db: OpaquePointer?
+        let openResult = sqlite3_open_v2(
+            databaseURL.path,
+            &db,
+            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+            nil
+        )
+        guard openResult == SQLITE_OK, let db else {
+            let message: String
+            if let db {
+                message = String(cString: sqlite3_errmsg(db))
+                sqlite3_close(db)
+            } else {
+                message = String(cString: sqlite3_errstr(openResult))
+            }
+            throw HistoryStoreError.sqlite(
+                operation: "Open history database",
+                code: openResult,
+                message: message
+            )
+        }
 
-        for statement in HistorySchema.statements {
-            SQLiteStatement.execute(statement, using: db)
+        sqlite3_extended_result_codes(db, 1)
+
+        do {
+            try SQLiteStatement.execute(
+                "PRAGMA journal_mode=WAL;",
+                using: db,
+                operation: "Enable history WAL"
+            )
+            try SQLiteStatement.execute(
+                "PRAGMA synchronous=NORMAL;",
+                using: db,
+                operation: "Configure history synchronization"
+            )
+            try SQLiteStatement.execute(
+                "PRAGMA foreign_keys=ON;",
+                using: db,
+                operation: "Enable history foreign keys"
+            )
+            try SQLiteStatement.execute(
+                "PRAGMA auto_vacuum=INCREMENTAL;",
+                using: db,
+                operation: "Configure history vacuum"
+            )
+            let schemaVersion = try schemaVersion(using: db)
+            guard schemaVersion <= HistorySchema.currentVersion else {
+                throw HistoryStoreError.invalidConfiguration(
+                    "History database schema \(schemaVersion) is newer than this PowerLens build supports."
+                )
+            }
+            if schemaVersion < HistorySchema.currentVersion {
+                try migrateSchema(using: db)
+            }
+        } catch {
+            sqlite3_close(db)
+            throw error
         }
 
         return db
+    }
+
+    private func schemaVersion(using db: OpaquePointer) throws -> Int {
+        Int(
+            try SQLiteStatement.querySingleInt64(
+                "PRAGMA user_version;",
+                using: db,
+                operation: "read history schema version"
+            ) { _ in } ?? 0
+        )
+    }
+
+    private func migrateSchema(using db: OpaquePointer) throws {
+        try SQLiteStatement.execute(
+            "BEGIN IMMEDIATE TRANSACTION;",
+            using: db,
+            operation: "begin history migration"
+        )
+
+        do {
+            for statement in HistorySchema.creationStatements {
+                try SQLiteStatement.execute(
+                    statement,
+                    using: db,
+                    operation: "create history schema"
+                )
+            }
+
+            for migration in HistorySchema.columnMigrations {
+                if try tableHasColumn(
+                    migration.column,
+                    in: migration.table,
+                    using: db
+                ) {
+                    continue
+                }
+                try SQLiteStatement.execute(
+                    migration.sql,
+                    using: db,
+                    operation: "migrate history schema"
+                )
+            }
+
+            try SQLiteStatement.execute(
+                "PRAGMA user_version = \(HistorySchema.currentVersion);",
+                using: db,
+                operation: "record history schema version"
+            )
+            try SQLiteStatement.execute(
+                "COMMIT;",
+                using: db,
+                operation: "commit history migration"
+            )
+        } catch {
+            try? SQLiteStatement.execute(
+                "ROLLBACK;",
+                using: db,
+                operation: "roll back history migration"
+            )
+            throw error
+        }
+    }
+
+    private func tableHasColumn(
+        _ column: String,
+        in table: String,
+        using db: OpaquePointer
+    ) throws -> Bool {
+        try SQLiteStatement.querySingleInt64(
+            """
+            SELECT 1
+            FROM pragma_table_info(?)
+            WHERE name = ?
+            LIMIT 1
+            """,
+            using: db,
+            operation: "inspect history schema"
+        ) { statement in
+            SQLiteStatement.bind(table, to: statement, index: 1)
+            SQLiteStatement.bind(column, to: statement, index: 2)
+        } != nil
     }
 
     private func upsertBattery(snapshot: TelemetrySnapshot, timestamp: Int64, using db: OpaquePointer) throws -> Int64? {
@@ -843,8 +1141,9 @@ actor HistoryStore: HistoryStoring {
             adapter_input_power_mw,
             adapter_voltage_mv,
             adapter_current_ma,
-            system_load_mw
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            system_load_mw,
+            battery_power_source_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         try SQLiteStatement.executePrepared(sql, using: db) { statement in
@@ -870,6 +1169,13 @@ actor HistoryStore: HistoryStoring {
             SQLiteStatement.bind(HistoryValueCoding.millivolts(from: snapshot.adapterVoltageV), to: statement, index: 20)
             SQLiteStatement.bind(HistoryValueCoding.milliamps(from: snapshot.adapterCurrentA), to: statement, index: 21)
             SQLiteStatement.bind(HistoryValueCoding.milliwatts(from: snapshot.systemLoadW), to: statement, index: 22)
+            SQLiteStatement.bind(
+                HistoryValueCoding.batteryPowerSourceCode(
+                    snapshot.batteryPowerSource
+                ),
+                to: statement,
+                index: 23
+            )
         }
     }
 
@@ -900,6 +1206,12 @@ actor HistoryStore: HistoryStoring {
             batteryVoltageV: HistoryValueCoding.volts(fromMillivolts: SQLiteStatement.optionalIntValue(statement, index: 11)),
             batteryCurrentA: HistoryValueCoding.amps(fromMilliamps: SQLiteStatement.optionalIntValue(statement, index: 12)),
             batteryPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 13)),
+            batteryPowerSource: HistoryValueCoding.batteryPowerSource(
+                from: SQLiteStatement.optionalIntValue(
+                    statement,
+                    index: 30
+                )
+            ),
             adapterDescription: SQLiteStatement.textValue(statement, index: 26),
             adapterMaxPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 27)),
             adapterInputPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 14)),

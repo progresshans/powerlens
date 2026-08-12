@@ -6,6 +6,7 @@ APP_NAME="PowerLens"
 APP_BUNDLE="${1:-$ROOT_DIR/dist/$APP_NAME.app}"
 INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+EXPECTED_APP_ARCH="arm64"
 STRICT="${STRICT:-0}"
 
 fail_if_missing() {
@@ -40,6 +41,24 @@ inspect_gatekeeper() {
   return 1
 }
 
+verify_main_executable_architecture() {
+  local actual_archs
+
+  if ! actual_archs="$(lipo -archs "$APP_BINARY" 2>/dev/null)"; then
+    echo "unable to inspect executable architecture: $APP_BINARY" >&2
+    return 1
+  fi
+
+  echo "architectures: $actual_archs"
+  if [[ "$actual_archs" != "$EXPECTED_APP_ARCH" ]]; then
+    echo "unexpected PowerLens executable architectures: $actual_archs" >&2
+    echo "expected exactly: $EXPECTED_APP_ARCH" >&2
+    return 1
+  fi
+
+  echo "architecture: Apple silicon only"
+}
+
 fail_if_missing "$APP_BUNDLE"
 fail_if_missing "$INFO_PLIST"
 fail_if_missing "$APP_BINARY"
@@ -50,6 +69,7 @@ plutil -p "$INFO_PLIST"
 echo
 echo "== Executable =="
 file "$APP_BINARY"
+verify_main_executable_architecture
 
 echo
 echo "== Signature =="

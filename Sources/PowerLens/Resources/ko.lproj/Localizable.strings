@@ -30,14 +30,25 @@
 "telemetry.status.auto" = "자동 모드가 현재 %@ 경로를 사용 중입니다.";
 "telemetry.status.manual" = "현재 %@ 경로가 활성화되어 있습니다.";
 "telemetry.status.fallback" = "지금은 %@ 경로를 사용할 수 없어 %@ 경로로 동작 중입니다.";
+"telemetry.status.waiting" = "첫 텔레메트리 새로 고침을 기다리는 중입니다.";
+"telemetry.status.delayed" = "새로 고침이 연속 %d회 실패해 마지막 측정값을 표시하고 있습니다.";
+"telemetry.status.unavailable" = "새로 고침이 연속 %d회 실패해 아직 표시할 전력 측정값이 없습니다.";
 "telemetry.live" = "라이브";
+"telemetry.delayed" = "업데이트 지연";
+"telemetry.unavailable" = "사용 불가";
 "telemetry.live.waiting" = "새로고침 대기 중";
 "telemetry.live.detail" = "%@ · %@";
+"telemetry.delayed.detail" = "마지막 %@ 측정 · %@";
 
 "settings.pane.general" = "일반";
-"settings.pane.telemetry" = "텔레메트리";
-"settings.pane.behavior" = "앱 동작";
-"settings.telemetry.status" = "텔레메트리 상태";
+"settings.pane.data" = "데이터";
+"settings.pane.updates" = "업데이트";
+"settings.section.menuBarAndDock" = "메뉴 바 및 Dock";
+"settings.section.system" = "시스템";
+"settings.section.telemetry" = "텔레메트리";
+"settings.section.history" = "로컬 기록";
+"settings.section.telemetry.footer" = "텔레메트리는 PowerLens가 이 Mac에서 읽는 배터리·전력 데이터입니다. 외부로 전송되지 않습니다.";
+"settings.row.status" = "상태";
 "settings.currentMode" = "현재 모드";
 
 "updates.check" = "업데이트 확인…";
@@ -61,6 +72,7 @@
 "common.on" = "켬";
 "common.off" = "끔";
 "common.ok" = "확인";
+"common.cancel" = "취소";
 "common.quit" = "종료";
 
 "powerSource.ac" = "전원";
@@ -92,6 +104,14 @@
 "status.chargedHolding" = "충전 완료 후 유지 중";
 "status.holdingCurrentLevel" = "현재 배터리 수준 유지 중";
 "status.externalPowerConnected" = "외부 전원 연결됨";
+"status.manualLimit.charging" = "%@ 충전 한도까지 충전 중";
+"status.manualLimit.chargingBeyond" = "%@ 충전 한도를 넘어 충전 중";
+"status.manualLimit.above" = "%@ 충전 한도보다 높은 상태";
+"status.manualLimit.reducing" = "%@ 충전 한도에 맞추는 중";
+"status.manualLimit.holding" = "%@ 충전 한도에서 유지 중";
+"status.manualLimit.active" = "%@ 충전 한도 설정됨";
+"status.optimizedCharging.active" = "최적화된 배터리 충전 동작 중";
+"status.optimizedCharging.holding" = "최적화된 배터리 충전으로 대기 중";
 
 "status.subheadline.deficit" = "시스템 부하가 유입 전력보다 약 %@ 더 높습니다.";
 "status.subheadline.powerLimited" = "현재 맥이 전력 부족 상태로 보입니다.";
@@ -103,11 +123,24 @@
 "status.subheadline.currentChargerSufficient" = "현재 충전기는 이 작업 부하에 충분해 보입니다.";
 "status.subheadline.batteryOnly" = "현재 맥은 배터리 전력만 사용하고 있습니다.";
 "status.subheadline.qualityUnknown" = "전력 흐름은 읽히지만 어댑터 품질은 아직 확정하기 어렵습니다.";
+"status.subheadline.externalPowerConnected" = "외부 전원이 연결되어 있으며 PowerLens가 관측된 전력 차이가 지속되는지 확인하고 있습니다.";
+"status.subheadline.transientBatteryAssist" = "PowerLens가 안정적인 전력 흐름을 확인하는 동안 배터리가 잠시 보조하고 있습니다.";
+"status.subheadline.manualLimit.charging" = "macOS가 선택한 충전 한도까지 배터리를 충전하고 있습니다.";
+"status.subheadline.manualLimit.chargingBeyond" = "충전 한도 설정은 유지되며 현재 한도보다 높은 잔량에서 충전이 관측되고 있습니다.";
+"status.subheadline.manualLimit.above" = "충전 한도 설정은 유지되며 배터리 잔량이 현재 선택한 한도보다 높습니다.";
+"status.subheadline.manualLimit.reducing" = "어댑터가 연결된 상태에서 macOS가 배터리 잔량을 선택한 충전 한도에 맞추고 있습니다.";
+"status.subheadline.manualLimit.holding" = "macOS가 선택한 충전 한도에서 배터리 충전을 멈추고 유지하고 있습니다.";
+"status.subheadline.manualLimit.active" = "선택한 충전 한도가 설정되어 있습니다. PowerLens는 현재 전력 흐름을 별도로 판단합니다.";
+"status.subheadline.optimizedCharging.active" = "배터리가 충전되는 동안 macOS가 충전 일정을 관리하고 있습니다.";
+"status.subheadline.optimizedCharging.holding" = "macOS가 완충 상태로 머무는 시간을 줄이기 위해 충전을 일시적으로 보류하고 있습니다.";
+"status.subheadline.optimizedCharging.activeFlowUnknown" = "최적화된 배터리 충전이 동작 중입니다. PowerLens는 현재 전력 흐름을 별도로 판단합니다.";
+"status.subheadline.manualLimit.transientAssist" = "충전 한도가 활성화된 동안 배터리가 잠시 전력을 보조하고 있습니다.";
+"status.subheadline.optimizedCharging.transientAssist" = "최적화된 배터리 충전이 활성화된 동안 배터리가 잠시 전력을 보조하고 있습니다.";
 
-"diag.slowCharger.title" = "느린 충전기 감지";
-"diag.slowCharger.message" = "유입 전력이 시스템 부하보다 약 %@ 낮습니다. 전원 연결 상태에서도 배터리가 줄어들 수 있습니다.";
-"diag.negotiatedLow.title" = "협상된 전력이 낮아 보입니다";
-"diag.negotiatedLow.message" = "어댑터 정격은 %@인데, 현재 맥이 받고 있는 전력은 약 %@입니다. 도크, 케이블, 디스플레이 경로가 병목일 수 있습니다.";
+"diag.manualLimit.chargingBeyond.message" = "충전 한도 설정은 그대로입니다. macOS의 배터리 관리 동작이나 사용자의 ‘완전히 충전’ 요청으로 한도를 넘어 충전될 수 있습니다. PowerLens는 현재 전력 흐름을 확인할 수 있지만 macOS가 의도한 최종 충전 잔량은 확인할 수 없습니다.";
+"diag.manualLimit.above.message" = "충전 한도 설정은 그대로이며 현재 잔량이 한도보다 높습니다. macOS의 배터리 관리 동작이나 사용자의 ‘완전히 충전’ 요청으로 이 상태가 나타날 수 있습니다. PowerLens는 이전 충전의 원인이나 목표 잔량을 확인할 수 없습니다.";
+"diag.powerDeliveryShortfall.title" = "외부 전력이 현재 부하를 충당하지 못하고 있습니다";
+"diag.powerDeliveryShortfall.message" = "외부 입력은 %@, 시스템 부하는 %@이며 배터리가 계속 보조하고 있습니다. 이는 관측된 흐름을 설명하며 어댑터, 케이블 또는 도크를 원인으로 단정하지 않습니다.";
 "diag.temperatureHigh.title" = "배터리 온도 상승";
 "diag.temperatureHigh.message" = "배터리 온도가 %@입니다. 열 조건 때문에 충전 속도나 여유 전력이 줄어들 수 있습니다.";
 "diag.healthWear.title" = "배터리 마모가 보입니다";
@@ -165,11 +198,13 @@
 "ui.flow.holding" = "유지";
 "ui.flow.directPower" = "시스템 커버";
 "ui.flow.batteryOnly" = "배터리 사용";
+"ui.flow.unknown" = "전력 흐름 확인 중";
 "ui.flow.batteryAssistDetail" = "어댑터 연결 중에도 배터리가 순간 부하를 함께 보조합니다.";
 "ui.flow.chargingDetail" = "어댑터가 시스템 부하를 맡고 남은 전력이 배터리로 갑니다.";
 "ui.flow.directPowerDetail" = "어댑터가 현재 시스템 부하를 직접 커버하고 있습니다.";
 "ui.flow.batteryOnlyDetail" = "시스템 부하를 배터리 전력만으로 커버하고 있습니다.";
 "ui.flow.balanced" = "현재 유입 전력과 시스템 부하가 거의 균형입니다.";
+"ui.flow.independentReadingsNotice" = "센서값은 서로 다른 시점에 갱신되어 합계가 다를 수 있습니다. ≈는 다른 측정값으로 계산한 값입니다.";
 "ui.highEnergyApp.label" = "전력 사용량 높은 앱";
 "ui.highEnergyApp.unknown" = "확인되지 않음";
 
@@ -258,7 +293,12 @@
 
 "launchAtLogin.toggle" = "로그인 시 실행";
 
-"settings.pane.history" = "기록";
+"history.status.checking" = "확인 중";
+"history.status.available" = "사용 가능";
+"history.status.degraded" = "저장 문제";
+"history.status.checking.detail" = "로컬 기록 데이터베이스를 확인하고 있습니다.";
+"history.status.available.detail" = "로컬 기록을 사용할 수 있습니다.";
+"history.status.degraded.detail" = "현재 로컬 기록을 사용할 수 없습니다. 실시간 측정은 계속됩니다.";
 "history.rawWindow.title" = "전체 해상도 보관";
 "history.rawWindow.detail" = "분 단위 원본을 얼마나 보관할지.";
 "history.window.days30" = "30일";
@@ -267,6 +307,10 @@
 "history.window.forever" = "무제한";
 "history.longTerm.title" = "오래된 데이터";
 "history.longTerm.detail" = "그 이전 데이터를 이 해상도로 계속 보관합니다.";
+"history.longTerm.off.detail" = "선택한 기간의 상세 기록만 유지합니다. 그보다 오래된 롤업, 배터리 건강·사이클 기록 및 참조되지 않는 메타데이터는 영구 삭제됩니다.";
+"history.longTerm.off.confirm.title" = "오래된 데이터 보관을 중단할까요?";
+"history.longTerm.off.confirm.message" = "최근 %@의 상세 기록은 유지됩니다. 그보다 오래된 시간·일 단위 롤업과 배터리 건강·사이클 기록, 보관 중인 측정값이 더 이상 참조하지 않는 앱·어댑터·배터리 메타데이터는 영구 삭제됩니다.\n\n백업에서 복원하지 않는 한 되돌릴 수 없습니다.";
+"history.longTerm.off.confirm.action" = "오래된 데이터 삭제";
 "history.resolution.hourly" = "시간 단위";
 "history.resolution.daily" = "일 단위";
 "history.resolution.off" = "보관 안 함";

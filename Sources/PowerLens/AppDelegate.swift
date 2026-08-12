@@ -159,7 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController.update(
             snapshot: snapshot,
             symbolName: store.menuBarSymbolName,
-            batteryBadge: store.menuBarBatteryBadge
+            batteryBadge: store.menuBarBatteryBadge,
+            statusHeadline: snapshot?.statusHeadline(
+                resolvedState: store.resolvedPowerState
+            )
         )
     }
 

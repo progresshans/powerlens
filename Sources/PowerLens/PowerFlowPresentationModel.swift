@@ -6,6 +6,7 @@ enum PowerFlowDiagramState: Equatable, Sendable {
     case charging
     case underpowered
     case discharging
+    case unknown
 
     var localizedTitle: String {
         switch self {
@@ -19,6 +20,8 @@ enum PowerFlowDiagramState: Equatable, Sendable {
             L10n.text("ui.flow.batteryAssist")
         case .discharging:
             L10n.text("ui.flow.batteryOnly")
+        case .unknown:
+            L10n.text("ui.flow.unknown")
         }
     }
 
@@ -30,6 +33,8 @@ enum PowerFlowDiagramState: Equatable, Sendable {
             .charge
         case .underpowered, .discharging:
             .battery
+        case .unknown:
+            .input
         }
     }
 }
@@ -59,96 +64,248 @@ struct PowerFlowRouteModel: Equatable, Sendable {
 }
 
 struct PowerFlowPresentationModel: Equatable, Sendable {
+    private enum FlowValueSource {
+        case measured
+        case currentAndVoltage
+        case inputLoadDifference
+        case unavailable
+
+        var isDerived: Bool {
+            switch self {
+            case .currentAndVoltage, .inputLoadDifference:
+                true
+            case .measured, .unavailable:
+                false
+            }
+        }
+    }
+
+    private struct BatteryFlowObservation {
+        let direction: BatteryFlowEvidence
+        let powerW: Double?
+        let source: FlowValueSource
+    }
+
     let state: PowerFlowDiagramState
-    let inputPower: Double
-    let loadPower: Double
-    let chargePower: Double
-    let batteryAssist: Double
-    let externalToSystemPower: Double
-    let externalToBatteryPower: Double
-    let batteryToSystemPower: Double
+    let statusTitle: String
+    let showsIndependentReadingsNotice: Bool
     let routes: [PowerFlowRouteModel]
 
     init(snapshot: TelemetrySnapshot) {
-        let inputPower = max(snapshot.adapterInputPowerW ?? 0, 0)
-        let loadPower = max(snapshot.systemLoadW ?? 0, 0)
-        let externalToSystemPower = snapshot.externalConnected ? min(inputPower, loadPower) : 0
-        let chargePower = inputPower > 0 ? max(inputPower - externalToSystemPower, 0) : snapshot.batteryChargeInflowW
-        let batteryAssist = max(loadPower - inputPower, 0)
+        let batteryFlow = Self.observeBatteryFlow(snapshot)
         let state = Self.resolveState(
             snapshot: snapshot,
-            batteryAssist: batteryAssist,
-            chargePower: chargePower
+            batteryFlow: batteryFlow
         )
-        let externalToBatteryPower = state == .charging ? max(chargePower, 0) : 0
-        let batteryToSystemPower = Self.batteryToSystemPower(
-            state: state,
-            loadPower: loadPower,
-            externalToSystemPower: externalToSystemPower
-        )
-
-        self.state = state
-        self.inputPower = inputPower
-        self.loadPower = loadPower
-        self.chargePower = chargePower
-        self.batteryAssist = batteryAssist
-        self.externalToSystemPower = externalToSystemPower
-        self.externalToBatteryPower = externalToBatteryPower
-        self.batteryToSystemPower = batteryToSystemPower
-        self.routes = Self.routes(
+        let routes = Self.routes(
             state: state,
             snapshot: snapshot,
-            loadPower: loadPower,
-            batteryToSystemPower: batteryToSystemPower,
-            externalToBatteryPower: externalToBatteryPower
+            batteryFlow: batteryFlow
         )
+        let showsIndependentReadingsNotice =
+            state == .unknown
+                || batteryFlow.source.isDerived
+                || (
+                    (state == .charging || state == .underpowered
+                        || state == .discharging)
+                        && batteryFlow.powerW == nil
+                )
+                || snapshot.hasConflictingBatteryPowerMeasurements
+                || snapshot.hasConflictingDischargePowerBalance
+                || Self.hasPowerBalanceMismatch(
+                    state: state,
+                    snapshot: snapshot,
+                    batteryPowerW: batteryFlow.powerW
+                )
+
+        self.state = state
+        // The flow badge describes the latest physical route only. Managed
+        // charging policy is presented separately in the stable status model.
+        self.statusTitle = state.localizedTitle
+        self.showsIndependentReadingsNotice = showsIndependentReadingsNotice
+        self.routes = routes
     }
 
     private static func resolveState(
         snapshot: TelemetrySnapshot,
-        batteryAssist: Double,
-        chargePower: Double
+        batteryFlow: BatteryFlowObservation
     ) -> PowerFlowDiagramState {
         if !snapshot.externalConnected {
             return .discharging
         }
 
-        if batteryAssist > 0.35 {
+        switch batteryFlow.direction {
+        case .discharging:
             return .underpowered
-        }
-
-        if snapshot.isBatteryChargingForDisplay && chargePower > 0.3 {
+        case .charging:
             return .charging
+        case .conflicted:
+            return .unknown
+        case .calm:
+            return snapshot.externalPowerState == .holding
+                ? .holding
+                : .directPower
+        case .unavailable:
+            return .directPower
         }
-
-        if snapshot.externalPowerState == .holding {
-            return .holding
-        }
-
-        return .directPower
     }
 
-    private static func batteryToSystemPower(
-        state: PowerFlowDiagramState,
-        loadPower: Double,
-        externalToSystemPower: Double
-    ) -> Double {
-        switch state {
-        case .discharging:
-            return loadPower
-        case .underpowered:
-            return max(loadPower - externalToSystemPower, 0)
-        case .holding, .directPower, .charging:
-            return 0
+    private static func observeBatteryFlow(
+        _ snapshot: TelemetrySnapshot
+    ) -> BatteryFlowObservation {
+        if !snapshot.externalConnected {
+            return observeBatteryOnlyFlow(snapshot)
         }
+
+        // Keep diagnostics conservative when independently cached battery
+        // current disagrees. For the diagram only, a complete same-provider
+        // power set that still satisfies input + battery = system is stronger
+        // route evidence than that conflicting current sample.
+        if snapshot.batteryFlowEvidence == .conflicted,
+           let coherentPowerSetFlow = observeCoherentPowerSet(snapshot) {
+            return coherentPowerSetFlow
+        }
+
+        switch snapshot.batteryFlowEvidence {
+        case .discharging:
+            if let measuredBatteryDischargeW =
+                snapshot.measuredBatteryDischargeW {
+                return BatteryFlowObservation(
+                    direction: .discharging,
+                    powerW: measuredBatteryDischargeW,
+                    source: isDirectDischargePower(
+                        measuredBatteryDischargeW,
+                        snapshot: snapshot
+                    ) ? .measured : .currentAndVoltage
+                )
+            }
+            return BatteryFlowObservation(
+                direction: .discharging,
+                powerW: nil,
+                source: .unavailable
+            )
+        case .charging:
+            if let measuredBatteryChargeW = snapshot.measuredBatteryChargeW {
+                return BatteryFlowObservation(
+                    direction: .charging,
+                    powerW: measuredBatteryChargeW,
+                    source: isDirectChargePower(
+                        measuredBatteryChargeW,
+                        snapshot: snapshot
+                    ) ? .measured : .currentAndVoltage
+                )
+            }
+
+            // `isCharging` is a fallback only when both direct battery-flow
+            // measurements are unavailable. Preserve the long-standing 0.3 W
+            // guard before turning an input/load residual into a charge route.
+            if snapshot.batteryPowerW == nil,
+               snapshot.batteryCurrentA == nil,
+               let inferredChargePower = positiveDifference(
+                   snapshot.adapterInputPowerW,
+                   snapshot.systemLoadW
+               ),
+               inferredChargePower > 0.3 {
+                return BatteryFlowObservation(
+                    direction: .charging,
+                    powerW: inferredChargePower,
+                    source: .inputLoadDifference
+                )
+            }
+
+            if snapshot.batteryPowerW != nil
+                || snapshot.batteryCurrentA != nil {
+                return BatteryFlowObservation(
+                    direction: .charging,
+                    powerW: nil,
+                    source: .unavailable
+                )
+            }
+
+            return BatteryFlowObservation(
+                direction: .unavailable,
+                powerW: nil,
+                source: .unavailable
+            )
+        case .calm:
+            return BatteryFlowObservation(
+                direction: .calm,
+                powerW: nil,
+                source: .measured
+            )
+        case .conflicted:
+            return BatteryFlowObservation(
+                direction: .conflicted,
+                powerW: nil,
+                source: .unavailable
+            )
+        case .unavailable:
+            if let inferredBatteryAssist = positiveDifference(
+                snapshot.systemLoadW,
+                snapshot.adapterInputPowerW
+            ), inferredBatteryAssist > 0.35 {
+                return BatteryFlowObservation(
+                    direction: .discharging,
+                    powerW: inferredBatteryAssist,
+                    source: .inputLoadDifference
+                )
+            }
+            return BatteryFlowObservation(
+                direction: .unavailable,
+                powerW: nil,
+                source: .unavailable
+            )
+        }
+    }
+
+    private static func observeCoherentPowerSet(
+        _ snapshot: TelemetrySnapshot
+    ) -> BatteryFlowObservation? {
+        guard snapshot.powerMeasurementSetSource != nil,
+              snapshot.batteryPowerSource == .directTelemetry,
+              let batteryPowerW = snapshot.batteryPowerW,
+              let inputPowerW = snapshot.adapterInputPowerW,
+              let systemLoadW = snapshot.systemLoadW,
+              abs(batteryPowerW) > 0.35,
+              powerValuesAreCoherent(
+                  inputPowerW + batteryPowerW,
+                  systemLoadW
+              ) else {
+            return nil
+        }
+
+        return BatteryFlowObservation(
+            direction: batteryPowerW > 0 ? .discharging : .charging,
+            powerW: abs(batteryPowerW),
+            source: .measured
+        )
+    }
+
+    private static func observeBatteryOnlyFlow(
+        _ snapshot: TelemetrySnapshot
+    ) -> BatteryFlowObservation {
+        if let measuredBatteryDischargeW = snapshot.measuredBatteryDischargeW {
+            return BatteryFlowObservation(
+                direction: .discharging,
+                powerW: measuredBatteryDischargeW,
+                source: isDirectDischargePower(
+                    measuredBatteryDischargeW,
+                    snapshot: snapshot
+                ) ? .measured : .currentAndVoltage
+            )
+        }
+
+        return BatteryFlowObservation(
+            direction: .discharging,
+            powerW: nil,
+            source: .unavailable
+        )
     }
 
     private static func routes(
         state: PowerFlowDiagramState,
         snapshot: TelemetrySnapshot,
-        loadPower: Double,
-        batteryToSystemPower: Double,
-        externalToBatteryPower: Double
+        batteryFlow: BatteryFlowObservation
     ) -> [PowerFlowRouteModel] {
         switch state {
         case .underpowered:
@@ -159,7 +316,10 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
                     role: .input
                 ),
                 PowerFlowRouteModel(
-                    source: batteryEndpoint(value: Formatters.power(batteryToSystemPower)),
+                    source: batteryEndpoint(
+                        value: batteryFlow.powerW,
+                        source: batteryFlow.source
+                    ),
                     target: systemEndpoint(snapshot),
                     role: .battery
                 ),
@@ -167,8 +327,11 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         case .discharging:
             return [
                 PowerFlowRouteModel(
-                    source: batteryEndpoint(value: Formatters.power(loadPower)),
-                    target: systemEndpoint(value: Formatters.power(loadPower)),
+                    source: batteryEndpoint(
+                        value: batteryFlow.powerW,
+                        source: batteryFlow.source
+                    ),
+                    target: systemEndpoint(snapshot),
                     role: .battery
                 )
             ]
@@ -181,11 +344,14 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
                 ),
                 PowerFlowRouteModel(
                     source: inputEndpoint(snapshot),
-                    target: batteryChargeEndpoint(value: Formatters.power(externalToBatteryPower)),
+                    target: batteryChargeEndpoint(
+                        value: batteryFlow.powerW,
+                        source: batteryFlow.source
+                    ),
                     role: .charge
                 ),
             ]
-        case .holding, .directPower:
+        case .holding, .directPower, .unknown:
             return [
                 PowerFlowRouteModel(
                     source: inputEndpoint(snapshot),
@@ -196,10 +362,16 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         }
     }
 
-    private static func inputEndpoint(_ snapshot: TelemetrySnapshot) -> PowerFlowEndpointModel {
+    private static func inputEndpoint(
+        _ snapshot: TelemetrySnapshot
+    ) -> PowerFlowEndpointModel {
+        // These endpoint values deliberately stay aligned with Power Details.
+        // The sensors update independently, so the diagram must not rewrite a
+        // measured adapter value merely to make the visible totals add up.
         PowerFlowEndpointModel(
             title: L10n.text("ui.metric.input"),
-            value: snapshot.adapterInputPowerW.map(Formatters.power) ?? L10n.text("common.none"),
+            value: snapshot.adapterInputPowerW.map(Formatters.power)
+                ?? L10n.text("common.none"),
             systemImage: "powerplug.fill",
             role: .input
         )
@@ -214,30 +386,143 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
         )
     }
 
-    private static func systemEndpoint(value: String) -> PowerFlowEndpointModel {
-        PowerFlowEndpointModel(
-            title: L10n.text("ui.metric.systemLoad"),
-            value: value,
-            systemImage: "waveform.path.ecg",
-            role: .system
-        )
-    }
-
-    private static func batteryEndpoint(value: String) -> PowerFlowEndpointModel {
+    private static func batteryEndpoint(
+        value: Double?,
+        source: FlowValueSource
+    ) -> PowerFlowEndpointModel {
         PowerFlowEndpointModel(
             title: L10n.text("ui.metric.battery"),
-            value: value,
+            value: formattedFlowValue(value, source: source),
             systemImage: "battery.100",
             role: .battery
         )
     }
 
-    private static func batteryChargeEndpoint(value: String) -> PowerFlowEndpointModel {
+    private static func batteryChargeEndpoint(
+        value: Double?,
+        source: FlowValueSource
+    ) -> PowerFlowEndpointModel {
         PowerFlowEndpointModel(
             title: L10n.text("ui.flow.charging"),
-            value: value,
+            value: formattedFlowValue(value, source: source),
             systemImage: "battery.100",
             role: .charge
         )
+    }
+
+    private static func formattedFlowValue(
+        _ value: Double?,
+        source: FlowValueSource
+    ) -> String {
+        guard let value else {
+            return L10n.text("common.none")
+        }
+        let formatted = Formatters.power(value)
+        return source.isDerived ? "≈\(formatted)" : formatted
+    }
+
+    private static func isDirectDischargePower(
+        _ powerW: Double,
+        snapshot: TelemetrySnapshot
+    ) -> Bool {
+        guard !snapshot.batteryPowerIsDerived else {
+            return false
+        }
+        return snapshot.batteryPowerW.map {
+            isApproximatelyEqual(powerW, $0)
+        } ?? false
+    }
+
+    private static func isDirectChargePower(
+        _ powerW: Double,
+        snapshot: TelemetrySnapshot
+    ) -> Bool {
+        guard !snapshot.batteryPowerIsDerived else {
+            return false
+        }
+        return snapshot.batteryPowerW.map {
+            isApproximatelyEqual(powerW, -$0)
+        } ?? false
+    }
+
+    private static func positiveDifference(
+        _ minuend: Double?,
+        _ subtrahend: Double?
+    ) -> Double? {
+        guard let minuend, let subtrahend else {
+            return nil
+        }
+        return max(minuend - subtrahend, 0)
+    }
+
+    private static func hasPowerBalanceMismatch(
+        state: PowerFlowDiagramState,
+        snapshot: TelemetrySnapshot,
+        batteryPowerW: Double?
+    ) -> Bool {
+        let observedPowerW: Double
+        let representedPowerW: Double
+
+        switch state {
+        case .underpowered:
+            guard let inputPowerW = snapshot.adapterInputPowerW,
+                  let batteryPowerW,
+                  let systemLoadW = snapshot.systemLoadW else {
+                return false
+            }
+            observedPowerW = inputPowerW + batteryPowerW
+            representedPowerW = systemLoadW
+        case .charging:
+            guard let inputPowerW = snapshot.adapterInputPowerW,
+                  let batteryPowerW,
+                  let systemLoadW = snapshot.systemLoadW else {
+                return false
+            }
+            observedPowerW = inputPowerW
+            representedPowerW = systemLoadW + batteryPowerW
+        case .holding, .directPower, .unknown:
+            guard let inputPowerW = snapshot.adapterInputPowerW,
+                  let systemLoadW = snapshot.systemLoadW else {
+                return false
+            }
+            observedPowerW = inputPowerW
+            representedPowerW = systemLoadW
+        case .discharging:
+            guard let batteryPowerW,
+                  let systemLoadW = snapshot.systemLoadW else {
+                return false
+            }
+            observedPowerW = batteryPowerW
+            representedPowerW = systemLoadW
+        }
+
+        let comparisonMagnitudeW = max(
+            abs(observedPowerW),
+            abs(representedPowerW)
+        )
+        let allowedDifferenceW = max(
+            1,
+            comparisonMagnitudeW * 0.1
+        )
+        return abs(observedPowerW - representedPowerW) > allowedDifferenceW
+    }
+
+    private static func powerValuesAreCoherent(
+        _ lhs: Double,
+        _ rhs: Double
+    ) -> Bool {
+        let comparisonMagnitudeW = max(abs(lhs), abs(rhs))
+        let allowedDifferenceW = max(
+            1,
+            comparisonMagnitudeW * 0.05
+        )
+        return abs(lhs - rhs) <= allowedDifferenceW
+    }
+
+    private static func isApproximatelyEqual(
+        _ lhs: Double,
+        _ rhs: Double
+    ) -> Bool {
+        abs(lhs - rhs) <= 0.0001
     }
 }

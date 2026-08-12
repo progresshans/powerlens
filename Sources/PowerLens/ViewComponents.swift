@@ -119,10 +119,15 @@ struct DiagnosticRow: View {
 struct LiveIndicatorView: View {
     let refreshDate: Date?
     let activeEngineName: String
+    let health: TelemetryHealth
 
     var body: some View {
-        let now = Date()
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            content(now: context.date)
+        }
+    }
 
+    private func content(now: Date) -> some View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
@@ -136,7 +141,7 @@ struct LiveIndicatorView: View {
             .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.text("telemetry.live"))
+                Text(title)
                     .font(.subheadline.weight(.semibold))
 
                 Text(detailText(now: now))
@@ -150,15 +155,48 @@ struct LiveIndicatorView: View {
         .background(.quaternary.opacity(0.24), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    private var title: String {
+        switch health {
+        case .waiting, .live:
+            L10n.text("telemetry.live")
+        case .delayed:
+            L10n.text("telemetry.delayed")
+        case .unavailable:
+            L10n.text("telemetry.unavailable")
+        }
+    }
+
     private func detailText(now: Date) -> String {
         guard let refreshDate else {
             return L10n.text("telemetry.live.waiting")
         }
 
-        return L10n.tr("telemetry.live.detail", activeEngineName, Formatters.relativeAge(since: refreshDate, now: now))
+        let age = Formatters.relativeAge(since: refreshDate, now: now)
+        if case .delayed = health {
+            return L10n.tr(
+                "telemetry.delayed.detail",
+                activeEngineName,
+                age
+            )
+        }
+        return L10n.tr("telemetry.live.detail", activeEngineName, age)
     }
 
     private func dotColor(now: Date) -> Color {
+        switch health {
+        case .waiting:
+            return .gray
+        case .unavailable:
+            return .red
+        case .delayed:
+            guard let refreshDate else {
+                return .red
+            }
+            return now.timeIntervalSince(refreshDate) <= 60 ? .orange : .red
+        case .live:
+            break
+        }
+
         guard let refreshDate else {
             return .gray
         }
@@ -174,6 +212,9 @@ struct LiveIndicatorView: View {
     }
 
     private func isLive(now: Date) -> Bool {
+        guard health == .live else {
+            return false
+        }
         guard let refreshDate else {
             return false
         }

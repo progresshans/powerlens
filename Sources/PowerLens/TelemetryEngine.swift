@@ -57,6 +57,17 @@ enum TelemetryEngineKind: String, Codable, Equatable, Sendable {
 struct TelemetryReadResult: Sendable {
     let snapshot: TelemetrySnapshot
     let activeEngine: TelemetryEngineKind
+    let systemCompatibilityDiagnostics: [SystemCompatibilityDiagnostic]
+
+    init(
+        snapshot: TelemetrySnapshot,
+        activeEngine: TelemetryEngineKind,
+        systemCompatibilityDiagnostics: [SystemCompatibilityDiagnostic] = []
+    ) {
+        self.snapshot = snapshot
+        self.activeEngine = activeEngine
+        self.systemCompatibilityDiagnostics = systemCompatibilityDiagnostics
+    }
 }
 
 enum TelemetryReadError: Error {
@@ -70,38 +81,63 @@ protocol TelemetrySnapshotReader {
 struct TelemetryCoordinator {
     private let compatibleReader: any TelemetrySnapshotReader
     private let livePrecisionReader: any TelemetrySnapshotReader
+    private let chargingPolicyReader: any ChargingPolicyReading
 
     init(
         compatibleReader: any TelemetrySnapshotReader = CompatibleTelemetryReader(),
-        livePrecisionReader: any TelemetrySnapshotReader = LivePrecisionTelemetryReader()
+        livePrecisionReader: any TelemetrySnapshotReader = LivePrecisionTelemetryReader(),
+        chargingPolicyReader: any ChargingPolicyReading = PowerUIChargingPolicyReader()
     ) {
         self.compatibleReader = compatibleReader
         self.livePrecisionReader = livePrecisionReader
+        self.chargingPolicyReader = chargingPolicyReader
     }
 
     func readSnapshot(preference: TelemetryEnginePreference) throws -> TelemetryReadResult {
+        let result: TelemetryReadResult
+
         switch preference {
         case .auto:
             if let snapshot = try? livePrecisionReader.readSnapshot() {
-                return TelemetryReadResult(snapshot: snapshot, activeEngine: .livePrecision)
+                result = TelemetryReadResult(
+                    snapshot: snapshot,
+                    activeEngine: .livePrecision
+                )
+            } else {
+                result = TelemetryReadResult(
+                    snapshot: try compatibleReader.readSnapshot(),
+                    activeEngine: .compatible
+                )
             }
-            return TelemetryReadResult(
-                snapshot: try compatibleReader.readSnapshot(),
-                activeEngine: .compatible
-            )
         case .compatible:
-            return TelemetryReadResult(
+            result = TelemetryReadResult(
                 snapshot: try compatibleReader.readSnapshot(),
                 activeEngine: .compatible
             )
         case .livePrecision:
             if let snapshot = try? livePrecisionReader.readSnapshot() {
-                return TelemetryReadResult(snapshot: snapshot, activeEngine: .livePrecision)
+                result = TelemetryReadResult(
+                    snapshot: snapshot,
+                    activeEngine: .livePrecision
+                )
+            } else {
+                result = TelemetryReadResult(
+                    snapshot: try compatibleReader.readSnapshot(),
+                    activeEngine: .compatible
+                )
             }
-            return TelemetryReadResult(
-                snapshot: try compatibleReader.readSnapshot(),
-                activeEngine: .compatible
-            )
         }
+
+        let chargingPolicyObservation = chargingPolicyReader
+            .readChargingPolicyObservation()
+        return TelemetryReadResult(
+            snapshot: result.snapshot.withChargingPolicyStatus(
+                chargingPolicyObservation.status
+            ),
+            activeEngine: result.activeEngine,
+            systemCompatibilityDiagnostics: [
+                chargingPolicyObservation.diagnostic,
+            ]
+        )
     }
 }

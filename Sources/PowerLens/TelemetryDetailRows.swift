@@ -19,7 +19,13 @@ enum TelemetryDetailRows {
             (L10n.text("ui.metric.powerIn"), snapshot.adapterInputPowerW.map(Formatters.power) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.voltage"), snapshot.batteryVoltageV.map(Formatters.voltage) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.current"), Formatters.batteryCurrentFlow(snapshot.batteryCurrentA)),
-            (L10n.text("ui.detail.batteryPower"), Formatters.batteryPowerFlow(snapshot.batteryPowerW)),
+            (
+                L10n.text("ui.detail.batteryPower"),
+                Formatters.batteryPowerFlow(
+                    snapshot.batteryPowerW,
+                    isApproximate: snapshot.batteryPowerIsDerived
+                )
+            ),
             (L10n.text("ui.metric.systemLoad"), snapshot.systemLoadW.map(Formatters.power) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.lowPowerMode"), snapshot.lowPowerModeEnabled ? L10n.text("common.on") : L10n.text("common.off")),
         ]
@@ -56,7 +62,13 @@ enum TelemetryDetailRows {
         [
             (L10n.text("ui.detail.voltage"), snapshot.batteryVoltageV.map(Formatters.voltage) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.current"), Formatters.batteryCurrentFlow(snapshot.batteryCurrentA)),
-            (L10n.text("ui.detail.batteryPower"), Formatters.batteryPowerFlow(snapshot.batteryPowerW)),
+            (
+                L10n.text("ui.detail.batteryPower"),
+                Formatters.batteryPowerFlow(
+                    snapshot.batteryPowerW,
+                    isApproximate: snapshot.batteryPowerIsDerived
+                )
+            ),
             (L10n.text("ui.detail.timeToEmpty"), Formatters.minutes(snapshot.timeToEmptyMinutes)),
         ]
     }

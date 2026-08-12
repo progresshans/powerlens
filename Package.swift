@@ -5,10 +5,10 @@ let package = Package(
     name: "PowerLens",
     defaultLocalization: "en",
     platforms: [
-        .macOS(.v13),
+        .macOS("26.0"),
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.1"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
     ],
     targets: [
         .executableTarget(

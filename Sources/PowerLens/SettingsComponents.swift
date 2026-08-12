@@ -2,22 +2,35 @@ import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     case general
-    case telemetry
-    case history
-    case behavior
+    case data
+    case updates
 
     var id: String { rawValue }
+
+    init(storedRawValue: String) {
+        if let pane = Self(rawValue: storedRawValue) {
+            self = pane
+            return
+        }
+
+        switch storedRawValue {
+        case "behavior":
+            self = .general
+        case "telemetry", "history":
+            self = .data
+        default:
+            self = .general
+        }
+    }
 
     var title: String {
         switch self {
         case .general:
             L10n.text("settings.pane.general")
-        case .telemetry:
-            L10n.text("settings.pane.telemetry")
-        case .history:
-            L10n.text("settings.pane.history")
-        case .behavior:
-            L10n.text("settings.pane.behavior")
+        case .data:
+            L10n.text("settings.pane.data")
+        case .updates:
+            L10n.text("settings.pane.updates")
         }
     }
 
@@ -25,12 +38,10 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             "gearshape"
-        case .telemetry:
+        case .data:
             "waveform.path.ecg"
-        case .history:
-            "clock.arrow.circlepath"
-        case .behavior:
-            "macwindow"
+        case .updates:
+            "arrow.down.circle"
         }
     }
 }
@@ -54,10 +65,16 @@ struct StatusChip: View {
 }
 
 struct LiveDot: View {
+    let color: Color
+
+    init(color: Color = .green) {
+        self.color = color
+    }
+
     var body: some View {
         Circle()
-            .fill(.green)
+            .fill(color)
             .frame(width: 8, height: 8)
-            .shadow(color: .green.opacity(0.45), radius: 3)
+            .shadow(color: color.opacity(0.45), radius: 3)
     }
 }

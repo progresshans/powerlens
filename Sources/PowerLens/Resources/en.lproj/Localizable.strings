@@ -30,14 +30,25 @@
 "telemetry.status.auto" = "Auto is currently using %@.";
 "telemetry.status.manual" = "%@ is active.";
 "telemetry.status.fallback" = "%@ is unavailable right now, so %@ is active.";
+"telemetry.status.waiting" = "Waiting for the first telemetry refresh.";
+"telemetry.status.delayed" = "%d consecutive refresh attempts failed. Showing the last reading.";
+"telemetry.status.unavailable" = "%d consecutive refresh attempts failed. No power reading is available yet.";
 "telemetry.live" = "Live";
+"telemetry.delayed" = "Update Delayed";
+"telemetry.unavailable" = "Unavailable";
 "telemetry.live.waiting" = "Waiting for refresh";
 "telemetry.live.detail" = "%@ · %@";
+"telemetry.delayed.detail" = "Last %@ reading · %@";
 
 "settings.pane.general" = "General";
-"settings.pane.telemetry" = "Telemetry";
-"settings.pane.behavior" = "App Behavior";
-"settings.telemetry.status" = "Telemetry Status";
+"settings.pane.data" = "Data";
+"settings.pane.updates" = "Updates";
+"settings.section.menuBarAndDock" = "Menu Bar & Dock";
+"settings.section.system" = "System";
+"settings.section.telemetry" = "Telemetry";
+"settings.section.history" = "Local History";
+"settings.section.telemetry.footer" = "Telemetry is the battery and power data PowerLens reads from this Mac. It is not sent anywhere.";
+"settings.row.status" = "Status";
 "settings.currentMode" = "Current Mode";
 
 "updates.check" = "Check for Updates…";
@@ -61,6 +72,7 @@
 "common.on" = "On";
 "common.off" = "Off";
 "common.ok" = "OK";
+"common.cancel" = "Cancel";
 "common.quit" = "Quit";
 
 "powerSource.ac" = "AC";
@@ -92,6 +104,14 @@
 "status.chargedHolding" = "Charged and Holding";
 "status.holdingCurrentLevel" = "Holding Current Battery Level";
 "status.externalPowerConnected" = "External Power Connected";
+"status.manualLimit.charging" = "Charging to the %@ Charge Limit";
+"status.manualLimit.chargingBeyond" = "Charging Past the %@ Charge Limit";
+"status.manualLimit.above" = "Battery Above the %@ Charge Limit";
+"status.manualLimit.reducing" = "Adjusting to the %@ Charge Limit";
+"status.manualLimit.holding" = "Holding at the %@ Charge Limit";
+"status.manualLimit.active" = "%@ Charge Limit Set";
+"status.optimizedCharging.active" = "Optimized Battery Charging Active";
+"status.optimizedCharging.holding" = "Charging Paused by Optimized Battery Charging";
 
 "status.subheadline.deficit" = "System load is about %@ higher than incoming power.";
 "status.subheadline.powerLimited" = "The Mac appears to be power-limited.";
@@ -103,11 +123,24 @@
 "status.subheadline.currentChargerSufficient" = "The current charger looks sufficient for this workload.";
 "status.subheadline.batteryOnly" = "The Mac is drawing power only from the battery.";
 "status.subheadline.qualityUnknown" = "Power flow is readable, but adapter quality is not fully known yet.";
+"status.subheadline.externalPowerConnected" = "External power is connected while PowerLens checks whether the observed imbalance persists.";
+"status.subheadline.transientBatteryAssist" = "The battery is briefly assisting while PowerLens waits for a stable power-flow reading.";
+"status.subheadline.manualLimit.charging" = "macOS is charging the battery to the selected charge limit.";
+"status.subheadline.manualLimit.chargingBeyond" = "The charge limit remains set while charging is observed above it.";
+"status.subheadline.manualLimit.above" = "The charge limit remains set, and the battery is currently above it.";
+"status.subheadline.manualLimit.reducing" = "The adapter is connected while macOS lets the battery move toward the selected charge limit.";
+"status.subheadline.manualLimit.holding" = "macOS has paused battery charging at the selected charge limit.";
+"status.subheadline.manualLimit.active" = "The selected charge limit is set. PowerLens evaluates the current power flow separately.";
+"status.subheadline.optimizedCharging.active" = "macOS is managing the charging schedule while the battery continues to charge.";
+"status.subheadline.optimizedCharging.holding" = "macOS is temporarily holding charging to reduce time spent fully charged.";
+"status.subheadline.optimizedCharging.activeFlowUnknown" = "Optimized Battery Charging is active. PowerLens evaluates the current power flow separately.";
+"status.subheadline.manualLimit.transientAssist" = "The battery is briefly helping while the charge limit remains active.";
+"status.subheadline.optimizedCharging.transientAssist" = "The battery is briefly helping while Optimized Battery Charging remains active.";
 
-"diag.slowCharger.title" = "Slow Charger Detected";
-"diag.slowCharger.message" = "Incoming power is lower than system draw by about %@. Your Mac may still drain on wall power.";
-"diag.negotiatedLow.title" = "Negotiated Power Looks Low";
-"diag.negotiatedLow.message" = "The adapter is rated for %@, but the Mac is only receiving about %@. A dock, cable, or display path may be limiting throughput.";
+"diag.manualLimit.chargingBeyond.message" = "The charge limit is still set. macOS battery management or a Charge to Full Now request can charge past it. PowerLens can observe the current power flow, but cannot determine macOS's intended stopping percentage.";
+"diag.manualLimit.above.message" = "The charge limit is still set, and the battery is currently above it. macOS battery management or a Charge to Full Now request can produce this state. PowerLens cannot determine the earlier cause or intended target percentage.";
+"diag.powerDeliveryShortfall.title" = "External Power Is Not Covering Current Load";
+"diag.powerDeliveryShortfall.message" = "External input is %@ while system load is %@ and the battery is still assisting. This describes the observed flow; it does not identify the adapter, cable, or dock as the cause.";
 "diag.temperatureHigh.title" = "Battery Temperature Elevated";
 "diag.temperatureHigh.message" = "Battery temperature is %@. Thermal conditions can slow charging or reduce headroom.";
 "diag.healthWear.title" = "Battery Wear Is Noticeable";
@@ -165,11 +198,13 @@
 "ui.flow.holding" = "Holding";
 "ui.flow.directPower" = "System Covered";
 "ui.flow.batteryOnly" = "Battery Power";
+"ui.flow.unknown" = "Flow Updating";
 "ui.flow.batteryAssistDetail" = "The battery can assist transient load even while an adapter is connected.";
 "ui.flow.chargingDetail" = "The adapter is covering system load and sending remaining power into the battery.";
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
 "ui.flow.batteryOnlyDetail" = "System load is being covered only by battery power.";
 "ui.flow.balanced" = "Input power and system load are nearly balanced right now.";
+"ui.flow.independentReadingsNotice" = "Sensor readings update independently, so totals may differ. ≈ marks a value derived from other readings.";
 "ui.highEnergyApp.label" = "High Energy Usage";
 "ui.highEnergyApp.unknown" = "Unknown App";
 
@@ -258,7 +293,12 @@
 
 "launchAtLogin.toggle" = "Launch at Login";
 
-"settings.pane.history" = "History";
+"history.status.checking" = "Checking";
+"history.status.available" = "Available";
+"history.status.degraded" = "Storage Issue";
+"history.status.checking.detail" = "Checking the local history database.";
+"history.status.available.detail" = "Local history is available.";
+"history.status.degraded.detail" = "Local history is unavailable right now. Live telemetry continues.";
 "history.rawWindow.title" = "Full-detail history";
 "history.rawWindow.detail" = "How long to keep minute-level samples.";
 "history.window.days30" = "30 days";
@@ -267,6 +307,10 @@
 "history.window.forever" = "Forever";
 "history.longTerm.title" = "Older data";
 "history.longTerm.detail" = "Keep older data downsampled to this resolution, indefinitely.";
+"history.longTerm.off.detail" = "Keep only full-detail samples within the selected window. Older rollups, battery-health and cycle history, and unreferenced metadata are permanently deleted.";
+"history.longTerm.off.confirm.title" = "Stop keeping older data?";
+"history.longTerm.off.confirm.message" = "PowerLens will keep full-detail samples from the last %@. It will permanently delete older hourly or daily rollups, battery-health and cycle history older than that window, and app, adapter, and battery metadata that no retained sample references.\n\nThis cannot be undone unless you restore a backup.";
+"history.longTerm.off.confirm.action" = "Delete Older Data";
 "history.resolution.hourly" = "Hourly";
 "history.resolution.daily" = "Daily";
 "history.resolution.off" = "Don't keep";
