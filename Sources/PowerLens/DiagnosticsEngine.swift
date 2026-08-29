@@ -33,6 +33,7 @@ extension TelemetrySnapshot {
            temperature >= 36 {
             results.append(
                 DiagnosticItem(
+                    kind: .temperatureHigh,
                     severity: .caution,
                     title: L10n.text("diag.temperatureHigh.title"),
                     message: L10n.tr("diag.temperatureHigh.message", Formatters.temperature(temperature))
@@ -44,6 +45,7 @@ extension TelemetrySnapshot {
            health < 85 {
             results.append(
                 DiagnosticItem(
+                    kind: .batteryHealthWear,
                     severity: .caution,
                     title: L10n.text("diag.healthWear.title"),
                     message: L10n.tr("diag.healthWear.message", Formatters.percent(health))
@@ -54,6 +56,7 @@ extension TelemetrySnapshot {
         if lowPowerModeEnabled {
             results.append(
                 DiagnosticItem(
+                    kind: .lowPowerMode,
                     severity: .info,
                     title: L10n.text("diag.lowPowerMode.title"),
                     message: L10n.text("diag.lowPowerMode.message")
@@ -123,6 +126,7 @@ extension TelemetrySnapshot {
         }
 
         return DiagnosticItem(
+            kind: .managedCharging,
             severity: .info,
             title: title,
             message: message
@@ -138,6 +142,7 @@ extension TelemetrySnapshot {
         }
 
         return DiagnosticItem(
+            kind: .powerDeliveryShortfall,
             severity: .warning,
             title: L10n.text("diag.powerDeliveryShortfall.title"),
             message: L10n.tr(
@@ -152,6 +157,7 @@ extension TelemetrySnapshot {
         for evidence: ConfirmedPowerDeliveryShortfall
     ) -> DiagnosticItem? {
         return DiagnosticItem(
+            kind: .powerDeliveryShortfall,
             severity: .warning,
             title: L10n.text("diag.powerDeliveryShortfall.title"),
             message: L10n.tr(
@@ -164,6 +170,7 @@ extension TelemetrySnapshot {
 
     private var healthyDiagnostic: DiagnosticItem {
         DiagnosticItem(
+            kind: .healthy,
             severity: .info,
             title: L10n.text("diag.healthy.title"),
             message: L10n.text("diag.healthy.message")

@@ -150,7 +150,12 @@ struct DashboardView: View {
     }
 
     private func dashboardSection(_ snapshot: TelemetrySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+        let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
+            store.diagnostics,
+            resolvedState: store.resolvedPowerState
+        )
+
+        return VStack(alignment: .leading, spacing: 20) {
             LazyVGrid(columns: columns, spacing: 16) {
                 metricCard(
                     L10n.text("ui.metric.battery"),
@@ -200,7 +205,9 @@ struct DashboardView: View {
                 EnergyUsageCard(apps: store.topEnergyApps)
             }
 
-            diagnosticsBlock
+            if !diagnostics.isEmpty {
+                diagnosticsBlock(diagnostics)
+            }
         }
     }
 
@@ -259,7 +266,7 @@ struct DashboardView: View {
 
     private func diagnosticsSection(_ snapshot: TelemetrySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            diagnosticsBlock
+            diagnosticsBlock(store.diagnostics)
 
             if !store.topEnergyApps.isEmpty {
                 EnergyUsageCard(apps: store.topEnergyApps)
@@ -272,12 +279,14 @@ struct DashboardView: View {
         }
     }
 
-    private var diagnosticsBlock: some View {
+    private func diagnosticsBlock(
+        _ diagnostics: [DiagnosticItem]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.text("ui.section.diagnostics"))
                 .font(.title2.weight(.semibold))
 
-            ForEach(store.diagnostics) { item in
+            ForEach(diagnostics) { item in
                 DiagnosticRow(item: item)
             }
         }

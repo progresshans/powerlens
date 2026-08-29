@@ -53,6 +53,16 @@ enum DiagnosticSeverity: String, Codable, Sendable {
     case warning
 }
 
+enum DiagnosticKind: Equatable, Sendable {
+    case powerDeliveryShortfall
+    case temperatureHigh
+    case batteryHealthWear
+    case lowPowerMode
+    case managedCharging
+    case healthy
+    case other
+}
+
 enum BatteryPowerSource: String, Codable, Sendable {
     case directTelemetry = "direct_telemetry"
     case currentAndVoltage = "current_and_voltage"
@@ -69,9 +79,22 @@ enum PowerMeasurementSetSource: String, Codable, Sendable {
 
 struct DiagnosticItem: Identifiable, Equatable, Sendable {
     let id = UUID()
+    let kind: DiagnosticKind
     let severity: DiagnosticSeverity
     let title: String
     let message: String
+
+    init(
+        kind: DiagnosticKind = .other,
+        severity: DiagnosticSeverity,
+        title: String,
+        message: String
+    ) {
+        self.kind = kind
+        self.severity = severity
+        self.title = title
+        self.message = message
+    }
 }
 
 struct TelemetrySnapshot: Identifiable, Codable, Equatable, Sendable {
