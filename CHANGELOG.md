@@ -4,6 +4,13 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [0.9.4] - 2026-08-29
+
+### Security
+
+- Updated Sparkle to 2.9.6 to incorporate upstream security hardening for
+  update installation and validation.
+
 ## [0.9.3] - 2026-08-12
 
 ### Added
