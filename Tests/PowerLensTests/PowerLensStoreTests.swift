@@ -345,6 +345,85 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
+    func becomingInteractiveDuringStartupRefreshesBeforeHistoryIsReady() async {
+        let snapshot = makeTelemetrySnapshot()
+        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
+        let reader = CountingTelemetryReader(snapshot: snapshot)
+        let historyStore = StubHistoryStore(blocksLoad: true)
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: historyStore,
+            energySampler: EmptyEnergySampler(),
+            systemCompatibilityRecorder: StubSystemCompatibilityRecorder(),
+            startsAutomatically: true,
+            interactiveRefreshInterval: .seconds(60),
+            backgroundRefreshInterval: .seconds(60)
+        )
+
+        await historyStore.waitUntilLoadStarts()
+        store.setRefreshCadence(.interactive)
+        await waitForReadCount(1, in: reader)
+
+        let readsBeforeHistoryWasReady = await reader.readCount()
+        let appendsBeforeHistoryWasReady =
+            await historyStore.appendedSnapshots()
+
+        await historyStore.finishLoading()
+        await waitForReadCount(2, in: reader)
+        await waitForAppendCount(1, in: historyStore)
+
+        #expect(readsBeforeHistoryWasReady == 1)
+        #expect(appendsBeforeHistoryWasReady.isEmpty)
+        #expect(await reader.readCount() == 2)
+        #expect(
+            await historyStore.appendedSnapshots()
+                == [historicalSnapshot]
+        )
+        withExtendedLifetime(store) {}
+    }
+
+    @Test
+    @MainActor
+    func becomingInteractiveDoesNotSupersedeAStartupReadInFlight() async {
+        let snapshot = makeTelemetrySnapshot()
+        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
+        let reader = ControlledTelemetryReader()
+        let historyStore = StubHistoryStore()
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: historyStore,
+            energySampler: EmptyEnergySampler(),
+            systemCompatibilityRecorder: StubSystemCompatibilityRecorder(),
+            startsAutomatically: true,
+            interactiveRefreshInterval: .seconds(60),
+            backgroundRefreshInterval: .seconds(60)
+        )
+
+        await waitForPendingReads(1, in: reader)
+        store.setRefreshCadence(.interactive)
+        try? await Task.sleep(for: .milliseconds(20))
+
+        let pendingReadCount = await reader.pendingReadCount()
+        let result = TelemetryReadResult(
+            snapshot: snapshot,
+            activeEngine: .livePrecision
+        )
+        if pendingReadCount > 1 {
+            await reader.resumeLast(with: result)
+        }
+        await reader.resumeFirst(with: result)
+        await waitForAppendCount(1, in: historyStore)
+
+        #expect(pendingReadCount == 1)
+        #expect(
+            await historyStore.appendedSnapshots()
+                == [historicalSnapshot]
+        )
+        withExtendedLifetime(store) {}
+    }
+
+    @Test
+    @MainActor
     func retentionPreferenceChangeRequestsANewPurge() async {
         let historyStore = StubHistoryStore()
         let snapshot = makeTelemetrySnapshot()
@@ -620,7 +699,7 @@ private actor SequenceTelemetryReader: TelemetryReading {
 }
 
 private func waitForPendingReads(_ expectedCount: Int, in reader: ControlledTelemetryReader) async {
-    for _ in 0..<100 {
+    for _ in 0..<1_000 {
         if await reader.pendingReadCount() >= expectedCount {
             return
         }
@@ -646,6 +725,19 @@ private func waitForReadCount(
 ) async {
     for _ in 0..<200 {
         if await reader.readCount() >= expectedCount {
+            return
+        }
+
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+}
+
+private func waitForAppendCount(
+    _ expectedCount: Int,
+    in historyStore: StubHistoryStore
+) async {
+    for _ in 0..<200 {
+        if await historyStore.appendedSnapshots().count >= expectedCount {
             return
         }
 
@@ -742,19 +834,35 @@ private actor StubHistoryStore: HistoryStoring {
     private var purgedCutoffs: [Date] = []
     private let failAppend: Bool
     private let loadedSnapshots: [TelemetrySnapshot]
+    private let blocksLoad: Bool
+    private var loadStarted = false
+    private var loadStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var loadContinuation: CheckedContinuation<Void, Never>?
 
     init(
         failAppend: Bool = false,
-        loadedSnapshots: [TelemetrySnapshot] = []
+        loadedSnapshots: [TelemetrySnapshot] = [],
+        blocksLoad: Bool = false
     ) {
         self.failAppend = failAppend
         self.loadedSnapshots = loadedSnapshots
+        self.blocksLoad = blocksLoad
     }
 
     func loadRecent(
         since cutoffDate: Date
     ) async throws -> [TelemetrySnapshot] {
-        loadedSnapshots
+        if blocksLoad {
+            loadStarted = true
+            loadStartWaiters.forEach { $0.resume() }
+            loadStartWaiters.removeAll()
+
+            await withCheckedContinuation { continuation in
+                loadContinuation = continuation
+            }
+        }
+
+        return loadedSnapshots
     }
 
     func append(_ snapshot: TelemetrySnapshot) async throws {
@@ -800,6 +908,21 @@ private actor StubHistoryStore: HistoryStoring {
 
     func purgedCutoffDates() -> [Date] {
         purgedCutoffs
+    }
+
+    func waitUntilLoadStarts() async {
+        guard !loadStarted else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            loadStartWaiters.append(continuation)
+        }
+    }
+
+    func finishLoading() {
+        loadContinuation?.resume()
+        loadContinuation = nil
     }
 }
 

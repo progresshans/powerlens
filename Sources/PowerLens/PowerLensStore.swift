@@ -9,6 +9,19 @@ final class PowerLensStore: ObservableObject {
         case background
     }
 
+    private enum RefreshPersistencePolicy {
+        case ifDue
+        case immediately
+        case disabled
+    }
+
+    private enum AutomaticRefreshPhase {
+        case disabled
+        case preparingHistory
+        case initialRefresh
+        case running
+    }
+
     @Published private(set) var latest: TelemetrySnapshot?
     @Published private(set) var telemetryHealth = TelemetryHealth.waiting
     @Published private(set) var historyHealth = HistoryHealth.checking
@@ -39,8 +52,9 @@ final class PowerLensStore: ObservableObject {
         category: "History"
     )
     private var startupTask: Task<Void, Never>?
+    private var startupInteractiveRefreshTask: Task<Void, Never>?
     private var refreshLoopTask: Task<Void, Never>?
-    private var refreshLoopStarted = false
+    private var automaticRefreshPhase = AutomaticRefreshPhase.disabled
     private var refreshSequence = 0
     private var powerStateTracker: PowerStateTracker
     private let memoryWindow: TimeInterval = 30 * 24 * 3600
@@ -85,6 +99,7 @@ final class PowerLensStore: ObservableObject {
     }
 
     private func startRefreshTask() {
+        automaticRefreshPhase = .preparingHistory
         startupTask = Task { [weak self] in
             await self?.prepareForAutomaticRefresh()
         }
@@ -108,12 +123,17 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        await refresh(persistImmediately: history.isEmpty)
+        automaticRefreshPhase = .initialRefresh
+        startupInteractiveRefreshTask?.cancel()
+        startupInteractiveRefreshTask = nil
+        await refresh(
+            persistencePolicy: history.isEmpty ? .immediately : .ifDue
+        )
         guard !Task.isCancelled else {
             return
         }
 
-        refreshLoopStarted = true
+        automaticRefreshPhase = .running
         restartRefreshLoop(refreshImmediately: false)
     }
 
@@ -142,17 +162,20 @@ final class PowerLensStore: ObservableObject {
 
     deinit {
         startupTask?.cancel()
+        startupInteractiveRefreshTask?.cancel()
         refreshLoopTask?.cancel()
     }
 
     func refreshNow() {
         Task {
-            await refresh(persistImmediately: true)
+            await refresh(persistencePolicy: .immediately)
         }
     }
 
     func refreshOnce(persistImmediately: Bool = true) async {
-        await refresh(persistImmediately: persistImmediately)
+        await refresh(
+            persistencePolicy: persistImmediately ? .immediately : .ifDue
+        )
     }
 
     func setRefreshCadence(_ cadence: RefreshCadence) {
@@ -161,11 +184,16 @@ final class PowerLensStore: ObservableObject {
         }
 
         refreshCadence = cadence
-        guard refreshLoopStarted else {
-            return
+        switch automaticRefreshPhase {
+        case .preparingHistory:
+            if cadence == .interactive {
+                restartStartupInteractiveRefresh()
+            }
+        case .running:
+            restartRefreshLoop(refreshImmediately: cadence == .interactive)
+        case .disabled, .initialRefresh:
+            break
         }
-
-        restartRefreshLoop(refreshImmediately: cadence == .interactive)
     }
 
     func historyRetentionPreferencesChanged() {
@@ -300,7 +328,7 @@ final class PowerLensStore: ObservableObject {
         refreshLoopTask?.cancel()
         refreshLoopTask = Task { [weak self] in
             if refreshImmediately {
-                await self?.refresh(persistImmediately: false)
+                await self?.refresh(persistencePolicy: .ifDue)
             }
 
             while !Task.isCancelled {
@@ -316,12 +344,19 @@ final class PowerLensStore: ObservableObject {
                     return
                 }
 
-                await self?.refresh(persistImmediately: false)
+                await self?.refresh(persistencePolicy: .ifDue)
                 guard !Task.isCancelled else {
                     return
                 }
                 await self?.purgeIfNeeded()
             }
+        }
+    }
+
+    private func restartStartupInteractiveRefresh() {
+        startupInteractiveRefreshTask?.cancel()
+        startupInteractiveRefreshTask = Task { [weak self] in
+            await self?.refresh(persistencePolicy: .disabled)
         }
     }
 
@@ -334,7 +369,9 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
-    private func refresh(persistImmediately: Bool) async {
+    private func refresh(
+        persistencePolicy: RefreshPersistencePolicy
+    ) async {
         refreshSequence += 1
         let sequence = refreshSequence
         let preference = TelemetryEnginePreference.current
@@ -408,8 +445,16 @@ final class PowerLensStore: ObservableObject {
         systemCompatibilityDiagnostics =
             result.systemCompatibilityDiagnostics
 
-        let shouldPersist = persistImmediately || shouldPersist(snapshot: snapshot)
-        guard shouldPersist else {
+        let shouldWriteHistory: Bool
+        switch persistencePolicy {
+        case .ifDue:
+            shouldWriteHistory = shouldPersist(snapshot: snapshot)
+        case .immediately:
+            shouldWriteHistory = true
+        case .disabled:
+            shouldWriteHistory = false
+        }
+        guard shouldWriteHistory else {
             return
         }
 
