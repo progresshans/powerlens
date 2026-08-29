@@ -128,23 +128,33 @@ struct LiveIndicatorView: View {
     }
 
     private func content(now: Date) -> some View {
-        HStack(spacing: 10) {
+        let freshness = TelemetryFreshness(
+            refreshDate: refreshDate,
+            health: health,
+            now: now
+        )
+
+        return HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(dotColor(now: now).opacity(isLive(now: now) ? 0.16 : 0.08))
+                    .fill(
+                        dotColor(freshness).opacity(
+                            freshness.isLive ? 0.16 : 0.08
+                        )
+                    )
                     .frame(width: 22, height: 22)
 
                 Circle()
-                    .fill(dotColor(now: now))
+                    .fill(dotColor(freshness))
                     .frame(width: 10, height: 10)
             }
             .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(freshness.title)
                     .font(.subheadline.weight(.semibold))
 
-                Text(detailText(now: now))
+                Text(detailText(freshness, now: now))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -155,24 +165,16 @@ struct LiveIndicatorView: View {
         .background(.quaternary.opacity(0.24), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var title: String {
-        switch health {
-        case .waiting, .live:
-            L10n.text("telemetry.live")
-        case .delayed:
-            L10n.text("telemetry.delayed")
-        case .unavailable:
-            L10n.text("telemetry.unavailable")
-        }
-    }
-
-    private func detailText(now: Date) -> String {
+    private func detailText(
+        _ freshness: TelemetryFreshness,
+        now: Date
+    ) -> String {
         guard let refreshDate else {
             return L10n.text("telemetry.live.waiting")
         }
 
         let age = Formatters.relativeAge(since: refreshDate, now: now)
-        if case .delayed = health {
+        if freshness.state == .delayed {
             return L10n.tr(
                 "telemetry.delayed.detail",
                 activeEngineName,
@@ -182,43 +184,16 @@ struct LiveIndicatorView: View {
         return L10n.tr("telemetry.live.detail", activeEngineName, age)
     }
 
-    private func dotColor(now: Date) -> Color {
-        switch health {
+    private func dotColor(_ freshness: TelemetryFreshness) -> Color {
+        switch freshness.state {
         case .waiting:
             return .gray
         case .unavailable:
             return .red
         case .delayed:
-            guard let refreshDate else {
-                return .red
-            }
-            return now.timeIntervalSince(refreshDate) <= 60 ? .orange : .red
+            return freshness.isCriticallyDelayed ? .red : .orange
         case .live:
-            break
-        }
-
-        guard let refreshDate else {
-            return .gray
-        }
-
-        let age = now.timeIntervalSince(refreshDate)
-        if age <= 6 {
             return .green
         }
-        if age <= 15 {
-            return .orange
-        }
-        return .red
-    }
-
-    private func isLive(now: Date) -> Bool {
-        guard health == .live else {
-            return false
-        }
-        guard let refreshDate else {
-            return false
-        }
-
-        return now.timeIntervalSince(refreshDate) <= 6
     }
 }

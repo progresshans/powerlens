@@ -153,6 +153,56 @@ struct ChargingPolicyAwarenessTests {
     }
 
     @Test
+    func primaryManagedChargingStatusIsNotRepeatedInSummaryDiagnostics() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 80,
+            batteryCurrentA: 0,
+            batteryPowerW: 0,
+            adapterInputPowerW: 11,
+            systemLoadW: 11,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+        let diagnostics = snapshot.diagnostics
+
+        #expect(diagnostics.map(\.kind) == [.managedCharging])
+        #expect(
+            snapshot.diagnosticsExcludingPrimaryStatus(
+                diagnostics,
+                resolvedState: nil
+            ).isEmpty
+        )
+    }
+
+    @Test
+    func managedChargingDiagnosticRemainsWhenWarningOwnsTheHeadline() {
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 80,
+            batteryCurrentA: 0,
+            batteryPowerW: 0,
+            adapterInputPowerW: 11,
+            systemLoadW: 11,
+            chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+        let resolvedState = ResolvedPowerState(
+            batteryFlowEvidence: .calm,
+            managedChargingState: .holdingAtLimit(targetPercent: 80),
+            powerDeliveryState: .sustainedShortfall,
+            externalPowerState: .connected,
+            confirmedShortfall: nil
+        )
+        let diagnostics = snapshot.diagnostics(
+            resolvedState: resolvedState
+        )
+        let summaryDiagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
+            diagnostics,
+            resolvedState: resolvedState
+        )
+
+        #expect(snapshot.statusHeadline(resolvedState: resolvedState) == L10n.text("status.adapterBatteryAssist"))
+        #expect(summaryDiagnostics.contains { $0.kind == .managedCharging })
+    }
+
+    @Test
     func compatibleTelemetryCanStillIdentifyManualLimitHold() {
         let snapshot = makeTelemetrySnapshot(
             batteryLevel: 85,

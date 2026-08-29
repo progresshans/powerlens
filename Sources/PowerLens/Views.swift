@@ -41,17 +41,24 @@ struct MenuBarRootView: View {
     }
 
     private func popoverContent(_ snapshot: TelemetrySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
+            store.diagnostics,
+            resolvedState: store.resolvedPowerState
+        )
+
+        return VStack(alignment: .leading, spacing: 12) {
             popoverHeader(snapshot)
 
             PowerFlowCard(snapshot: snapshot, density: .compact)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.text("ui.section.diagnostics"))
-                    .font(.subheadline.weight(.semibold))
+            if !diagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.text("ui.section.diagnostics"))
+                        .font(.subheadline.weight(.semibold))
 
-                ForEach(store.diagnostics.prefix(2)) { item in
-                    DiagnosticRow(item: item)
+                    ForEach(diagnostics.prefix(2)) { item in
+                        DiagnosticRow(item: item)
+                    }
                 }
             }
 
@@ -143,13 +150,22 @@ private struct CompactLiveStatusChip: View {
     }
 
     private func content(now: Date) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(dotColor(now: now))
-                .frame(width: 7, height: 7)
-                .shadow(color: dotColor(now: now).opacity(0.35), radius: 2)
+        let freshness = TelemetryFreshness(
+            refreshDate: refreshDate,
+            health: health,
+            now: now
+        )
 
-            Text(detailText(now: now))
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(dotColor(freshness))
+                .frame(width: 7, height: 7)
+                .shadow(
+                    color: dotColor(freshness).opacity(0.35),
+                    radius: 2
+                )
+
+            Text(detailText(freshness, now: now))
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -159,50 +175,28 @@ private struct CompactLiveStatusChip: View {
         .background(.quaternary.opacity(0.24), in: Capsule())
     }
 
-    private func detailText(now: Date) -> String {
+    private func detailText(
+        _ freshness: TelemetryFreshness,
+        now: Date
+    ) -> String {
         guard let refreshDate else {
-            let title = health.isUnavailable
-                ? L10n.text("telemetry.unavailable")
-                : L10n.text("telemetry.live")
-            return "\(title) · \(L10n.text("telemetry.live.waiting"))"
+            return "\(freshness.title) · \(L10n.text("telemetry.live.waiting"))"
         }
 
-        let title: String
-        if case .delayed = health {
-            title = L10n.text("telemetry.delayed")
-        } else {
-            title = L10n.text("telemetry.live")
-        }
-        return "\(title) · \(Formatters.relativeAge(since: refreshDate, now: now))"
+        return "\(freshness.title) · \(Formatters.relativeAge(since: refreshDate, now: now))"
     }
 
-    private func dotColor(now: Date) -> Color {
-        switch health {
+    private func dotColor(_ freshness: TelemetryFreshness) -> Color {
+        switch freshness.state {
         case .waiting:
             return .gray
         case .unavailable:
             return .red
         case .delayed:
-            guard let refreshDate else {
-                return .red
-            }
-            return now.timeIntervalSince(refreshDate) <= 60 ? .orange : .red
+            return freshness.isCriticallyDelayed ? .red : .orange
         case .live:
-            break
-        }
-
-        guard let refreshDate else {
-            return .gray
-        }
-
-        let age = now.timeIntervalSince(refreshDate)
-        if age <= 6 {
             return .green
         }
-        if age <= 15 {
-            return .orange
-        }
-        return .red
     }
 }
 

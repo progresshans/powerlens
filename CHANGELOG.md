@@ -4,6 +4,15 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [Unreleased]
+
+### Fixed
+
+- Managed charging status is no longer repeated in summary diagnostics when it
+  is already the primary status.
+- Opening the popover or Dashboard now refreshes power telemetry immediately,
+  and stale samples are no longer presented as live.
+
 ## [0.9.4] - 2026-08-29
 
 ### Security

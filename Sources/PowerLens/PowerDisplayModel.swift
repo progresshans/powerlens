@@ -318,6 +318,32 @@ extension TelemetrySnapshot {
         }
     }
 
+    func diagnosticsExcludingPrimaryStatus(
+        _ diagnostics: [DiagnosticItem],
+        resolvedState: ResolvedPowerState?
+    ) -> [DiagnosticItem] {
+        guard managedChargingIsPrimaryStatus(
+            resolvedState: resolvedState
+        ) else {
+            return diagnostics
+        }
+
+        return diagnostics.filter { $0.kind != .managedCharging }
+    }
+
+    private func managedChargingIsPrimaryStatus(
+        resolvedState: ResolvedPowerState?
+    ) -> Bool {
+        guard externalConnected,
+              resolvedState?.powerDeliveryState != .sustainedShortfall else {
+            return false
+        }
+
+        let managedState = resolvedState?.managedChargingState
+            ?? managedChargingState
+        return managedChargingHeadline(for: managedState) != nil
+    }
+
     var primaryDisplayedPowerW: Double? {
         if let systemLoadW {
             return systemLoadW

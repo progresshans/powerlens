@@ -315,6 +315,36 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
+    func becomingInteractiveRefreshesImmediatelyAndRestartsTheLoop() async {
+        let snapshot = makeTelemetrySnapshot()
+        let reader = CountingTelemetryReader(snapshot: snapshot)
+        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: StubHistoryStore(
+                loadedSnapshots: [historicalSnapshot]
+            ),
+            energySampler: EmptyEnergySampler(),
+            startsAutomatically: true,
+            interactiveRefreshInterval: .seconds(60),
+            backgroundRefreshInterval: .seconds(60)
+        )
+
+        await waitForSuccessfulRefresh(in: store)
+        #expect(await reader.readCount() == 1)
+
+        store.setRefreshCadence(.interactive)
+        await waitForReadCount(2, in: reader)
+        #expect(await reader.readCount() == 2)
+
+        store.setRefreshCadence(.interactive)
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(await reader.readCount() == 2)
+        withExtendedLifetime(store) {}
+    }
+
+    @Test
+    @MainActor
     func retentionPreferenceChangeRequestsANewPurge() async {
         let historyStore = StubHistoryStore()
         let snapshot = makeTelemetrySnapshot()
@@ -599,6 +629,30 @@ private func waitForPendingReads(_ expectedCount: Int, in reader: ControlledTele
     }
 }
 
+@MainActor
+private func waitForSuccessfulRefresh(in store: PowerLensStore) async {
+    for _ in 0..<200 {
+        if store.telemetryHealth == .live {
+            return
+        }
+
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+}
+
+private func waitForReadCount(
+    _ expectedCount: Int,
+    in reader: CountingTelemetryReader
+) async {
+    for _ in 0..<200 {
+        if await reader.readCount() >= expectedCount {
+            return
+        }
+
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+}
+
 private actor StubTelemetryReader: TelemetryReading {
     let result: TelemetryReadResult?
     let error: Error?
@@ -623,6 +677,35 @@ private actor StubTelemetryReader: TelemetryReading {
         }
 
         return result
+    }
+}
+
+private actor CountingTelemetryReader: TelemetryReading {
+    private let snapshot: TelemetrySnapshot
+    private var count = 0
+
+    init(snapshot: TelemetrySnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func readSnapshot(
+        preference: TelemetryEnginePreference
+    ) async throws -> TelemetryReadResult {
+        count += 1
+        return TelemetryReadResult(
+            snapshot: snapshot,
+            activeEngine: .livePrecision
+        )
+    }
+
+    func readCount() -> Int {
+        count
+    }
+}
+
+private actor EmptyEnergySampler: ProcessEnergySampling {
+    func sample(now: Date) async -> [AppEnergyUsage] {
+        []
     }
 }
 
@@ -658,15 +741,20 @@ private actor StubHistoryStore: HistoryStoring {
     private var appended: [TelemetrySnapshot] = []
     private var purgedCutoffs: [Date] = []
     private let failAppend: Bool
+    private let loadedSnapshots: [TelemetrySnapshot]
 
-    init(failAppend: Bool = false) {
+    init(
+        failAppend: Bool = false,
+        loadedSnapshots: [TelemetrySnapshot] = []
+    ) {
         self.failAppend = failAppend
+        self.loadedSnapshots = loadedSnapshots
     }
 
     func loadRecent(
         since cutoffDate: Date
     ) async throws -> [TelemetrySnapshot] {
-        []
+        loadedSnapshots
     }
 
     func append(_ snapshot: TelemetrySnapshot) async throws {

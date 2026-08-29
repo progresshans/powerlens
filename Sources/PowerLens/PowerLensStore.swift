@@ -4,7 +4,7 @@ import OSLog
 
 @MainActor
 final class PowerLensStore: ObservableObject {
-    enum RefreshCadence {
+    enum RefreshCadence: Equatable {
         case interactive
         case background
     }
@@ -38,14 +38,16 @@ final class PowerLensStore: ObservableObject {
         subsystem: "com.progresshans.powerlens",
         category: "History"
     )
-    private var refreshTask: Task<Void, Never>?
+    private var startupTask: Task<Void, Never>?
+    private var refreshLoopTask: Task<Void, Never>?
+    private var refreshLoopStarted = false
     private var refreshSequence = 0
     private var powerStateTracker: PowerStateTracker
     private let memoryWindow: TimeInterval = 30 * 24 * 3600
     private let purgeInterval: TimeInterval = 24 * 3600
     private var lastPurgeAt: Date?
-    private let interactiveRefreshInterval: Duration = .seconds(3)
-    private let backgroundRefreshInterval: Duration = .seconds(10)
+    private let interactiveRefreshInterval: Duration
+    private let backgroundRefreshInterval: Duration
     private var refreshCadence: RefreshCadence = .background
 
     var telemetryUnavailable: Bool {
@@ -59,6 +61,8 @@ final class PowerLensStore: ObservableObject {
         systemCompatibilityRecorder: any SystemCompatibilityRecording =
             SystemCompatibilityRecorder.shared,
         startsAutomatically: Bool = true,
+        interactiveRefreshInterval: Duration = .seconds(3),
+        backgroundRefreshInterval: Duration = .seconds(10),
         now: @escaping () -> Date = Date.init,
         powerStateConfiguration: PowerStateHysteresisConfiguration = .init()
     ) {
@@ -66,6 +70,8 @@ final class PowerLensStore: ObservableObject {
         self.historyStore = historyStore
         self.energySampler = energySampler
         self.systemCompatibilityRecorder = systemCompatibilityRecorder
+        self.interactiveRefreshInterval = interactiveRefreshInterval
+        self.backgroundRefreshInterval = backgroundRefreshInterval
         self.now = now
         self.powerStateTracker = PowerStateTracker(
             configuration: powerStateConfiguration
@@ -79,19 +85,36 @@ final class PowerLensStore: ObservableObject {
     }
 
     private func startRefreshTask() {
-        refreshTask = Task {
-            do {
-                history = try await historyStore.loadRecent(
-                    since: now().addingTimeInterval(-memoryWindow)
-                )
-                recordHistorySuccess()
-            } catch {
-                recordHistoryFailure(error, operation: "load recent history")
-            }
-            await purgeIfNeeded()
-            await refresh(persistImmediately: history.isEmpty)
-            await refreshLoop()
+        startupTask = Task { [weak self] in
+            await self?.prepareForAutomaticRefresh()
         }
+    }
+
+    private func prepareForAutomaticRefresh() async {
+        do {
+            history = try await historyStore.loadRecent(
+                since: now().addingTimeInterval(-memoryWindow)
+            )
+            recordHistorySuccess()
+        } catch {
+            recordHistoryFailure(error, operation: "load recent history")
+        }
+        guard !Task.isCancelled else {
+            return
+        }
+
+        await purgeIfNeeded()
+        guard !Task.isCancelled else {
+            return
+        }
+
+        await refresh(persistImmediately: history.isEmpty)
+        guard !Task.isCancelled else {
+            return
+        }
+
+        refreshLoopStarted = true
+        restartRefreshLoop(refreshImmediately: false)
     }
 
     private func purgeIfNeeded() async {
@@ -118,7 +141,8 @@ final class PowerLensStore: ObservableObject {
     }
 
     deinit {
-        refreshTask?.cancel()
+        startupTask?.cancel()
+        refreshLoopTask?.cancel()
     }
 
     func refreshNow() {
@@ -132,7 +156,16 @@ final class PowerLensStore: ObservableObject {
     }
 
     func setRefreshCadence(_ cadence: RefreshCadence) {
+        guard refreshCadence != cadence else {
+            return
+        }
+
         refreshCadence = cadence
+        guard refreshLoopStarted else {
+            return
+        }
+
+        restartRefreshLoop(refreshImmediately: cadence == .interactive)
     }
 
     func historyRetentionPreferencesChanged() {
@@ -263,15 +296,32 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
-    private func refreshLoop() async {
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: currentRefreshInterval)
-            } catch {
-                return
+    private func restartRefreshLoop(refreshImmediately: Bool) {
+        refreshLoopTask?.cancel()
+        refreshLoopTask = Task { [weak self] in
+            if refreshImmediately {
+                await self?.refresh(persistImmediately: false)
             }
-            await refresh(persistImmediately: false)
-            await purgeIfNeeded()
+
+            while !Task.isCancelled {
+                guard let interval = self?.currentRefreshInterval else {
+                    return
+                }
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await self?.refresh(persistImmediately: false)
+                guard !Task.isCancelled else {
+                    return
+                }
+                await self?.purgeIfNeeded()
+            }
         }
     }
 
