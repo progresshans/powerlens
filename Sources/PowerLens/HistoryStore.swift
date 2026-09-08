@@ -284,10 +284,28 @@ actor HistoryStore: HistoryStoring {
     }
 
     private func rollUpSamples(before cutoff: Int64, bucketSeconds: Int, using db: OpaquePointer) throws {
-        // Charge sessions are detected with a LAG window (rising charging edge);
-        // on-battery / on-external time is approximated as the sample count times
-        // the nominal one-minute sampling interval.
+        // Each bucket counts its own rising charging edges, including an
+        // already-charging first observation. Stored boundary states let the
+        // summary join these segments without double-counting one session.
+        // Duration estimates retain the nominal one-minute sampling interval.
         let sql = """
+        WITH bucketed AS (
+            SELECT *, (ts / ?1) * ?1 AS bucket
+            FROM telemetry_samples
+            WHERE ts < ?2
+        ), ordered AS (
+            SELECT *,
+                LAG(is_charging) OVER (
+                    PARTITION BY bucket ORDER BY ts, sample_id
+                ) AS previous_charging,
+                ROW_NUMBER() OVER (
+                    PARTITION BY bucket ORDER BY ts, sample_id
+                ) AS first_position,
+                ROW_NUMBER() OVER (
+                    PARTITION BY bucket ORDER BY ts DESC, sample_id DESC
+                ) AS last_position
+            FROM bucketed
+        )
         INSERT INTO history_rollups (
             bucket_start,
             bucket_seconds,
@@ -303,11 +321,20 @@ actor HistoryStore: HistoryStoring {
             battery_temperature_max_c_x100,
             on_battery_seconds,
             on_external_seconds,
-            charge_sessions
+            charge_sessions,
+            system_load_sum_mw,
+            system_load_count,
+            adapter_input_power_sum_mw,
+            adapter_input_power_count,
+            battery_temperature_sum_c_x100,
+            battery_temperature_count,
+            first_sample_ts,
+            first_is_charging,
+            last_is_charging
         )
         SELECT
             bucket,
-            ?,
+            ?1,
             COUNT(*),
             CAST(ROUND(AVG(battery_level_x10)) AS INTEGER),
             MIN(battery_level_x10),
@@ -320,20 +347,18 @@ actor HistoryStore: HistoryStoring {
             MAX(battery_temperature_c_x100),
             SUM(CASE WHEN external_connected = 0 THEN 60 ELSE 0 END),
             SUM(CASE WHEN external_connected = 1 THEN 60 ELSE 0 END),
-            SUM(rising)
-        FROM (
-            SELECT
-                (ts / ?) * ? AS bucket,
-                external_connected,
-                battery_level_x10,
-                adapter_input_power_mw,
-                system_load_mw,
-                battery_power_mw,
-                battery_temperature_c_x100,
-                CASE WHEN is_charging = 1 AND COALESCE(LAG(is_charging) OVER (ORDER BY ts), 0) = 0 THEN 1 ELSE 0 END AS rising
-            FROM telemetry_samples
-            WHERE ts < ?
-        )
+            SUM(CASE WHEN is_charging = 1
+                     AND COALESCE(previous_charging, 0) = 0 THEN 1 ELSE 0 END),
+            SUM(system_load_mw),
+            COUNT(system_load_mw),
+            SUM(adapter_input_power_mw),
+            COUNT(adapter_input_power_mw),
+            SUM(battery_temperature_c_x100),
+            COUNT(battery_temperature_c_x100),
+            MIN(ts),
+            MAX(CASE WHEN first_position = 1 THEN is_charging END),
+            MAX(CASE WHEN last_position = 1 THEN is_charging END)
+        FROM ordered
         GROUP BY bucket
         """
 
@@ -344,16 +369,14 @@ actor HistoryStore: HistoryStoring {
         ) { statement in
             let bucket = sqlite3_int64(bucketSeconds)
             sqlite3_bind_int64(statement, 1, bucket)
-            sqlite3_bind_int64(statement, 2, bucket)
-            sqlite3_bind_int64(statement, 3, bucket)
-            sqlite3_bind_int64(statement, 4, cutoff)
+            sqlite3_bind_int64(statement, 2, cutoff)
         }
     }
 
     func aggregatedSeries(
         for range: DateInterval,
         bucketSeconds: Int
-    ) async throws -> [AggregatedTelemetryPoint] {
+    ) throws -> [AggregatedTelemetryPoint] {
         guard bucketSeconds > 0 else {
             throw HistoryStoreError.invalidConfiguration(
                 "History bucket duration must be greater than zero."
@@ -432,29 +455,40 @@ actor HistoryStore: HistoryStoring {
 
     func rollupSeries(
         for range: DateInterval
-    ) async throws -> [AggregatedTelemetryPoint] {
+    ) throws -> [AggregatedTelemetryPoint] {
         let db = try openDatabase()
 
         defer {
             sqlite3_close(db)
         }
 
+        // A resolution change can leave two disjoint sets of observations in
+        // buckets with the same nominal start. Use their recorded first sample
+        // for plotting; legacy rows keep their original coarse bucket position.
         let sql = """
         SELECT
-            bucket_start,
+            COALESCE(first_sample_ts, bucket_start) AS observation_start,
             sample_count,
             battery_level_avg_x10,
             battery_level_min_x10,
             battery_level_max_x10,
-            adapter_input_power_avg_mw,
-            system_load_avg_mw,
+            CASE WHEN adapter_input_power_count IS NULL
+                 THEN adapter_input_power_avg_mw
+                 ELSE 1.0 * adapter_input_power_sum_mw
+                      / NULLIF(adapter_input_power_count, 0) END,
+            CASE WHEN system_load_count IS NULL THEN system_load_avg_mw
+                 ELSE 1.0 * system_load_sum_mw
+                      / NULLIF(system_load_count, 0) END,
             system_load_max_mw,
             battery_power_avg_mw,
-            battery_temperature_avg_c_x100,
+            CASE WHEN battery_temperature_count IS NULL
+                 THEN battery_temperature_avg_c_x100
+                 ELSE 1.0 * battery_temperature_sum_c_x100
+                      / NULLIF(battery_temperature_count, 0) END,
             battery_temperature_max_c_x100
         FROM history_rollups
         WHERE bucket_start >= ? AND bucket_start < ?
-        ORDER BY bucket_start ASC
+        ORDER BY observation_start ASC, bucket_seconds ASC
         """
 
         let statement = try SQLiteStatement.prepare(
@@ -501,7 +535,7 @@ actor HistoryStore: HistoryStoring {
 
     func batteryHealthTrend(
         since cutoffDate: Date
-    ) async throws -> [BatteryHealthPoint] {
+    ) throws -> [BatteryHealthPoint] {
         let db = try openDatabase()
 
         defer {
@@ -556,7 +590,7 @@ actor HistoryStore: HistoryStoring {
         return points
     }
 
-    func summary(for range: DateInterval) async throws -> HistorySummary {
+    func summary(for range: DateInterval) throws -> HistorySummary {
         let db = try openDatabase()
 
         defer {
@@ -574,7 +608,7 @@ actor HistoryStore: HistoryStoring {
             battery_level_x10
         FROM telemetry_samples
         WHERE ts >= ? AND ts < ?
-        ORDER BY ts ASC
+        ORDER BY ts ASC, sample_id ASC
         """
 
         let statement = try SQLiteStatement.prepare(
@@ -612,6 +646,8 @@ actor HistoryStore: HistoryStoring {
         var previousTimestamp: TimeInterval?
         var previousExternal = false
         var previousCharging = false
+        var firstTimestamp: Int64?
+        var firstCharging: Bool?
 
         var result = sqlite3_step(statement)
         while result == SQLITE_ROW {
@@ -619,6 +655,10 @@ actor HistoryStore: HistoryStoring {
             let timestamp = TimeInterval(sqlite3_column_int64(statement, 0))
             let external = sqlite3_column_int(statement, 1) == 1
             let charging = sqlite3_column_int(statement, 2) == 1
+            if firstTimestamp == nil {
+                firstTimestamp = sqlite3_column_int64(statement, 0)
+                firstCharging = charging
+            }
 
             if let loadMW = SQLiteStatement.optionalDoubleValue(statement, index: 3) {
                 let load = loadMW / 1000
@@ -671,25 +711,33 @@ actor HistoryStore: HistoryStoring {
             operation: "load history summary"
         )
 
-        // Fold in downsampled rollups so a long range's summary covers the full
-        // record, not just the full-detail window. Raw samples and rollups never
-        // overlap in time, so summing is safe.
+        // New rollups retain exact sums and per-sensor valid-value counts.
+        // Legacy rows retain their historical sample-weighted estimate because
+        // missing-value counts cannot be recovered after raw data was removed.
         let rollupSQL = """
         SELECT
             COALESCE(SUM(sample_count), 0),
-            SUM(system_load_avg_mw * sample_count),
-            SUM(CASE WHEN system_load_avg_mw IS NOT NULL THEN sample_count ELSE 0 END),
+            SUM(CASE WHEN system_load_count IS NULL
+                     THEN system_load_avg_mw * sample_count
+                     ELSE system_load_sum_mw END),
+            SUM(COALESCE(system_load_count,
+                CASE WHEN system_load_avg_mw IS NOT NULL THEN sample_count ELSE 0 END)),
             MAX(system_load_max_mw),
-            SUM(adapter_input_power_avg_mw * sample_count),
-            SUM(CASE WHEN adapter_input_power_avg_mw IS NOT NULL THEN sample_count ELSE 0 END),
-            SUM(battery_temperature_avg_c_x100 * sample_count),
-            SUM(CASE WHEN battery_temperature_avg_c_x100 IS NOT NULL THEN sample_count ELSE 0 END),
+            SUM(CASE WHEN adapter_input_power_count IS NULL
+                     THEN adapter_input_power_avg_mw * sample_count
+                     ELSE adapter_input_power_sum_mw END),
+            SUM(COALESCE(adapter_input_power_count,
+                CASE WHEN adapter_input_power_avg_mw IS NOT NULL THEN sample_count ELSE 0 END)),
+            SUM(CASE WHEN battery_temperature_count IS NULL
+                     THEN battery_temperature_avg_c_x100 * sample_count
+                     ELSE battery_temperature_sum_c_x100 END),
+            SUM(COALESCE(battery_temperature_count,
+                CASE WHEN battery_temperature_avg_c_x100 IS NOT NULL THEN sample_count ELSE 0 END)),
             MAX(battery_temperature_max_c_x100),
             MIN(battery_level_min_x10),
             MAX(battery_level_max_x10),
             COALESCE(SUM(on_battery_seconds), 0),
-            COALESCE(SUM(on_external_seconds), 0),
-            COALESCE(SUM(charge_sessions), 0)
+            COALESCE(SUM(on_external_seconds), 0)
         FROM history_rollups
         WHERE bucket_start >= ? AND bucket_start < ?
         """
@@ -753,12 +801,20 @@ actor HistoryStore: HistoryStoring {
 
             timeOnBattery += Double(sqlite3_column_int64(rollupStatement, 11))
             timeOnExternal += Double(sqlite3_column_int64(rollupStatement, 12))
-            chargeSessions += Int(sqlite3_column_int64(rollupStatement, 13))
         }
 
         guard sampleCount > 0 else {
             return .empty(range: range)
         }
+
+        let combinedChargeSessions = try mergedChargeSessions(
+            for: range,
+            rawFirstTimestamp: firstTimestamp,
+            rawFirstCharging: firstCharging,
+            rawLastCharging: previousCharging,
+            rawChargeSessions: chargeSessions,
+            using: db
+        )
 
         return HistorySummary(
             range: range,
@@ -772,8 +828,111 @@ actor HistoryStore: HistoryStoring {
             maxBatteryLevel: levelMax,
             timeOnBattery: timeOnBattery,
             timeOnExternal: timeOnExternal,
-            chargeSessions: chargeSessions
+            chargeSessions: combinedChargeSessions
         )
+    }
+
+    private func mergedChargeSessions(
+        for range: DateInterval,
+        rawFirstTimestamp: Int64?,
+        rawFirstCharging: Bool?,
+        rawLastCharging: Bool,
+        rawChargeSessions: Int,
+        using db: OpaquePointer
+    ) throws -> Int {
+        // Raw data is the contiguous retained tail, so its already-computed
+        // sessions form one segment. New rollups each form another segment.
+        // A NULL legacy boundary deliberately breaks continuity: the original
+        // estimate is preserved rather than guessing a missing charging state.
+        let sql = """
+        WITH segments AS (
+            SELECT COALESCE(first_sample_ts, bucket_start) AS first_ts,
+                   bucket_seconds,
+                   COALESCE(charge_sessions, 0) AS sessions,
+                   first_is_charging AS first_charging,
+                   last_is_charging AS last_charging
+            FROM history_rollups
+            WHERE bucket_start >= ?1 AND bucket_start < ?2
+            UNION ALL
+            SELECT ?3, 0, ?4, ?5, ?6 WHERE ?3 IS NOT NULL
+        ), connected AS (
+            SELECT sessions, first_charging,
+                   LAG(last_charging) OVER (
+                       ORDER BY first_ts, bucket_seconds
+                   ) AS previous_last_charging
+            FROM segments
+        )
+        SELECT COALESCE(SUM(sessions - CASE
+            WHEN first_charging = 1 AND previous_last_charging = 1 THEN 1
+            ELSE 0 END), 0)
+        FROM connected
+        """
+        return Int(try SQLiteStatement.querySingleInt64(
+            sql,
+            using: db,
+            operation: "join history charging sessions"
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+            sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+            SQLiteStatement.bind(rawFirstTimestamp, to: statement, index: 3)
+            SQLiteStatement.bind(rawChargeSessions, to: statement, index: 4)
+            SQLiteStatement.bind(rawFirstCharging.map { $0 ? 1 : 0 }, to: statement, index: 5)
+            sqlite3_bind_int(statement, 6, rawLastCharging ? 1 : 0)
+        } ?? 0)
+    }
+
+    /// No suspension occurs between these queries, so append/purge operations
+    /// on this actor cannot split one Insights result across retention states.
+    func loadInsights(for range: HistoryRange, now: Date) async throws -> InsightsData {
+        let interval = range.interval(now: now)
+        var rawSeries = try aggregatedSeries(
+            for: interval,
+            bucketSeconds: range.bucketSeconds
+        )
+        let rollups = try rollupSeries(for: interval)
+
+        // The first raw aggregation bucket may start before its first retained
+        // sample, at the same x coordinate as an older rollup. Keep its metrics
+        // intact and place this boundary point at the first actual raw sample.
+        if let first = rawSeries.first,
+           let timestamp = try firstRawTimestamp(in: interval),
+           timestamp > first.bucketStart {
+            rawSeries[0] = AggregatedTelemetryPoint(
+                bucketStart: timestamp,
+                avgBatteryLevel: first.avgBatteryLevel,
+                minBatteryLevel: first.minBatteryLevel,
+                maxBatteryLevel: first.maxBatteryLevel,
+                avgAdapterInputPowerW: first.avgAdapterInputPowerW,
+                avgSystemLoadW: first.avgSystemLoadW,
+                maxSystemLoadW: first.maxSystemLoadW,
+                avgBatteryPowerW: first.avgBatteryPowerW,
+                avgTemperatureC: first.avgTemperatureC,
+                maxTemperatureC: first.maxTemperatureC,
+                sampleCount: first.sampleCount
+            )
+        }
+
+        return InsightsData(
+            range: range,
+            interval: interval,
+            series: (rollups + rawSeries).sorted { $0.bucketStart < $1.bucketStart },
+            summary: try summary(for: interval),
+            healthTrend: try batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
+        )
+    }
+
+    private func firstRawTimestamp(in range: DateInterval) throws -> Date? {
+        let db = try openDatabase()
+        defer { sqlite3_close(db) }
+        let timestamp = try SQLiteStatement.querySingleInt64(
+            "SELECT ts FROM telemetry_samples WHERE ts >= ? AND ts < ? ORDER BY ts LIMIT 1;",
+            using: db,
+            operation: "locate retained history boundary"
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+            sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+        }
+        return timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
     }
 
     private func openDatabase() throws -> OpaquePointer {

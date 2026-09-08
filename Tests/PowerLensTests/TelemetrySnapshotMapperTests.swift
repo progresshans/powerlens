@@ -62,7 +62,8 @@ struct TelemetrySnapshotMapperTests {
         )
         #expect(!snapshot.isBatteryChargingForDisplay)
         #expect(snapshot.externalPowerState == .onBattery)
-        #expect(snapshot.primaryDisplayedPowerW == snapshot.batteryPowerW)
+        #expect(snapshot.primaryDisplayedPower?.watts == snapshot.batteryPowerW)
+        #expect(snapshot.primaryDisplayedPower?.isApproximate == true)
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .discharging)

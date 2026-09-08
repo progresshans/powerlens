@@ -3,6 +3,69 @@ import Testing
 
 struct DiagnosticsTests {
     @Test
+    func menuBarPreservesApproximationOnlyForDerivedBatteryFallback() {
+        let derivedBattery = makeTelemetrySnapshot(
+            batteryLevel: 79,
+            batteryPowerW: 10.045,
+            batteryPowerSource: .currentAndVoltage,
+            adapterInputPowerW: nil,
+            systemLoadW: nil
+        )
+        let directBattery = makeTelemetrySnapshot(
+            batteryLevel: 79,
+            batteryPowerW: 10.045,
+            batteryPowerSource: .directTelemetry,
+            adapterInputPowerW: nil,
+            systemLoadW: nil
+        )
+        let measuredSystem = makeTelemetrySnapshot(
+            batteryLevel: 79,
+            batteryPowerW: 10.045,
+            batteryPowerSource: .currentAndVoltage,
+            adapterInputPowerW: 20,
+            systemLoadW: 30
+        )
+        let measuredInput = makeTelemetrySnapshot(
+            batteryLevel: 79,
+            batteryPowerW: 10.045,
+            batteryPowerSource: .currentAndVoltage,
+            adapterInputPowerW: 20,
+            systemLoadW: nil
+        )
+
+        #expect(derivedBattery.menuBarTitle == "79% · ≈10.0W")
+        #expect(directBattery.menuBarTitle == "79% · 10.0W")
+        #expect(measuredSystem.menuBarTitle == "79% · 30.0W")
+        #expect(measuredInput.menuBarTitle == "79% · 20.0W")
+    }
+
+    @Test
+    func menuBarWarningUsesDiagnosticKindAcrossTitleChanges() {
+        let snapshot = makeTelemetrySnapshot()
+        let warning = DiagnosticItem(
+            kind: .powerDeliveryShortfall,
+            severity: .warning,
+            title: "Translated power warning",
+            message: "The same condition in another language"
+        )
+        let unrelated = DiagnosticItem(
+            kind: .temperatureHigh,
+            severity: .warning,
+            title: L10n.text("diag.powerDeliveryShortfall.title"),
+            message: "A different condition with the same title"
+        )
+
+        #expect(
+            snapshot.menuBarSymbolName(using: [warning], externalPowerState: .connected)
+                == "exclamationmark.triangle.fill"
+        )
+        #expect(
+            snapshot.menuBarSymbolName(using: [unrelated], externalPowerState: .connected)
+                == "powerplug.fill"
+        )
+    }
+
+    @Test
     func detectsInsufficientPowerWhenLoadExceedsInput() {
         let snapshot = TelemetrySnapshot(
             batteryLevel: 80,
@@ -120,7 +183,7 @@ struct DiagnosticsTests {
     }
 
     @Test
-    func stableHoldingStateUsesPauseIconOnMenuBar() {
+    func resolvedHoldingStateUsesPauseIconOnMenuBar() {
         let snapshot = TelemetrySnapshot(
             batteryLevel: 78,
             powerSource: .ac,
@@ -152,10 +215,8 @@ struct DiagnosticsTests {
             frontmostAppName: "Codex"
         )
 
-        let state = TelemetrySnapshot.stableExternalPowerState(
-            for: [snapshot, snapshot, snapshot, snapshot, snapshot],
-            requiredConsecutiveSamples: 5
-        )
+        var tracker = PowerStateTracker(configuration: .init(holdConfirmation: 0))
+        let state = tracker.resolve(snapshot).externalPowerState
 
         #expect(state == .holding)
         #expect(snapshot.menuBarSymbolName(using: [], externalPowerState: state) == "pause.circle.fill")
@@ -194,7 +255,7 @@ struct DiagnosticsTests {
             frontmostAppName: "Codex"
         )
 
-        #expect(snapshot.primaryDisplayedPowerW == 11.7)
+        #expect(snapshot.primaryDisplayedPower?.watts == 11.7)
         #expect(snapshot.menuBarTitle == "78% · 11.7W")
     }
 

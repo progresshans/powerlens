@@ -354,7 +354,7 @@ struct PowerStateTrackerTests {
         )
         #expect(
             !diagnostics.contains {
-                TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
+                $0.kind == .powerDeliveryShortfall
             }
         )
     }
@@ -423,7 +423,7 @@ struct PowerStateTrackerTests {
         )
         #expect(
             !diagnostics.contains {
-                TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
+                $0.kind == .powerDeliveryShortfall
             }
         )
     }

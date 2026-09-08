@@ -287,6 +287,8 @@
 "notifications.toggle" = "진단 알림";
 "notifications.description" = "충전기나 배터리 문제가 감지되면 알림을 보냅니다.";
 "insights.export" = "내보내기";
+"insights.export.failed.title" = "기록을 내보내지 못했습니다";
+"insights.export.noSamples" = "내보낼 수 있는 보관된 기록을 불러오지 못했습니다.";
 
 "ui.telemetryUnavailable.title" = "전력 데이터를 사용할 수 없음";
 "ui.telemetryUnavailable.message" = "이 Mac에서 배터리·전력 정보를 읽지 못했습니다. 백그라운드에서 계속 다시 시도합니다.";

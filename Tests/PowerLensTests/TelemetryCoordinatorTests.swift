@@ -3,8 +3,8 @@ import Testing
 @testable import PowerLens
 
 struct TelemetryCoordinatorTests {
-    @Test
-    func autoPrefersLivePrecisionWhenAvailable() throws {
+    @Test(arguments: [TelemetryEnginePreference.auto, .livePrecision])
+    func prefersLivePrecisionWhenAvailable(preference: TelemetryEnginePreference) throws {
         let policyReader = StubChargingPolicyReader(
             status: .manualLimit(targetPercent: 85)
         )
@@ -14,7 +14,7 @@ struct TelemetryCoordinatorTests {
             chargingPolicyReader: policyReader
         )
 
-        let result = try coordinator.readSnapshot(preference: .auto)
+        let result = try coordinator.readSnapshot(preference: preference)
 
         #expect(result.activeEngine == .livePrecision)
         #expect(result.snapshot.systemLoadW == 22.0)

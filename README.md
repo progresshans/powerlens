@@ -113,6 +113,10 @@ change.
 Hourly or daily rollups retain battery-health states for the long-term health
 trend. You can export retained raw history as CSV or JSON.
 
+Upgrades preserve existing history. Older summaries keep their original
+estimates; improved averaging and charge-session counting apply to newly
+summarized samples.
+
 ## Requirements
 
 - A Mac with Apple silicon (M1 or later). Intel Macs are not supported.

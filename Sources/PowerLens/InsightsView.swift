@@ -7,7 +7,9 @@ import SwiftUI
 struct InsightsView: View {
     @ObservedObject var store: PowerLensStore
     @SceneStorage(HistoryRange.storageKey) private var selectedRangeRaw = HistoryRange.last24Hours.rawValue
-    @State private var data: InsightsData?
+    @StateObject private var model = InsightsViewModel()
+    @State private var isExporting = false
+    @State private var exportError: String?
 
     private let columns = [
         GridItem(.adaptive(minimum: 170), spacing: 14, alignment: .top),
@@ -15,6 +17,10 @@ struct InsightsView: View {
 
     private var selectedRange: HistoryRange {
         HistoryRange(rawValue: selectedRangeRaw) ?? .last24Hours
+    }
+
+    private var request: InsightsRequest {
+        InsightsRequest(range: selectedRange, historyRevision: store.historyRevision)
     }
 
     var body: some View {
@@ -43,7 +49,7 @@ struct InsightsView: View {
                 )
             }
 
-            if let data {
+            if let data = model.data {
                 if data.hasSeries {
                     summaryGrid(data.summary)
                     BatteryLevelChartCard(points: data.series)
@@ -57,8 +63,19 @@ struct InsightsView: View {
                 loadingState
             }
         }
-        .task(id: selectedRangeRaw) {
-            data = await store.loadInsights(for: selectedRange)
+        .task(id: request) {
+            await model.load(request: request, using: store.loadInsights)
+        }
+        .alert(
+            L10n.text("insights.export.failed.title"),
+            isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )
+        ) {
+            Button(L10n.text("common.ok")) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
         }
     }
 
@@ -82,27 +99,49 @@ struct InsightsView: View {
                 }
             }
         } label: {
-            Label(L10n.text("insights.export"), systemImage: "square.and.arrow.up")
+            HStack(spacing: 6) {
+                if isExporting {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Label(L10n.text("insights.export"), systemImage: "square.and.arrow.up")
+            }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .disabled(data?.hasSeries != true)
+        .disabled(model.data?.hasSeries != true || isExporting)
         .help(L10n.text("insights.export"))
     }
 
     private func export(_ format: HistoryExportFormat) {
+        guard !isExporting else {
+            return
+        }
         let range = selectedRange
+        isExporting = true
         Task {
+            defer { isExporting = false }
             let snapshots = await store.exportSnapshots(for: range)
-            guard !snapshots.isEmpty,
-                  let payload = try? HistoryExporter.data(for: snapshots, format: format) else {
+            guard !snapshots.isEmpty else {
+                exportError = L10n.text("insights.export.noSamples")
                 return
             }
 
-            HistoryExportService.save(
-                data: payload,
+            guard let destination = HistoryExportService.destination(
                 suggestedName: "PowerLens-\(range.rawValue).\(format.fileExtension)"
-            )
+            ) else {
+                return
+            }
+
+            do {
+                try await HistoryExportWriter.shared.write(
+                    snapshots: snapshots,
+                    format: format,
+                    to: destination
+                )
+            } catch {
+                exportError = error.localizedDescription
+            }
         }
     }
 
@@ -597,19 +636,19 @@ private struct ChartXSelectionModifier: ViewModifier {
     }
 }
 
-/// Presents a save panel and writes export data to the chosen location.
+/// Presents the save panel on the main actor; the writer owns file I/O.
 @MainActor
 enum HistoryExportService {
-    static func save(data: Data, suggestedName: String) {
+    static func destination(suggestedName: String) -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = suggestedName
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
 
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
+        guard panel.runModal() == .OK else {
+            return nil
         }
 
-        try? data.write(to: url)
+        return panel.url
     }
 }

@@ -287,6 +287,8 @@
 "notifications.toggle" = "Diagnostic Notifications";
 "notifications.description" = "Notify me when PowerLens detects a charger or battery issue.";
 "insights.export" = "Export";
+"insights.export.failed.title" = "Could Not Export History";
+"insights.export.noSamples" = "No retained history samples could be loaded for this export.";
 
 "ui.telemetryUnavailable.title" = "Power Data Unavailable";
 "ui.telemetryUnavailable.message" = "PowerLens couldn't read battery or power telemetry on this Mac. It will keep trying in the background.";

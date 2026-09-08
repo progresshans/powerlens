@@ -12,6 +12,16 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   is already the primary status.
 - Opening the popover or Dashboard now refreshes power telemetry immediately,
   and stale samples are no longer presented as live.
+- Insights includes retained raw and summarized history after retention changes,
+  refreshes after history updates, and ignores superseded range queries.
+- Newly summarized history preserves averages with missing sensor readings and
+  avoids counting an uninterrupted charge again at a storage boundary.
+- Refresh, settings, Dashboard, and quit actions remain available when initial
+  telemetry is unavailable; saved history can still be opened.
+- Menu bar power preserves the approximation marker for calculated readings,
+  and diagnostic notifications remain consistent across language changes.
+- History exports report save failures and write files without blocking the UI.
+- Manual refreshes during startup wait for history initialization before saving.
 
 ## [0.9.4] - 2026-08-29
 

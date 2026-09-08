@@ -176,10 +176,4 @@ extension TelemetrySnapshot {
             message: L10n.text("diag.healthy.message")
         )
     }
-
-    static var powerDiagnosticTitles: Set<String> {
-        [
-            L10n.text("diag.powerDeliveryShortfall.title"),
-        ]
-    }
 }

@@ -53,7 +53,7 @@ enum DiagnosticSeverity: String, Codable, Sendable {
     case warning
 }
 
-enum DiagnosticKind: Equatable, Sendable {
+enum DiagnosticKind: Hashable, Sendable {
     case powerDeliveryShortfall
     case temperatureHigh
     case batteryHealthWear

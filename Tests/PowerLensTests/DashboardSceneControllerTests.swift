@@ -4,7 +4,7 @@ import Testing
 @MainActor
 struct DashboardSceneControllerTests {
     @Test
-    func reopenWithoutVisibleWindowsRequestsDashboard() {
+    func showDashboardUsesRegisteredSceneAction() {
         let controller = DashboardSceneController()
         var openCount = 0
 
@@ -12,25 +12,9 @@ struct DashboardSceneControllerTests {
             openCount += 1
         }
 
-        let shouldContinueDefaultHandling = controller.handleReopen(hasVisibleWindows: false)
+        controller.showDashboard()
 
         #expect(openCount == 1)
-        #expect(shouldContinueDefaultHandling == false)
-    }
-
-    @Test
-    func reopenWithVisibleWindowsKeepsDefaultHandling() {
-        let controller = DashboardSceneController()
-        var openCount = 0
-
-        controller.setOpenDashboardWindowAction {
-            openCount += 1
-        }
-
-        let shouldContinueDefaultHandling = controller.handleReopen(hasVisibleWindows: true)
-
-        #expect(openCount == 0)
-        #expect(shouldContinueDefaultHandling == true)
     }
 
     @Test
