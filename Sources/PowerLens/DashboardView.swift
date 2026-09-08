@@ -67,22 +67,26 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var detailSurface: some View {
-        if let snapshot = store.latest {
+        if selectedDestination == .history || store.latest != nil {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
-                    detailHeader(snapshot)
+                    detailHeader(store.latest)
 
-                    switch selectedDestination {
-                    case .dashboard:
-                        dashboardSection(snapshot)
-                    case .power:
-                        powerSection(snapshot)
-                    case .battery:
-                        batterySection(snapshot)
-                    case .diagnostics:
-                        diagnosticsSection(snapshot)
-                    case .history:
+                    if selectedDestination == .history {
                         InsightsView(store: store)
+                    } else if let snapshot = store.latest {
+                        switch selectedDestination {
+                        case .dashboard:
+                            dashboardSection(snapshot)
+                        case .power:
+                            powerSection(snapshot)
+                        case .battery:
+                            batterySection(snapshot)
+                        case .diagnostics:
+                            diagnosticsSection(snapshot)
+                        case .history:
+                            EmptyView()
+                        }
                     }
                 }
                 .padding(28)
@@ -109,33 +113,35 @@ struct DashboardView: View {
         }
     }
 
-    private func detailHeader(_ snapshot: TelemetrySnapshot) -> some View {
+    private func detailHeader(_ snapshot: TelemetrySnapshot?) -> some View {
         HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(selectedDestination.detailTitle)
                     .font(.largeTitle.weight(.bold))
 
-                Text(
-                    snapshot.statusHeadline(
-                        resolvedState: store.resolvedPowerState
+                if let snapshot {
+                    Text(
+                        snapshot.statusHeadline(
+                            resolvedState: store.resolvedPowerState
+                        )
                     )
-                )
-                    .font(.title3.weight(.semibold))
+                        .font(.title3.weight(.semibold))
 
-                Text(
-                    snapshot.statusSubheadline(
-                        resolvedState: store.resolvedPowerState
+                    Text(
+                        snapshot.statusSubheadline(
+                            resolvedState: store.resolvedPowerState
+                        )
                     )
-                )
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 12) {
                 LiveIndicatorView(
-                    refreshDate: store.lastRefreshAt ?? snapshot.timestamp,
+                    refreshDate: store.lastRefreshAt ?? snapshot?.timestamp,
                     activeEngineName: store.activeTelemetryEngine.displayName,
                     health: store.telemetryHealth
                 )

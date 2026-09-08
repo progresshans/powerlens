@@ -30,6 +30,7 @@ final class PowerLensStore: ObservableObject {
     @Published private(set) var menuBarSymbolName = "bolt.fill"
     @Published private(set) var menuBarBatteryBadge = MenuBarStatusItemRenderer.Badge.none
     @Published private(set) var history: [TelemetrySnapshot] = []
+    @Published private(set) var historyRevision = 0
     @Published private(set) var lastRefreshAt: Date?
     @Published private(set) var lastRefreshAttemptAt: Date?
     @Published private(set) var requestedTelemetryEngine = TelemetryEnginePreference.current
@@ -111,6 +112,7 @@ final class PowerLensStore: ObservableObject {
                 since: now().addingTimeInterval(-memoryWindow)
             )
             recordHistorySuccess()
+            historyRevision += 1
         } catch {
             recordHistoryFailure(error, operation: "load recent history")
         }
@@ -155,6 +157,7 @@ final class PowerLensStore: ObservableObject {
                 rollupBucketSeconds: LongTermResolution.current.bucketSeconds
             )
             recordHistorySuccess()
+            historyRevision += 1
         } catch {
             recordHistoryFailure(error, operation: "purge history")
         }
@@ -213,60 +216,17 @@ final class PowerLensStore: ObservableObject {
     /// because capacity changes slowly and is most useful over the full record.
     func loadInsights(for range: HistoryRange) async -> InsightsData {
         let currentDate = now()
-        let interval = range.interval(now: currentDate)
-
-        // Full-detail samples exist only within the raw retention window; older
-        // data is read from the downsampled rollups so long ranges still cover
-        // the full record at a coarser resolution.
-        let rawCutoff = RawHistoryWindow.current.seconds
-            .map { currentDate.addingTimeInterval(-$0) }
-            ?? Date(timeIntervalSince1970: 0)
-        let rawStart = max(interval.start, rawCutoff)
-
         do {
-            var rawSeries: [AggregatedTelemetryPoint] = []
-            if rawStart < interval.end {
-                rawSeries = try await historyStore.aggregatedSeries(
-                    for: DateInterval(start: rawStart, end: interval.end),
-                    bucketSeconds: range.bucketSeconds
-                )
-            }
-
-            var rollups: [AggregatedTelemetryPoint] = []
-            if interval.start < rawCutoff {
-                rollups = try await historyStore.rollupSeries(
-                    for: DateInterval(
-                        start: interval.start,
-                        end: min(rawCutoff, interval.end)
-                    )
-                )
-            }
-
-            let summary = try await historyStore.summary(for: interval)
-            let healthTrend = try await historyStore.batteryHealthTrend(
-                since: Date(timeIntervalSince1970: 0)
-            )
-            let mergedSeries = (rollups + rawSeries).sorted {
-                $0.bucketStart < $1.bucketStart
-            }
+            try Task.checkCancellation()
+            let data = try await historyStore.loadInsights(for: range, now: currentDate)
+            try Task.checkCancellation()
             recordHistorySuccess()
-
-            return InsightsData(
-                range: range,
-                interval: interval,
-                series: mergedSeries,
-                summary: summary,
-                healthTrend: healthTrend
-            )
+            return data
         } catch {
-            recordHistoryFailure(error, operation: "load insights")
-            return InsightsData(
-                range: range,
-                interval: interval,
-                series: [],
-                summary: .empty(range: interval),
-                healthTrend: []
-            )
+            if !Task.isCancelled, !(error is CancellationError) {
+                recordHistoryFailure(error, operation: "load insights")
+            }
+            return .empty(range: range, now: currentDate)
         }
     }
 
@@ -372,6 +332,10 @@ final class PowerLensStore: ObservableObject {
     private func refresh(
         persistencePolicy: RefreshPersistencePolicy
     ) async {
+        // Every entry point, including manual refreshes, must leave persistence
+        // to startup until the initial history load has finished.
+        let effectivePersistencePolicy: RefreshPersistencePolicy =
+            automaticRefreshPhase == .preparingHistory ? .disabled : persistencePolicy
         refreshSequence += 1
         let sequence = refreshSequence
         let preference = TelemetryEnginePreference.current
@@ -446,7 +410,7 @@ final class PowerLensStore: ObservableObject {
             result.systemCompatibilityDiagnostics
 
         let shouldWriteHistory: Bool
-        switch persistencePolicy {
+        switch effectivePersistencePolicy {
         case .ifDue:
             shouldWriteHistory = shouldPersist(snapshot: snapshot)
         case .immediately:
@@ -469,6 +433,7 @@ final class PowerLensStore: ObservableObject {
         do {
             try await historyStore.append(historicalSnapshot)
             recordHistorySuccess()
+            historyRevision += 1
         } catch {
             recordHistoryFailure(error, operation: "append history")
         }

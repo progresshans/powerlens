@@ -294,6 +294,258 @@ struct HistoryStoreTests {
     }
 
     @Test
+    func summaryPreservesMissingSensorAveragesAfterPurging() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "rollup-missing-values")
+        let store = HistoryStore(databaseURL: dbURL)
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        try await store.append(makeSnapshot(
+            timestamp: day,
+            systemLoadW: 10.001,
+            batteryTemperatureC: 20.01,
+            adapterInputPowerW: 50.003
+        ))
+        try await store.append(makeSnapshot(
+            timestamp: day.addingTimeInterval(60),
+            systemLoadW: nil,
+            batteryTemperatureC: nil,
+            adapterInputPowerW: nil
+        ))
+        try await store.append(makeSnapshot(
+            timestamp: day.addingTimeInterval(120),
+            systemLoadW: 10.002,
+            batteryTemperatureC: 20.02,
+            adapterInputPowerW: 50.004
+        ))
+        try await store.append(makeSnapshot(
+            timestamp: day.addingTimeInterval(2 * 86_400),
+            systemLoadW: 30,
+            batteryTemperatureC: 40,
+            adapterInputPowerW: 90
+        ))
+        let range = DateInterval(start: day, duration: 3 * 86_400)
+        let before = try await store.summary(for: range)
+
+        try await store.purge(
+            olderThan: day.addingTimeInterval(86_400),
+            rollupBucketSeconds: 86_400
+        )
+        let after = try await store.summary(for: range)
+        let rollups = try await store.rollupSeries(for: range)
+
+        #expect(after.sampleCount == before.sampleCount)
+        #expect(abs((after.avgSystemLoadW ?? 0) - (before.avgSystemLoadW ?? 0)) < 0.000_000_001)
+        #expect(abs((after.avgAdapterInputPowerW ?? 0) - (before.avgAdapterInputPowerW ?? 0)) < 0.000_000_001)
+        #expect(abs((after.avgTemperatureC ?? 0) - (before.avgTemperatureC ?? 0)) < 0.000_000_001)
+        #expect(abs((rollups.first?.avgSystemLoadW ?? 0) - 10.0015) < 0.000_000_001)
+        #expect(abs((rollups.first?.avgAdapterInputPowerW ?? 0) - 50.0035) < 0.000_000_001)
+        #expect(abs((rollups.first?.avgTemperatureC ?? 0) - 20.015) < 0.000_000_001)
+    }
+
+    @Test
+    func chargeSessionsStayStableAcrossRepeatedPurgeBoundaries() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "rollup-charge-boundaries")
+        let store = HistoryStore(databaseURL: dbURL)
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        let observations: [(TimeInterval, Bool)] = [
+            (86_340, true),
+            (86_400, true),
+            (86_460, false),
+            (86_520, true),
+            (2 * 86_400, true),
+        ]
+        for (offset, charging) in observations {
+            try await store.append(makeSnapshot(
+                timestamp: day.addingTimeInterval(offset),
+                isCharging: charging
+            ))
+        }
+        let range = DateInterval(start: day, duration: 3 * 86_400)
+        #expect(try await store.summary(for: range).chargeSessions == 2)
+
+        for dayCount in 1...3 {
+            try await store.purge(
+                olderThan: day.addingTimeInterval(Double(dayCount) * 86_400),
+                rollupBucketSeconds: 86_400
+            )
+            #expect(try await store.summary(for: range).chargeSessions == 2)
+        }
+    }
+
+    @Test
+    func rangeStartingWithAnOngoingChargeSurvivesRollup() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "rollup-ongoing-charge")
+        let store = HistoryStore(databaseURL: dbURL)
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        for offset in [0.0, 86_400, 86_460] {
+            try await store.append(makeSnapshot(
+                timestamp: day.addingTimeInterval(offset),
+                isCharging: true
+            ))
+        }
+        let range = DateInterval(
+            start: day.addingTimeInterval(86_400),
+            duration: 86_400
+        )
+        #expect(try await store.summary(for: range).chargeSessions == 1)
+        try await store.purge(
+            olderThan: range.end,
+            rollupBucketSeconds: 86_400
+        )
+        #expect(try await store.summary(for: range).chargeSessions == 1)
+    }
+
+    @Test
+    func versionThreeRollupsKeepLegacyEstimatesDuringMigration() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "rollup-v3-migration")
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        try createVersionThreeHistory(at: dbURL, bucketStart: Int64(day.timeIntervalSince1970))
+        let store = HistoryStore(databaseURL: dbURL)
+        let range = DateInterval(start: day, duration: 3 * 86_400)
+
+        let migrated = try await store.summary(for: range)
+        #expect(migrated.sampleCount == 2)
+        #expect(migrated.avgSystemLoadW == 10)
+        #expect(migrated.avgAdapterInputPowerW == 20)
+        #expect(migrated.avgTemperatureC == 30)
+        #expect(migrated.chargeSessions == 1)
+        #expect(migrated.timeOnExternal == 120)
+        #expect(try tableCount("history_rollups", dbURL: dbURL) == 1)
+        #expect(try databaseUserVersion(dbURL) == HistorySchema.currentVersion)
+
+        try await store.append(makeSnapshot(
+            timestamp: day.addingTimeInterval(86_400),
+            systemLoadW: 30,
+            batteryTemperatureC: 50,
+            adapterInputPowerW: 40,
+            isCharging: true
+        ))
+        try await store.append(makeSnapshot(
+            timestamp: day.addingTimeInterval(86_460),
+            systemLoadW: nil,
+            batteryTemperatureC: nil,
+            adapterInputPowerW: nil,
+            isCharging: true
+        ))
+        let before = try await store.summary(for: range)
+        try await store.purge(
+            olderThan: day.addingTimeInterval(2 * 86_400),
+            rollupBucketSeconds: 86_400
+        )
+        let after = try await store.summary(for: range)
+
+        #expect(after.sampleCount == 4)
+        #expect(abs((after.avgSystemLoadW ?? 0) - (before.avgSystemLoadW ?? 0)) < 0.000_000_001)
+        #expect(abs((after.avgAdapterInputPowerW ?? 0) - (before.avgAdapterInputPowerW ?? 0)) < 0.000_000_001)
+        #expect(abs((after.avgTemperatureC ?? 0) - (before.avgTemperatureC ?? 0)) < 0.000_000_001)
+        // Legacy records have no boundary state. Keep their session estimate;
+        // do not invent continuity between an old bucket and new observations.
+        #expect(before.chargeSessions == 2)
+        #expect(after.chargeSessions == 2)
+        #expect(try tableCount("history_rollups", dbURL: dbURL) == 2)
+        #expect(try await store.loadRecent(since: day).isEmpty)
+    }
+
+    @Test
+    func missingOnlyRollupsDoNotInventSensorValues() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "rollup-all-missing")
+        let store = HistoryStore(databaseURL: dbURL)
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        try await store.append(makeSnapshot(
+            timestamp: day,
+            systemLoadW: nil,
+            batteryTemperatureC: nil,
+            adapterInputPowerW: nil
+        ))
+        let range = DateInterval(start: day, duration: 2 * 86_400)
+        try await store.purge(
+            olderThan: day.addingTimeInterval(86_400),
+            rollupBucketSeconds: 86_400
+        )
+
+        let summary = try await store.summary(for: range)
+        let rollup = try await store.rollupSeries(for: range).first
+        #expect(summary.sampleCount == 1)
+        #expect(summary.avgSystemLoadW == nil)
+        #expect(summary.avgAdapterInputPowerW == nil)
+        #expect(summary.avgTemperatureC == nil)
+        #expect(rollup?.avgSystemLoadW == nil)
+        #expect(rollup?.avgAdapterInputPowerW == nil)
+        #expect(rollup?.avgTemperatureC == nil)
+    }
+
+    @Test
+    func insightsKeepTheRawTailWithoutDuplicateBoundaryDates() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "insights-raw-boundary")
+        let store = HistoryStore(databaseURL: dbURL)
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        let firstRawDate = day.addingTimeInterval(10 * 3_600 + 900)
+        try await store.append(makeSnapshot(timestamp: day, systemLoadW: 10))
+        try await store.append(makeSnapshot(timestamp: firstRawDate, systemLoadW: 30))
+        try await store.purge(
+            olderThan: day.addingTimeInterval(10 * 3_600),
+            rollupBucketSeconds: 3_600
+        )
+
+        let insights = try await store.loadInsights(
+            for: .all,
+            now: day.addingTimeInterval(11 * 3_600)
+        )
+        #expect(insights.series.count == 2)
+        #expect(insights.series.map(\.bucketStart) == [day, firstRawDate])
+        #expect(insights.series.map(\.sampleCount) == [1, 1])
+        #expect(insights.summary.sampleCount == 2)
+        #expect(insights.summary.avgSystemLoadW == 20)
+    }
+
+    @Test
+    func mixedRollupResolutionsKeepDistinctObservationDates() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "insights-mixed-resolutions")
+        let store = HistoryStore(databaseURL: dbURL)
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        let later = day.addingTimeInterval(10 * 3_600)
+        try await store.append(makeSnapshot(timestamp: day, systemLoadW: 10, isCharging: true))
+        try await store.append(makeSnapshot(timestamp: later, systemLoadW: 30, isCharging: true))
+        try await store.purge(olderThan: later, rollupBucketSeconds: 3_600)
+        try await store.purge(
+            olderThan: day.addingTimeInterval(86_400),
+            rollupBucketSeconds: 86_400
+        )
+
+        let insights = try await store.loadInsights(
+            for: .all,
+            now: day.addingTimeInterval(2 * 86_400)
+        )
+        #expect(insights.series.map(\.bucketStart) == [day, later])
+        #expect(insights.series.map(\.sampleCount) == [1, 1])
+        #expect(insights.summary.sampleCount == 2)
+        #expect(insights.summary.avgSystemLoadW == 20)
+        #expect(insights.summary.chargeSessions == 1)
+    }
+
+    @Test
+    func versionThreeMigrationPreservesExistingRawValues() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "raw-v3-migration")
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        let rawDate = day.addingTimeInterval(86_400)
+        try createVersionThreeHistory(
+            at: dbURL,
+            bucketStart: Int64(day.timeIntervalSince1970),
+            rawTimestamp: Int64(rawDate.timeIntervalSince1970)
+        )
+        let store = HistoryStore(databaseURL: dbURL)
+
+        let raw = try await store.loadRecent(since: day)
+        #expect(raw.count == 1)
+        #expect(raw.first?.timestamp == rawDate)
+        #expect(raw.first?.batteryPowerW == -12.345)
+        #expect(raw.first?.batteryPowerSource == .currentAndVoltage)
+        #expect(raw.first?.systemLoadW == 22.36)
+        #expect(try tableCount("telemetry_samples", dbURL: dbURL) == 1)
+        #expect(try tableCount("history_rollups", dbURL: dbURL) == 1)
+        #expect(try databaseUserVersion(dbURL) == HistorySchema.currentVersion)
+    }
+
+    @Test
     func purgeWithResolutionOffDiscardsExistingRollups() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "rollup-off")
         let store = HistoryStore(databaseURL: dbURL)
@@ -398,8 +650,9 @@ private func makeSnapshot(
     cycleCount: Int = 74,
     fullChargeCapacityMah: Int = 5637,
     nominalCapacityMah: Int = 5874,
-    systemLoadW: Double = 22.36,
-    batteryTemperatureC: Double = 29.5,
+    systemLoadW: Double? = 22.36,
+    batteryTemperatureC: Double? = 29.5,
+    adapterInputPowerW: Double? = 20.92,
     batteryPowerW: Double = 0,
     batteryPowerSource: BatteryPowerSource? = nil,
     externalConnected: Bool = true,
@@ -432,7 +685,7 @@ private func makeSnapshot(
         batteryPowerSource: batteryPowerSource,
         adapterDescription: adapterDescription,
         adapterMaxPowerW: 97,
-        adapterInputPowerW: 20.92,
+        adapterInputPowerW: adapterInputPowerW,
         adapterVoltageV: 19.26,
         adapterCurrentA: 1.09,
         systemLoadW: systemLoadW,
@@ -448,6 +701,80 @@ private func makeTemporaryDatabaseURL(name: String) -> URL {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PowerLensTests", isDirectory: true)
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("\(name)-\(UUID().uuidString).sqlite3")
+}
+
+private func createVersionThreeHistory(
+    at dbURL: URL,
+    bucketStart: Int64,
+    rawTimestamp: Int64? = nil
+) throws {
+    try FileManager.default.createDirectory(
+        at: dbURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    var connection: OpaquePointer?
+    guard sqlite3_open(dbURL.path, &connection) == SQLITE_OK,
+          let connection else {
+        throw NSError(domain: "HistoryStoreTests", code: 1)
+    }
+    defer { sqlite3_close(connection) }
+
+    // Keep the historical rollup definition independent of the current schema.
+    // The other tables have not changed since version 3.
+    let legacyRollups = """
+    CREATE TABLE history_rollups (
+        bucket_start INTEGER NOT NULL,
+        bucket_seconds INTEGER NOT NULL,
+        sample_count INTEGER NOT NULL,
+        battery_level_avg_x10 INTEGER,
+        battery_level_min_x10 INTEGER,
+        battery_level_max_x10 INTEGER,
+        adapter_input_power_avg_mw INTEGER,
+        system_load_avg_mw INTEGER,
+        system_load_max_mw INTEGER,
+        battery_power_avg_mw INTEGER,
+        battery_temperature_avg_c_x100 INTEGER,
+        battery_temperature_max_c_x100 INTEGER,
+        on_battery_seconds INTEGER,
+        on_external_seconds INTEGER,
+        charge_sessions INTEGER,
+        PRIMARY KEY (bucket_start, bucket_seconds)
+    );
+    """
+    for statement in HistorySchema.creationStatements {
+        let sql = statement.contains("CREATE TABLE IF NOT EXISTS history_rollups")
+            ? legacyRollups : statement
+        guard sqlite3_exec(connection, sql, nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "HistoryStoreTests", code: 2)
+        }
+    }
+    let fixture = """
+    INSERT INTO history_rollups (
+        bucket_start, bucket_seconds, sample_count,
+        battery_level_avg_x10, battery_level_min_x10, battery_level_max_x10,
+        adapter_input_power_avg_mw, system_load_avg_mw, system_load_max_mw,
+        battery_power_avg_mw, battery_temperature_avg_c_x100,
+        battery_temperature_max_c_x100, on_battery_seconds,
+        on_external_seconds, charge_sessions
+    ) VALUES (\(bucketStart), 86400, 2, 800, 790, 810,
+              20000, 10000, 15000, 0, 3000, 3200, 0, 120, 1);
+    PRAGMA user_version = 3;
+    """
+    guard sqlite3_exec(connection, fixture, nil, nil, nil) == SQLITE_OK else {
+        throw NSError(domain: "HistoryStoreTests", code: 3)
+    }
+    if let rawTimestamp {
+        let rawFixture = """
+        INSERT INTO telemetry_samples (
+            ts, power_source_code, thermal_state_code, is_charging, is_charged,
+            external_connected, low_power_mode_enabled, battery_power_mw,
+            system_load_mw, battery_power_source_code
+        ) VALUES (\(rawTimestamp), 2, 1, 0, 0, 0, 0, -12345, 22360, 2);
+        """
+        guard sqlite3_exec(connection, rawFixture, nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "HistoryStoreTests", code: 4)
+        }
+    }
 }
 
 private func createLegacyTelemetrySamplesTable(at dbURL: URL) throws {

@@ -1,5 +1,10 @@
 import Foundation
 
+struct DisplayedPowerMeasurement: Equatable, Sendable {
+    let watts: Double
+    let isApproximate: Bool
+}
+
 extension TelemetrySnapshot {
     var statusHeadline: String {
         statusHeadline(resolvedState: nil)
@@ -344,17 +349,26 @@ extension TelemetrySnapshot {
         return managedChargingHeadline(for: managedState) != nil
     }
 
-    var primaryDisplayedPowerW: Double? {
+    var primaryDisplayedPower: DisplayedPowerMeasurement? {
         if let systemLoadW {
-            return systemLoadW
+            return DisplayedPowerMeasurement(
+                watts: systemLoadW,
+                isApproximate: false
+            )
         }
 
         if let adapterInputPowerW {
-            return adapterInputPowerW
+            return DisplayedPowerMeasurement(
+                watts: adapterInputPowerW,
+                isApproximate: false
+            )
         }
 
         if let batteryPowerW {
-            return abs(batteryPowerW)
+            return DisplayedPowerMeasurement(
+                watts: abs(batteryPowerW),
+                isApproximate: batteryPowerIsDerived
+            )
         }
 
         return nil
@@ -363,8 +377,9 @@ extension TelemetrySnapshot {
     var menuBarTitle: String {
         let battery = batteryLevel.map(Formatters.percent) ?? "--"
 
-        if let primaryDisplayedPowerW {
-            return "\(battery) · \(Formatters.power(primaryDisplayedPowerW))"
+        if let primaryDisplayedPower {
+            let approximation = primaryDisplayedPower.isApproximate ? "≈" : ""
+            return "\(battery) · \(approximation)\(Formatters.power(primaryDisplayedPower.watts))"
         }
 
         return battery
@@ -387,7 +402,7 @@ extension TelemetrySnapshot {
 
         if resolvedState == .connected,
            diagnostics.contains(where: {
-               Self.powerDiagnosticTitles.contains($0.title)
+               $0.kind == .powerDeliveryShortfall
            }) {
             return "exclamationmark.triangle.fill"
         }

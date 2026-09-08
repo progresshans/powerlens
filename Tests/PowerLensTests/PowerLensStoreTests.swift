@@ -5,6 +5,108 @@ import Testing
 struct PowerLensStoreTests {
     @Test
     @MainActor
+    func insightsAreInvalidatedAfterPersistenceCompletesButNotAfterReads() async {
+        let snapshot = makeTelemetrySnapshot()
+        let gate = HistoryAppendGate()
+        var appends = gate.arrivals.makeAsyncIterator()
+        let historyStore = StubHistoryStore(appendGate: gate)
+        let store = PowerLensStore(
+            telemetryReader: CountingTelemetryReader(snapshot: snapshot),
+            historyStore: historyStore,
+            energySampler: EmptyEnergySampler(),
+            startsAutomatically: false,
+            now: { snapshot.timestamp }
+        )
+
+        let refresh = Task { await store.refreshOnce() }
+        _ = await appends.next()
+        #expect(store.latest == snapshot)
+        #expect(store.historyRevision == 0)
+
+        await gate.finish()
+        await refresh.value
+        #expect(store.historyRevision == 1)
+
+        _ = await store.loadInsights(for: .all)
+        await store.refreshOnce(persistImmediately: false)
+        #expect(store.historyRevision == 1)
+    }
+
+    @Test
+    @MainActor
+    func aCancelledInsightsReadDoesNotReportAHistoryFailure() async {
+        let snapshot = makeTelemetrySnapshot()
+        let store = PowerLensStore(
+            telemetryReader: CountingTelemetryReader(snapshot: snapshot),
+            historyStore: StubHistoryStore(),
+            energySampler: EmptyEnergySampler(),
+            startsAutomatically: false,
+            now: { snapshot.timestamp }
+        )
+        await store.refreshOnce()
+        let revision = store.historyRevision
+
+        let read = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await store.loadInsights(for: .all)
+        }
+        _ = await read.value
+
+        #expect(store.historyHealth == .available)
+        #expect(store.historyRevision == revision)
+    }
+
+    @Test
+    @MainActor
+    func insightsQueriesAllStoredDataRegardlessOfRetentionPreferences() async {
+        let historyStore = StubHistoryStore()
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = PowerLensStore(
+            historyStore: historyStore,
+            startsAutomatically: false,
+            now: { now }
+        )
+
+        _ = await store.loadInsights(for: .all)
+
+        let interval = HistoryRange.all.interval(now: now)
+        #expect(await historyStore.aggregatedRanges() == [interval])
+        #expect(await historyStore.rollupRanges() == [interval])
+    }
+
+    @Test
+    @MainActor
+    func manualRefreshDuringHistoryPreparationDoesNotPersist() async {
+        let snapshot = makeTelemetrySnapshot()
+        let reader = CountingTelemetryReader(snapshot: snapshot)
+        let historyStore = StubHistoryStore(blocksLoad: true)
+        let store = PowerLensStore(
+            telemetryReader: reader,
+            historyStore: historyStore,
+            energySampler: EmptyEnergySampler(),
+            systemCompatibilityRecorder: StubSystemCompatibilityRecorder(),
+            startsAutomatically: true,
+            interactiveRefreshInterval: .seconds(60),
+            backgroundRefreshInterval: .seconds(60)
+        )
+
+        await historyStore.waitUntilLoadStarts()
+        await store.refreshOnce(persistImmediately: true)
+        let earlyHistory = store.history
+        let earlyAppends = await historyStore.appendedSnapshots()
+
+        await historyStore.finishLoading()
+        await waitForAppendCount(1, in: historyStore)
+
+        #expect(earlyHistory.isEmpty)
+        #expect(earlyAppends.isEmpty)
+        #expect(store.latest == snapshot)
+        #expect(await historyStore.appendedSnapshots() == [snapshot.withChargingPolicyStatus(nil)])
+        withExtendedLifetime(store) {}
+    }
+
+    @Test
+    @MainActor
     func refreshOnceUpdatesStateAndPersistsWhenRequested() async {
         let snapshot = makeTelemetrySnapshot(
             batteryPowerW: 4.2,
@@ -258,7 +360,7 @@ struct PowerLensStoreTests {
         )
         #expect(
             !store.diagnostics.contains {
-                TelemetrySnapshot.powerDiagnosticTitles.contains($0.title)
+                $0.kind == .powerDeliveryShortfall
             }
         )
         #expect(
@@ -599,6 +701,7 @@ struct PowerLensStoreTests {
         #expect(store.latest == snapshot)
         #expect(store.telemetryHealth == .live)
         #expect(store.historyHealth == .degraded)
+        #expect(store.historyRevision == 0)
     }
 
     @Test
@@ -832,9 +935,12 @@ private actor ControlledTelemetryReader: TelemetryReading {
 private actor StubHistoryStore: HistoryStoring {
     private var appended: [TelemetrySnapshot] = []
     private var purgedCutoffs: [Date] = []
+    private var requestedAggregatedRanges: [DateInterval] = []
+    private var requestedRollupRanges: [DateInterval] = []
     private let failAppend: Bool
     private let loadedSnapshots: [TelemetrySnapshot]
     private let blocksLoad: Bool
+    private let appendGate: HistoryAppendGate?
     private var loadStarted = false
     private var loadStartWaiters: [CheckedContinuation<Void, Never>] = []
     private var loadContinuation: CheckedContinuation<Void, Never>?
@@ -842,11 +948,13 @@ private actor StubHistoryStore: HistoryStoring {
     init(
         failAppend: Bool = false,
         loadedSnapshots: [TelemetrySnapshot] = [],
-        blocksLoad: Bool = false
+        blocksLoad: Bool = false,
+        appendGate: HistoryAppendGate? = nil
     ) {
         self.failAppend = failAppend
         self.loadedSnapshots = loadedSnapshots
         self.blocksLoad = blocksLoad
+        self.appendGate = appendGate
     }
 
     func loadRecent(
@@ -866,6 +974,9 @@ private actor StubHistoryStore: HistoryStoring {
     }
 
     func append(_ snapshot: TelemetrySnapshot) async throws {
+        if let appendGate {
+            await appendGate.suspend()
+        }
         if failAppend {
             throw StubHistoryError.writeFailed
         }
@@ -887,13 +998,15 @@ private actor StubHistoryStore: HistoryStoring {
         for range: DateInterval,
         bucketSeconds: Int
     ) async throws -> [AggregatedTelemetryPoint] {
-        []
+        requestedAggregatedRanges.append(range)
+        return []
     }
 
     func rollupSeries(
         for range: DateInterval
     ) async throws -> [AggregatedTelemetryPoint] {
-        []
+        requestedRollupRanges.append(range)
+        return []
     }
 
     func batteryHealthTrend(
@@ -910,6 +1023,14 @@ private actor StubHistoryStore: HistoryStoring {
         purgedCutoffs
     }
 
+    func aggregatedRanges() -> [DateInterval] {
+        requestedAggregatedRanges
+    }
+
+    func rollupRanges() -> [DateInterval] {
+        requestedRollupRanges
+    }
+
     func waitUntilLoadStarts() async {
         guard !loadStarted else {
             return
@@ -923,6 +1044,28 @@ private actor StubHistoryStore: HistoryStoring {
     func finishLoading() {
         loadContinuation?.resume()
         loadContinuation = nil
+    }
+}
+
+private actor HistoryAppendGate {
+    let arrivals: AsyncStream<Void>
+    private let arrived: AsyncStream<Void>.Continuation
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init() {
+        (arrivals, arrived) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func suspend() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            arrived.yield(())
+        }
+    }
+
+    func finish() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 

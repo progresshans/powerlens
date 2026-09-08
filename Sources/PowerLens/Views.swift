@@ -7,7 +7,7 @@ struct MenuBarRootView: View {
     let quitApplication: () -> Void
     let maxContentHeight: CGFloat?
 
-    static let loadingSize = CGSize(width: 320, height: 220)
+    static let loadingSize = CGSize(width: 320, height: 260)
     static let contentWidth: CGFloat = 420
 
     var body: some View {
@@ -17,25 +17,38 @@ struct MenuBarRootView: View {
                     .modifier(PopoverContainerStyle(maxContentHeight: maxContentHeight))
                     .frame(width: Self.contentWidth, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: maxContentHeight == nil)
-            } else if store.telemetryUnavailable {
-                VStack(spacing: 10) {
-                    Image(systemName: "bolt.slash")
-                        .font(.title)
-                        .foregroundStyle(.secondary)
-                    Text(L10n.text("ui.telemetryUnavailable.title"))
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                    Text(L10n.text("ui.telemetryUnavailable.message"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
             } else {
-                ProgressView(L10n.text("ui.readingPowerData"))
-                    .padding(32)
-                    .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
+                VStack(spacing: 0) {
+                    Group {
+                        if store.telemetryUnavailable {
+                            VStack(spacing: 10) {
+                                Image(systemName: "bolt.slash")
+                                    .font(.title)
+                                    .foregroundStyle(.secondary)
+                                Text(L10n.text("ui.telemetryUnavailable.title"))
+                                    .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                Text(L10n.text("ui.telemetryUnavailable.message"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(24)
+                        } else {
+                            ProgressView(L10n.text("ui.readingPowerData"))
+                                .padding(24)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    Divider()
+                    HStack {
+                        Spacer()
+                        toolbarActions
+                    }
+                    .padding(12)
+                }
+                .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
             }
         }
     }
@@ -109,32 +122,36 @@ struct MenuBarRootView: View {
                     health: store.telemetryHealth
                 )
 
-                HStack(spacing: 5) {
-                    PopoverToolbarButton(
-                        systemImage: "arrow.clockwise",
-                        title: L10n.text("ui.refreshNow"),
-                        action: store.refreshNow
-                    )
-
-                    PopoverToolbarButton(
-                        systemImage: "gearshape",
-                        title: L10n.text("ui.section.settings"),
-                        action: openSettings
-                    )
-
-                    PopoverToolbarButton(
-                        systemImage: "square.grid.2x2",
-                        title: L10n.text("ui.openDashboard"),
-                        action: openDashboard
-                    )
-
-                    PopoverToolbarButton(
-                        systemImage: "power",
-                        title: L10n.text("common.quit"),
-                        action: quitApplication
-                    )
-                }
+                toolbarActions
             }
+        }
+    }
+
+    private var toolbarActions: some View {
+        HStack(spacing: 5) {
+            PopoverToolbarButton(
+                systemImage: "arrow.clockwise",
+                title: L10n.text("ui.refreshNow"),
+                action: store.refreshNow
+            )
+
+            PopoverToolbarButton(
+                systemImage: "gearshape",
+                title: L10n.text("ui.section.settings"),
+                action: openSettings
+            )
+
+            PopoverToolbarButton(
+                systemImage: "square.grid.2x2",
+                title: L10n.text("ui.openDashboard"),
+                action: openDashboard
+            )
+
+            PopoverToolbarButton(
+                systemImage: "power",
+                title: L10n.text("common.quit"),
+                action: quitApplication
+            )
         }
     }
 }

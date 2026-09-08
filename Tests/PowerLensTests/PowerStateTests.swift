@@ -41,24 +41,6 @@ struct PowerStateTests {
     }
 
     @Test
-    func stableExternalPowerStateUsesBatteryChargeInflowWhenChargingFlagIsMissing() {
-        let snapshot = makeTelemetrySnapshot(
-            isCharging: false,
-            batteryCurrentA: 3.44,
-            batteryPowerW: -46.4,
-            adapterInputPowerW: 53.6,
-            systemLoadW: 7.2
-        )
-
-        let state = TelemetrySnapshot.stableExternalPowerState(
-            for: [snapshot, snapshot, snapshot],
-            requiredConsecutiveSamples: 3
-        )
-
-        #expect(state == .charging)
-    }
-
-    @Test
     func lowInputRelativeToRatingIsObservedWithoutInferringItsCause() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: nil,

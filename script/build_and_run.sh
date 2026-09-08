@@ -2,6 +2,24 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+
+usage() {
+  echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--help]"
+}
+
+case "$MODE" in
+  run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify)
+    ;;
+  --help|-h|help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/script/lib/powerlens_packaging.sh"
 
@@ -87,9 +105,5 @@ case "$MODE" in
     open_app
     sleep 1
     pgrep -x "$APP_NAME" >/dev/null
-    ;;
-  *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
-    exit 2
     ;;
 esac
