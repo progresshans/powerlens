@@ -25,12 +25,15 @@ jobs:
           - runner: macos-26
             check_name: Build, Test, and Package Smoke Check
             build_system: native
+            system_api_profile: macos-26
           - runner: macos-26
             check_name: macOS 26 SwiftBuild Compatibility Check
             build_system: swiftbuild
+            system_api_profile: macos-26
           - runner: xcode-27
             check_name: Xcode 27 Compatibility Check
             build_system: swiftbuild
+            system_api_profile: macos-27
 
     env:
       POWERLENS_BUILD_SYSTEM: ${{ matrix.build_system }}
@@ -121,7 +124,7 @@ jobs:
             --format json \
             > "release/system-api-probe/${{ matrix.runner }}-${{ matrix.build_system }}.json"
           python3 script/verify_system_api_probe.py \
-            --profile script/system-api-contracts/macos-26.json \
+            --profile "script/system-api-contracts/${{ matrix.system_api_profile }}.json" \
             --mode hosted \
             --expected-app-version 0.0.0-ci \
             --expected-app-build "${{ github.run_number }}" \
