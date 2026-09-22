@@ -1,0 +1,265 @@
+{
+  "app": {
+    "build": "105",
+    "minimumMacOSVersion": "26.0",
+    "version": "0.0.0-ci"
+  },
+  "appleSMC": {
+    "connectionState": "unavailable",
+    "keys": [
+      {
+        "key": "SBAP",
+        "state": "notAttempted"
+      },
+      {
+        "key": "PDTR",
+        "state": "notAttempted"
+      },
+      {
+        "key": "PSTR",
+        "state": "notAttempted"
+      }
+    ],
+    "serviceAvailable": false
+  },
+  "appleSmartBattery": {
+    "keys": [
+      {
+        "path": "Voltage",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Amperage",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PowerTelemetryData",
+        "state": "notAttempted"
+      },
+      {
+        "path": "ExternalConnected",
+        "state": "notAttempted"
+      },
+      {
+        "path": "IsCharging",
+        "state": "notAttempted"
+      },
+      {
+        "path": "FullyCharged",
+        "state": "notAttempted"
+      },
+      {
+        "path": "DesignCapacity",
+        "state": "notAttempted"
+      },
+      {
+        "path": "AppleRawMaxCapacity",
+        "state": "notAttempted"
+      },
+      {
+        "path": "NominalChargeCapacity",
+        "state": "notAttempted"
+      },
+      {
+        "path": "CycleCount",
+        "state": "notAttempted"
+      },
+      {
+        "path": "DesignCycleCount9C",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Temperature",
+        "state": "notAttempted"
+      },
+      {
+        "path": "DeviceName",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Serial",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PermanentFailureStatus",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PowerTelemetryData.BatteryPower",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PowerTelemetryData.SystemPowerIn",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PowerTelemetryData.SystemLoad",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PowerTelemetryData.SystemVoltageIn",
+        "state": "notAttempted"
+      },
+      {
+        "path": "PowerTelemetryData.SystemCurrentIn",
+        "state": "notAttempted"
+      }
+    ],
+    "propertiesReadable": false,
+    "serviceAvailable": false
+  },
+  "externalPowerAdapter": {
+    "dictionaryAvailable": false,
+    "keys": [
+      {
+        "path": "Description",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Watts",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Voltage",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Current",
+        "state": "notAttempted"
+      }
+    ]
+  },
+  "host": {
+    "architecture": "arm64",
+    "operatingSystemBuild": "26A5406e",
+    "operatingSystemVersion": "27.0.0"
+  },
+  "ioPowerSources": {
+    "firstDescriptionAvailable": false,
+    "infoAvailable": true,
+    "keys": [
+      {
+        "path": "Current Capacity",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Power Source State",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Is Charging",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Is Charged",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Time to Empty",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Time to Full Charge",
+        "state": "notAttempted"
+      },
+      {
+        "path": "BatteryHealth",
+        "state": "notAttempted"
+      },
+      {
+        "path": "BatteryHealthCondition",
+        "state": "notAttempted"
+      },
+      {
+        "path": "Hardware Serial Number",
+        "state": "notAttempted"
+      }
+    ],
+    "sourceCount": 0
+  },
+  "powerUI": {
+    "clientClassFound": true,
+    "frameworkLoaded": true,
+    "methods": [
+      {
+        "actualTypeEncoding": "return=@;args=@,:",
+        "dispatch": "classMethod",
+        "expectedArgumentTypes": [
+          "@",
+          ":"
+        ],
+        "expectedReturnTypes": [
+          "@"
+        ],
+        "selector": "alloc",
+        "state": "compatible"
+      },
+      {
+        "actualTypeEncoding": "return=@;args=@,:,@",
+        "dispatch": "instanceMethod",
+        "expectedArgumentTypes": [
+          "@",
+          ":",
+          "@"
+        ],
+        "expectedReturnTypes": [
+          "@"
+        ],
+        "selector": "initWithClientName:",
+        "state": "compatible"
+      },
+      {
+        "actualTypeEncoding": "return=Q;args=@,:,^@",
+        "dispatch": "instanceMethod",
+        "expectedArgumentTypes": [
+          "@",
+          ":",
+          "^@"
+        ],
+        "expectedReturnTypes": [
+          "Q"
+        ],
+        "selector": "isMCLCurrentlyEnabled:",
+        "state": "compatible"
+      },
+      {
+        "actualTypeEncoding": "return=C;args=@,:,^@",
+        "dispatch": "instanceMethod",
+        "expectedArgumentTypes": [
+          "@",
+          ":",
+          "^@"
+        ],
+        "expectedReturnTypes": [
+          "C"
+        ],
+        "selector": "getMCLLimitWithError:",
+        "state": "compatible"
+      },
+      {
+        "actualTypeEncoding": "return=B;args=@,:,^@",
+        "dispatch": "instanceMethod",
+        "expectedArgumentTypes": [
+          "@",
+          ":",
+          "^@"
+        ],
+        "expectedReturnTypes": [
+          "B",
+          "c"
+        ],
+        "selector": "isOBCEngaged:",
+        "state": "compatible"
+      }
+    ],
+    "runtimeObservation": {
+      "classification": "transientFailure",
+      "component": "isOBCEngaged:",
+      "errorCode": 4,
+      "errorDomain": "PowerUISmartChargingErrorDomain",
+      "reason": "queryFailed",
+      "subsystem": "powerUI"
+    }
+  },
+  "schemaVersion": 2
+}
