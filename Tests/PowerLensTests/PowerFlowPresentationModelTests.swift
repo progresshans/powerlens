@@ -3,7 +3,7 @@ import Testing
 
 struct PowerFlowPresentationModelTests {
     @Test
-    func directPowerPreservesRawInputAndLoadReadings() {
+    func largeDirectPowerDiscrepancyKeepsTheSystemSensorValue() {
         let snapshot = makeTelemetrySnapshot(
             timeToEmptyMinutes: 60,
             adapterInputPowerW: 18.6,
@@ -13,9 +13,9 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .directPower)
-        #expect(model.showsIndependentReadingsNotice)
+        #expect(model.connectionStyle == .solid)
         #expect(model.routes.map(\.role) == [.input])
-        #expect(model.routes.first?.source.value == "18.6W")
+        #expect(model.routes.first?.source.value == "10.8W")
         #expect(model.routes.first?.target.value == "10.8W")
     }
 
@@ -30,8 +30,7 @@ struct PowerFlowPresentationModelTests {
 
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
-        #expect(model.state == .directPower)
-        #expect(!model.showsIndependentReadingsNotice)
+        #expect(model.state == .unknown)
         #expect(
             model.routes.first?.source.value
                 == L10n.text("common.none")
@@ -43,7 +42,7 @@ struct PowerFlowPresentationModelTests {
     }
 
     @Test
-    func holdingKeepsSingleRawInputToSystemRoute() {
+    func holdingKeepsSingleBalancedInputToSystemRoute() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: 0,
             batteryPowerW: 0,
@@ -54,7 +53,6 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .holding)
-        #expect(!model.showsIndependentReadingsNotice)
         #expect(model.routes.count == 1)
         #expect(model.routes.first?.role == .input)
         #expect(model.routes.first?.source.value == "11.7W")
@@ -73,7 +71,6 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .underpowered)
-        #expect(!model.showsIndependentReadingsNotice)
         #expect(model.routes.map(\.role) == [.input, .battery])
         #expect(model.routes[0].source.value == "9.1W")
         #expect(model.routes[1].source.value == "3.8W")
@@ -101,7 +98,7 @@ struct PowerFlowPresentationModelTests {
     }
 
     @Test
-    func calmBatteryDoesNotRewriteANonAtomicInputLoadPair() {
+    func calmBatteryUsesTheSystemSensorForBothEndpoints() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: 0,
             batteryPowerW: 0,
@@ -112,9 +109,9 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .holding)
-        #expect(model.showsIndependentReadingsNotice)
+        #expect(model.connectionStyle == .solid)
         #expect(model.routes.map(\.role) == [.input])
-        #expect(model.routes.first?.source.value == "20.0W")
+        #expect(model.routes.first?.source.value == "38.0W")
         #expect(model.routes.first?.target.value == "38.0W")
     }
 
@@ -130,9 +127,9 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .underpowered)
-        #expect(model.showsIndependentReadingsNotice)
+        #expect(model.connectionStyle == .solid)
         #expect(model.routes.map(\.role) == [.input, .battery])
-        #expect(model.routes[0].source.value == "38.0W")
+        #expect(model.routes[0].source.value == "20.0W")
         #expect(model.routes[1].source.value == "18.0W")
         #expect(model.routes[0].target.value == "38.0W")
     }
@@ -149,8 +146,9 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .underpowered)
+        #expect(model.connectionStyle == .solid)
         #expect(model.routes.map(\.role) == [.input, .battery])
-        #expect(model.routes[0].source.value == "42.0W")
+        #expect(model.routes[0].source.value == "20.0W")
         #expect(model.routes[1].source.value == "18.0W")
         #expect(model.routes[1].target.value == "38.0W")
     }
@@ -168,9 +166,9 @@ struct PowerFlowPresentationModelTests {
 
         #expect(snapshot.hasConflictingBatteryPowerMeasurements)
         #expect(model.state == .underpowered)
-        #expect(model.showsIndependentReadingsNotice)
-        #expect(model.routes[0].source.value == "20.0W")
-        #expect(model.routes[1].source.value == "≈12.2W")
+        #expect(model.connectionStyle == .solid)
+        #expect(model.routes[0].source.value == "7.8W")
+        #expect(model.routes[1].source.value == "12.2W")
         #expect(model.routes[1].target.value == "20.0W")
     }
 
@@ -188,11 +186,11 @@ struct PowerFlowPresentationModelTests {
 
         #expect(snapshot.hasConflictingBatteryPowerMeasurements)
         #expect(model.state == .charging)
-        #expect(model.showsIndependentReadingsNotice)
+        #expect(model.connectionStyle == .solid)
         #expect(model.routes.map(\.role) == [.input, .charge])
-        #expect(model.routes[0].source.value == "20.0W")
+        #expect(model.routes[0].source.value == "32.2W")
         #expect(model.routes[0].target.value == "20.0W")
-        #expect(model.routes[1].target.value == "≈12.2W")
+        #expect(model.routes[1].target.value == "12.2W")
     }
 
     @Test
@@ -208,14 +206,15 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .charging)
+        #expect(model.connectionStyle == .solid)
         #expect(model.routes.map(\.role) == [.input, .charge])
-        #expect(model.routes[0].source.value == "18.0W")
+        #expect(model.routes[0].source.value == "32.2W")
         #expect(model.routes[0].target.value == "20.0W")
-        #expect(model.routes[1].target.value == "≈12.2W")
+        #expect(model.routes[1].target.value == "12.2W")
     }
 
     @Test
-    func dischargeDirectionSurvivesWhenItsWattageIsUnavailable() {
+    func unavailableDischargeWattageHidesTheIncompleteRoute() {
         let snapshot = makeTelemetrySnapshot(
             batteryVoltageV: nil,
             batteryCurrentA: -1,
@@ -228,17 +227,16 @@ struct PowerFlowPresentationModelTests {
 
         #expect(snapshot.batteryFlowEvidence == .discharging)
         #expect(snapshot.measuredBatteryDischargeW == nil)
-        #expect(model.state == .underpowered)
-        #expect(model.showsIndependentReadingsNotice)
-        #expect(model.routes.map(\.role) == [.input, .battery])
+        #expect(model.state == .unknown)
+        #expect(model.routes.map(\.role) == [.input])
         #expect(
-            model.routes[1].source.value
+            model.routes[0].source.value
                 == L10n.text("common.none")
         )
     }
 
     @Test
-    func chargeDirectionSurvivesWhenItsWattageIsUnavailable() {
+    func unavailableChargeWattageHidesTheIncompleteRoute() {
         let snapshot = makeTelemetrySnapshot(
             isCharging: true,
             batteryVoltageV: nil,
@@ -252,11 +250,10 @@ struct PowerFlowPresentationModelTests {
 
         #expect(snapshot.batteryFlowEvidence == .charging)
         #expect(snapshot.measuredBatteryChargeW == nil)
-        #expect(model.state == .charging)
-        #expect(model.showsIndependentReadingsNotice)
-        #expect(model.routes.map(\.role) == [.input, .charge])
+        #expect(model.state == .unknown)
+        #expect(model.routes.map(\.role) == [.input])
         #expect(
-            model.routes[1].target.value
+            model.routes[0].source.value
                 == L10n.text("common.none")
         )
     }
@@ -274,7 +271,6 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .charging)
-        #expect(!model.showsIndependentReadingsNotice)
         #expect(model.routes.map(\.role) == [.input, .charge])
         #expect(model.routes[0].source.value == "53.6W")
         #expect(model.routes[1].source.value == "53.6W")
@@ -283,7 +279,7 @@ struct PowerFlowPresentationModelTests {
     }
 
     @Test
-    func batteryOnlyShowsObservedBatteryAndSystemReadings() {
+    func batteryOnlyShowsTheSamePowerAtBothEndpoints() {
         let snapshot = makeTelemetrySnapshot(
             powerSource: .battery,
             externalConnected: false,
@@ -298,14 +294,13 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .discharging)
-        #expect(!model.showsIndependentReadingsNotice)
         #expect(model.routes.map(\.role) == [.battery])
         #expect(model.routes.first?.source.value == "9.1W")
         #expect(model.routes.first?.target.value == "9.1W")
     }
 
     @Test
-    func oppositeDirectBatteryDirectionsRemainUnknown() {
+    func smcBatteryPowerSignDecidesTheRouteOverAnOppositeRegistryCurrent() {
         let snapshot = makeTelemetrySnapshot(
             batteryCurrentA: 1,
             batteryPowerW: 5,
@@ -317,13 +312,16 @@ struct PowerFlowPresentationModelTests {
 
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
+        // Diagnostics keep the conservative combined evidence.
         #expect(snapshot.batteryFlowEvidence == .conflicted)
-        #expect(model.state == .unknown)
-        #expect(model.statusTitle == L10n.text("ui.flow.unknown"))
-        #expect(model.showsIndependentReadingsNotice)
-        #expect(model.routes.map(\.role) == [.input])
-        #expect(model.routes.first?.source.value == "20.0W")
-        #expect(model.routes.first?.target.value == "20.0W")
+        #expect(snapshot.hasConflictingBatteryPowerMeasurements)
+        #expect(model.state == .underpowered)
+        #expect(model.connectionStyle == .solid)
+        #expect(model.statusTitle == L10n.text("ui.flow.batteryAssist"))
+        #expect(model.routes.map(\.role) == [.input, .battery])
+        #expect(model.routes[0].source.value == "15.0W")
+        #expect(model.routes[1].source.value == "5.0W")
+        #expect(model.routes.allSatisfy { $0.target.value == "20.0W" })
     }
 
     @Test
@@ -344,7 +342,6 @@ struct PowerFlowPresentationModelTests {
 
         let model = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(model.state == .underpowered)
-        #expect(model.showsIndependentReadingsNotice)
         #expect(model.routes.map(\.role) == [.input, .battery])
         #expect(model.routes.last?.source.value == "18.0W")
     }
@@ -362,7 +359,7 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(snapshot.batteryFlowEvidence == .charging)
-        #expect(model.state == .directPower)
+        #expect(model.state == .unknown)
         #expect(model.routes.map(\.role) == [.input])
     }
 
@@ -390,12 +387,11 @@ struct PowerFlowPresentationModelTests {
             snapshot: materialResidual
         )
 
-        #expect(belowNoiseModel.state == .directPower)
+        #expect(belowNoiseModel.state == .unknown)
         #expect(belowNoiseModel.routes.map(\.role) == [.input])
         #expect(materialModel.state == .charging)
-        #expect(materialModel.showsIndependentReadingsNotice)
         #expect(materialModel.routes.map(\.role) == [.input, .charge])
-        #expect(materialModel.routes[1].target.value == "≈0.5W")
+        #expect(materialModel.routes[1].target.value == "0.5W")
     }
 
     @Test
@@ -411,10 +407,9 @@ struct PowerFlowPresentationModelTests {
 
         #expect(snapshot.batteryFlowEvidence == .unavailable)
         #expect(model.state == .underpowered)
-        #expect(model.showsIndependentReadingsNotice)
         #expect(model.routes.map(\.role) == [.input, .battery])
         #expect(model.routes[0].source.value == "10.0W")
-        #expect(model.routes[1].source.value == "≈1.0W")
+        #expect(model.routes[1].source.value == "1.0W")
         #expect(model.routes[1].target.value == "11.0W")
     }
 }

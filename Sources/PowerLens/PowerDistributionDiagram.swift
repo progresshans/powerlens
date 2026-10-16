@@ -24,6 +24,7 @@ enum DistributionPalette {
 struct PowerDistributionDiagram: View {
     let rows: [PowerFlowRouteModel]
     let density: PowerFlowCardDensity
+    let connectionStyle: PowerFlowConnectionStyle
 
     private var layoutKind: PowerDistributionLayoutKind {
         guard rows.count >= 2 else {
@@ -63,9 +64,11 @@ struct PowerDistributionDiagram: View {
             let layout = makeLayout(metrics: metrics)
 
             ZStack {
-                Canvas { context, _ in
-                    for band in layout.bands {
-                        drawBand(band, in: &context, density: density)
+                if connectionStyle != .hidden {
+                    Canvas { context, _ in
+                        for band in layout.bands {
+                            drawBand(band, in: &context, density: density)
+                        }
                     }
                 }
 
@@ -241,13 +244,12 @@ struct PowerDistributionDiagram: View {
     }
 
     private func drawBand(_ band: PowerFlowBand, in context: inout GraphicsContext, density: PowerFlowCardDensity) {
+        let path = curvedPath(from: band.start, to: band.end)
         let foregroundStyle = StrokeStyle(
             lineWidth: density == .compact ? 5 : 7,
             lineCap: band.hasSoftCaps ? .round : .butt,
             lineJoin: .round
         )
-        let path = curvedPath(from: band.start, to: band.end)
-
         context.stroke(
             path,
             with: .linearGradient(
@@ -361,6 +363,7 @@ private struct PowerDistributionEndpointCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(.white.opacity(0.14), lineWidth: 0.8)
         }
+        .help(endpoint.tooltip)
     }
 
     private var endpointIcon: some View {

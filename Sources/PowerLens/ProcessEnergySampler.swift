@@ -17,6 +17,11 @@ struct AppEnergyUsage: Identifiable, Equatable, Sendable {
 
 protocol ProcessEnergySampling: Sendable {
     func sample(now: Date) async -> [AppEnergyUsage]
+    func reset() async
+}
+
+extension ProcessEnergySampling {
+    func reset() async {}
 }
 
 struct ProcessEnergyProcessSample: Sendable {
@@ -75,6 +80,14 @@ actor ProcessEnergySampler: ProcessEnergySampling {
         self.limit = limit
         self.minimumImpact = minimumImpact
         self.snapshotProvider = snapshotProvider
+    }
+
+    /// Discards the previous observation without scanning processes. A resumed
+    /// sample establishes a fresh baseline instead of averaging across a pause.
+    func reset() async {
+        previous.removeAll(keepingCapacity: true)
+        previousSampleTime = nil
+        lastResult = []
     }
 
     func sample(now: Date = .now) async -> [AppEnergyUsage] {

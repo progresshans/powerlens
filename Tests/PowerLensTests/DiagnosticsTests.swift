@@ -3,9 +3,11 @@ import Testing
 
 struct DiagnosticsTests {
     @Test
-    func menuBarPreservesApproximationOnlyForDerivedBatteryFallback() {
+    func menuBarHidesTheApproximationGlyphAndRetainsMeasurementProvenance() {
         let derivedBattery = makeTelemetrySnapshot(
             batteryLevel: 79,
+            powerSource: .battery,
+            externalConnected: false,
             batteryPowerW: 10.045,
             batteryPowerSource: .currentAndVoltage,
             adapterInputPowerW: nil,
@@ -13,6 +15,8 @@ struct DiagnosticsTests {
         )
         let directBattery = makeTelemetrySnapshot(
             batteryLevel: 79,
+            powerSource: .battery,
+            externalConnected: false,
             batteryPowerW: 10.045,
             batteryPowerSource: .directTelemetry,
             adapterInputPowerW: nil,
@@ -33,10 +37,12 @@ struct DiagnosticsTests {
             systemLoadW: nil
         )
 
-        #expect(derivedBattery.menuBarTitle == "79% · ≈10.0W")
+        #expect(derivedBattery.primaryDisplayedPower?.isApproximate == true)
+        #expect(directBattery.primaryDisplayedPower?.isApproximate == false)
+        #expect(derivedBattery.menuBarTitle == "79% · 10.0W")
         #expect(directBattery.menuBarTitle == "79% · 10.0W")
         #expect(measuredSystem.menuBarTitle == "79% · 30.0W")
-        #expect(measuredInput.menuBarTitle == "79% · 20.0W")
+        #expect(measuredInput.menuBarTitle == "79% · 30.0W")
     }
 
     @Test

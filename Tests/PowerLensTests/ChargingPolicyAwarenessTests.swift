@@ -228,11 +228,16 @@ struct ChargingPolicyAwarenessTests {
         )
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
-        #expect(flow.state == .directPower)
+        // The managed charging status remains known, while compatible mode
+        // has no wattages from which to construct a balanced power diagram.
+        #expect(flow.state == .unknown)
         #expect(flow.routes.map(\.role) == [.input])
+        #expect(flow.connectionStyle == .hidden)
+        #expect(flow.routes.first?.source.value == L10n.text("common.none"))
+        #expect(flow.routes.first?.target.value == L10n.text("common.none"))
         #expect(
             flow.statusTitle
-                == L10n.text("ui.flow.directPower")
+                == L10n.text("ui.flow.unknown")
         )
     }
 

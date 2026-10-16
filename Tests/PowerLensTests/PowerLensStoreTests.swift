@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import PowerLens
@@ -92,13 +93,11 @@ struct PowerLensStoreTests {
 
         await historyStore.waitUntilLoadStarts()
         await store.refreshOnce(persistImmediately: true)
-        let earlyHistory = store.history
         let earlyAppends = await historyStore.appendedSnapshots()
 
         await historyStore.finishLoading()
         await waitForAppendCount(1, in: historyStore)
 
-        #expect(earlyHistory.isEmpty)
         #expect(earlyAppends.isEmpty)
         #expect(store.latest == snapshot)
         #expect(await historyStore.appendedSnapshots() == [snapshot.withChargingPolicyStatus(nil)])
@@ -131,7 +130,6 @@ struct PowerLensStoreTests {
         #expect(store.lastRefreshAttemptAt == snapshot.timestamp.addingTimeInterval(60))
         #expect(store.telemetryHealth == .live)
         #expect(store.historyHealth == .available)
-        #expect(store.history == [historicalSnapshot])
         #expect(await historyStore.appendedSnapshots() == [historicalSnapshot])
     }
 
@@ -149,7 +147,6 @@ struct PowerLensStoreTests {
 
         #expect(store.latest == nil)
         #expect(store.telemetryHealth == .unavailable(failedAttempts: 1))
-        #expect(store.history.isEmpty)
         #expect(await historyStore.appendedSnapshots().isEmpty)
     }
 
@@ -180,27 +177,24 @@ struct PowerLensStoreTests {
         }
         await waitForPendingReads(1, in: telemetryReader)
 
-        let secondRefresh = Task { @MainActor in
-            await store.refreshOnce(persistImmediately: true)
-        }
-        await waitForPendingReads(2, in: telemetryReader)
-
-        await telemetryReader.resumeLast(with: TelemetryReadResult(
-            snapshot: newerSnapshot,
-            activeEngine: .livePrecision
-        ))
-        await secondRefresh.value
-
+        store.refreshNow()
+        #expect(await telemetryReader.pendingReadCount() == 1)
         await telemetryReader.resumeFirst(with: TelemetryReadResult(
             snapshot: olderSnapshot,
             activeEngine: .compatible
+        ))
+        await waitForControlledReadCount(2, in: telemetryReader)
+        #expect(store.latest == nil)
+
+        await telemetryReader.resumeFirst(with: TelemetryReadResult(
+            snapshot: newerSnapshot,
+            activeEngine: .livePrecision
         ))
         await firstRefresh.value
 
         #expect(store.latest == newerSnapshot)
         #expect(store.telemetryHealth == .live)
         #expect(store.activeTelemetryEngine == .livePrecision)
-        #expect(store.history == [newerSnapshot])
         #expect(await historyStore.appendedSnapshots() == [newerSnapshot])
     }
 
@@ -661,19 +655,15 @@ struct PowerLensStoreTests {
             await store.refreshOnce(persistImmediately: false)
         }
         await waitForPendingReads(1, in: reader)
-        let secondRefresh = Task { @MainActor in
-            await store.refreshOnce(persistImmediately: false)
-        }
-        await waitForPendingReads(2, in: reader)
-
-        await reader.resumeLast(
-            with: TelemetryReadResult(
-                snapshot: snapshot,
-                activeEngine: .livePrecision
-            )
-        )
-        await secondRefresh.value
+        store.refreshNow()
+        #expect(await reader.pendingReadCount() == 1)
         await reader.failFirst()
+        await waitForControlledReadCount(2, in: reader)
+        #expect(store.telemetryHealth == .waiting)
+        await reader.resumeFirst(with: TelemetryReadResult(
+            snapshot: snapshot,
+            activeEngine: .livePrecision
+        ))
         await firstRefresh.value
 
         #expect(store.telemetryHealth == .live)
@@ -740,12 +730,303 @@ struct PowerLensStoreTests {
             await recorder.recordedDiagnostics()
                 == [.init(diagnostic: diagnostic, observedAt: observedAt)]
         )
-        #expect(store.history == [snapshot.withChargingPolicyStatus(nil)])
         #expect(
             await historyStore.appendedSnapshots()
                 == [snapshot.withChargingPolicyStatus(nil)]
         )
     }
+
+    @Test
+    @MainActor
+    func sourceEventPublishesImmediatelyWithoutInventingFreshMeasurements() async {
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        let battery = makeTelemetrySnapshot(
+            timestamp: start, powerSource: .battery, externalConnected: false,
+            batteryCurrentA: -1.49, batteryPowerW: 15.2,
+            adapterInputPowerW: 0, systemLoadW: 13.5
+        )
+        let connected = makeTelemetrySnapshot(
+            timestamp: start.addingTimeInterval(2), batteryCurrentA: -1,
+            batteryPowerW: 12, adapterInputPowerW: 5, systemLoadW: 17
+        )
+        let reader = ControlledTelemetryReader()
+        let history = StubHistoryStore()
+        let sampler = CountingEnergySampler()
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: history, energySampler: sampler,
+            systemCompatibilityRecorder: StubSystemCompatibilityRecorder(),
+            startsAutomatically: false, now: { start }
+        )
+        let initial = Task { await store.refreshOnce(persistImmediately: false) }
+        await waitForPendingReads(1, in: reader)
+        await reader.resumeFirst(with: .init(snapshot: battery, activeEngine: .livePrecision))
+        await initial.value
+        let oldDiagnostics = store.diagnostics
+        let oldResolvedState = store.resolvedPowerState
+        var presentations: [MenuBarPresentation] = []
+        let subscription = store.$menuBarPresentation.sink { presentations.append($0) }
+
+        store.receivePowerSourceObservation(
+            .init(externalConnected: true, observedAt: start.addingTimeInterval(1)),
+            reason: .powerSourceChanged
+        )
+        #expect(presentations.last?.batteryBadge == .pluggedHolding)
+        #expect(store.menuBarBatteryBadge == .pluggedHolding)
+        #expect(store.latest == battery)
+        #expect(store.menuBarPresentation.snapshot == battery)
+        #expect(store.lastRefreshAt == start)
+        #expect(store.diagnostics == oldDiagnostics)
+        #expect(store.resolvedPowerState == oldResolvedState)
+        #expect(await history.appendedSnapshots() == [battery])
+        #expect(await sampler.sampleCount == 0)
+
+        await waitForControlledReadCount(2, in: reader)
+        await reader.resumeFirst(with: .init(snapshot: connected, activeEngine: .livePrecision))
+        await waitForSnapshot(connected, in: store)
+        #expect(store.menuBarBatteryBadge == .pluggedHolding)
+        #expect(await history.appendedSnapshots() == [battery])
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test
+    @MainActor
+    func unplugInvalidatesAnInFlightReadAndPreservesManualPersistence() async {
+        let charging = makeTelemetrySnapshot(isCharging: true, batteryCurrentA: 1, batteryPowerW: -12)
+        let battery = makeTelemetrySnapshot(
+            timestamp: charging.timestamp.addingTimeInterval(1), powerSource: .battery,
+            externalConnected: false, batteryCurrentA: -1, batteryPowerW: 12,
+            adapterInputPowerW: 0, systemLoadW: 11
+        )
+        let reader = ControlledTelemetryReader()
+        let history = StubHistoryStore()
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: history, energySampler: EmptyEnergySampler(),
+            startsAutomatically: false
+        )
+        let initial = Task { await store.refreshOnce() }
+        await waitForPendingReads(1, in: reader)
+        await reader.resumeFirst(with: .init(snapshot: charging, activeEngine: .livePrecision))
+        await initial.value
+        #expect(store.menuBarBatteryBadge == .chargingBolt)
+
+        let manual = Task { await store.refreshOnce() }
+        await waitForControlledReadCount(2, in: reader)
+        store.receivePowerSourceObservation(
+            .init(externalConnected: false, observedAt: battery.timestamp), reason: .powerSourceChanged
+        )
+        #expect(store.menuBarBatteryBadge == .none)
+        #expect(store.latest == charging)
+        await reader.resumeFirst(with: .init(snapshot: charging, activeEngine: .livePrecision))
+        await waitForControlledReadCount(3, in: reader)
+        #expect(store.menuBarBatteryBadge == .none)
+        #expect(await history.appendedSnapshots() == [charging])
+        await reader.resumeFirst(with: .init(snapshot: battery, activeEngine: .livePrecision))
+        await manual.value
+        #expect(store.latest == battery)
+        #expect(await history.appendedSnapshots() == [charging, battery])
+    }
+
+    @Test
+    @MainActor
+    func sourceEventBurstHasOnlyOneReadAndOnePendingRead() async {
+        let reader = ControlledTelemetryReader()
+        let battery = makeTelemetrySnapshot(powerSource: .battery, externalConnected: false)
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: StubHistoryStore(),
+            energySampler: EmptyEnergySampler(), startsAutomatically: false
+        )
+        let first = Task { await store.refreshOnce(persistImmediately: false) }
+        await waitForPendingReads(1, in: reader)
+        for i in 0..<20 {
+            store.receivePowerSourceObservation(
+                .init(externalConnected: i.isMultiple(of: 2), observedAt: battery.timestamp),
+                reason: .powerSourceChanged
+            )
+        }
+        #expect(store.menuBarBatteryBadge == .none)
+        #expect(await reader.readCount() == 1)
+        await reader.resumeFirst(with: .init(snapshot: makeTelemetrySnapshot(), activeEngine: .livePrecision))
+        await waitForControlledReadCount(2, in: reader)
+        #expect(store.latest == nil)
+        await reader.resumeFirst(with: .init(snapshot: battery, activeEngine: .livePrecision))
+        await first.value
+        #expect(store.latest == battery)
+        #expect(await reader.readCount() == 2)
+    }
+
+    @Test
+    @MainActor
+    func laggingRegistryDoesNotUndoEventAndGetsOneBoundedRetry() async {
+        let battery = makeTelemetrySnapshot(powerSource: .battery, externalConnected: false)
+        let connected = makeTelemetrySnapshot(timestamp: battery.timestamp.addingTimeInterval(1))
+        let reader = ControlledTelemetryReader()
+        let history = StubHistoryStore()
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: history, energySampler: EmptyEnergySampler(),
+            startsAutomatically: false,
+            powerSourceReader: { .init(externalConnected: true, observedAt: connected.timestamp) }
+        )
+        store.receivePowerSourceObservation(
+            .init(externalConnected: true, observedAt: connected.timestamp), reason: .initial
+        )
+        #expect(store.menuBarBatteryBadge == .pluggedHolding)
+        #expect(store.menuBarPresentation.snapshot == nil)
+        await waitForControlledReadCount(1, in: reader)
+        await reader.resumeFirst(with: .init(snapshot: battery, activeEngine: .livePrecision))
+        await waitForControlledReadCount(2, in: reader)
+        #expect(store.latest == nil)
+        #expect(store.lastRefreshAt == nil)
+        #expect(store.menuBarBatteryBadge == .pluggedHolding)
+        #expect(await history.appendedSnapshots().isEmpty)
+        await reader.resumeFirst(with: .init(snapshot: connected, activeEngine: .livePrecision))
+        await waitForSnapshot(connected, in: store)
+        #expect(await reader.readCount() == 2)
+    }
+
+    @Test
+    @MainActor
+    func pollingReconcilesAMissedNotificationUsingFreshPowerSourceState() async {
+        let connected = makeTelemetrySnapshot()
+        let battery = makeTelemetrySnapshot(
+            timestamp: connected.timestamp.addingTimeInterval(1), powerSource: .battery,
+            externalConnected: false, batteryCurrentA: -1, batteryPowerW: 12,
+            adapterInputPowerW: 0, systemLoadW: 12
+        )
+        let reader = SequenceTelemetryReader(snapshots: [connected, battery])
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: StubHistoryStore(), energySampler: EmptyEnergySampler(),
+            startsAutomatically: false,
+            powerSourceReader: { .init(externalConnected: false, observedAt: battery.timestamp) }
+        )
+        store.receivePowerSourceObservation(
+            .init(externalConnected: true, observedAt: connected.timestamp), reason: .initial
+        )
+        await waitForSnapshot(connected, in: store)
+        await store.refreshOnce(persistImmediately: false)
+        #expect(store.latest == battery)
+        #expect(store.menuBarBatteryBadge == .none)
+        #expect(store.resolvedPowerState?.externalPowerState == .onBattery)
+    }
+
+    @Test
+    @MainActor
+    func wakeRefreshesEvenWhenThePowerSourceIsUnchanged() async {
+        let snapshot = makeTelemetrySnapshot()
+        let reader = CountingTelemetryReader(snapshot: snapshot)
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: StubHistoryStore(), energySampler: EmptyEnergySampler(),
+            startsAutomatically: false
+        )
+        await store.refreshOnce(persistImmediately: false)
+        store.receivePowerSourceObservation(
+            .init(externalConnected: true, observedAt: snapshot.timestamp), reason: .wake
+        )
+        await waitForReadCount(2, in: reader)
+        #expect(await reader.readCount() == 2)
+    }
+
+    @Test
+    @MainActor
+    func processSamplingIsPausedInBackgroundAndResetAcrossVisibilityChanges() async {
+        let snapshot = makeTelemetrySnapshot()
+        let sampler = CountingEnergySampler()
+        let store = PowerLensStore(
+            telemetryReader: CountingTelemetryReader(snapshot: snapshot), historyStore: StubHistoryStore(),
+            energySampler: sampler, startsAutomatically: false
+        )
+        await store.refreshOnce(persistImmediately: false)
+        #expect(await sampler.sampleCount == 0)
+        store.setRefreshCadence(.interactive)
+        await store.refreshOnce(persistImmediately: false)
+        #expect(await sampler.sampleCount == 1)
+        #expect(!store.topEnergyApps.isEmpty)
+        store.setRefreshCadence(.background)
+        #expect(store.topEnergyApps.isEmpty)
+        await store.refreshOnce(persistImmediately: false)
+        #expect(await sampler.sampleCount == 1)
+        store.setRefreshCadence(.interactive)
+        await store.refreshOnce(persistImmediately: false)
+        #expect(await sampler.sampleCount == 2)
+        #expect(await sampler.resetCount == 3)
+    }
+
+    @Test
+    @MainActor
+    func slowEnergySamplingDoesNotDelayTelemetryOrSourceIconAndCannotPublishAfterHiding() async {
+        let snapshot = makeTelemetrySnapshot()
+        let battery = makeTelemetrySnapshot(
+            timestamp: snapshot.timestamp.addingTimeInterval(1),
+            powerSource: .battery, externalConnected: false
+        )
+        let gate = HistoryAppendGate()
+        var arrivals = gate.arrivals.makeAsyncIterator()
+        let sampler = CountingEnergySampler(gate: gate)
+        let store = PowerLensStore(
+            telemetryReader: SequenceTelemetryReader(snapshots: [snapshot, battery]), historyStore: StubHistoryStore(),
+            energySampler: sampler, startsAutomatically: false
+        )
+        store.setRefreshCadence(.interactive)
+        let refresh = Task { await store.refreshOnce(persistImmediately: false) }
+        _ = await arrivals.next()
+        #expect(store.latest == snapshot)
+        #expect(store.menuBarPresentation.snapshot == snapshot)
+        store.setRefreshCadence(.background)
+        store.receivePowerSourceObservation(
+            .init(externalConnected: false, observedAt: battery.timestamp), reason: .powerSourceChanged
+        )
+        #expect(store.menuBarBatteryBadge == .none)
+        #expect(store.latest == snapshot)
+        await gate.finish()
+        await refresh.value
+        #expect(store.topEnergyApps.isEmpty)
+        #expect(store.latest == battery)
+    }
+
+    @Test
+    @MainActor
+    func startupReadsOnlyTheLatestTimestampAndRetainsMinutePersistenceCadence() async {
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        let first = makeTelemetrySnapshot(timestamp: start)
+        let second = makeTelemetrySnapshot(timestamp: start.addingTimeInterval(30))
+        let third = makeTelemetrySnapshot(timestamp: start.addingTimeInterval(60))
+        let reader = SequenceTelemetryReader(snapshots: [first, second, third])
+        let history = StubHistoryStore(loadedSnapshots: [first])
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: history, energySampler: EmptyEnergySampler(),
+            startsAutomatically: true, interactiveRefreshInterval: .seconds(60),
+            backgroundRefreshInterval: .seconds(60), now: { start }
+        )
+        await waitForSnapshot(first, in: store)
+        await store.refreshOnce(persistImmediately: false)
+        await store.refreshOnce(persistImmediately: false)
+        #expect(await history.recentLoadCount == 0)
+        #expect(await history.appendedSnapshots() == [third])
+    }
+
+
+    @Test
+    @MainActor
+    func anEventDuringAppendDoesNotInheritAlreadyCommittedManualPersistence() async {
+        let snapshot = makeTelemetrySnapshot()
+        let gate = HistoryAppendGate()
+        var appends = gate.arrivals.makeAsyncIterator()
+        let history = StubHistoryStore(appendGate: gate)
+        let reader = CountingTelemetryReader(snapshot: snapshot)
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: history, energySampler: EmptyEnergySampler(),
+            startsAutomatically: false
+        )
+        let manual = Task { await store.refreshOnce() }
+        _ = await appends.next()
+        store.receivePowerSourceObservation(
+            .init(externalConnected: true, observedAt: snapshot.timestamp), reason: .wake
+        )
+        await gate.finish()
+        await manual.value
+        #expect(await reader.readCount() == 2)
+        #expect(await history.appendedSnapshots() == [snapshot])
+    }
+
 }
 
 private enum TelemetryOutcome: Sendable {
@@ -906,12 +1187,16 @@ private actor EmptyEnergySampler: ProcessEnergySampling {
 
 private actor ControlledTelemetryReader: TelemetryReading {
     private var continuations: [CheckedContinuation<TelemetryReadResult, any Error>] = []
+    private var startedReads = 0
 
     func readSnapshot(preference: TelemetryEnginePreference) async throws -> TelemetryReadResult {
-        try await withCheckedThrowingContinuation { continuation in
+        startedReads += 1
+        return try await withCheckedThrowingContinuation { continuation in
             continuations.append(continuation)
         }
     }
+
+    func readCount() -> Int { startedReads }
 
     func pendingReadCount() -> Int {
         continuations.count
@@ -957,21 +1242,24 @@ private actor StubHistoryStore: HistoryStoring {
         self.appendGate = appendGate
     }
 
-    func loadRecent(
-        since cutoffDate: Date
-    ) async throws -> [TelemetrySnapshot] {
+    func latestSampleTimestamp() async throws -> Date? {
         if blocksLoad {
             loadStarted = true
             loadStartWaiters.forEach { $0.resume() }
             loadStartWaiters.removeAll()
-
             await withCheckedContinuation { continuation in
                 loadContinuation = continuation
             }
         }
+        return loadedSnapshots.map(\.timestamp).max()
+    }
 
+    func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot] {
+        recentLoadCount += 1
         return loadedSnapshots
     }
+
+    private(set) var recentLoadCount = 0
 
     func append(_ snapshot: TelemetrySnapshot) async throws {
         if let appendGate {
@@ -1051,12 +1339,14 @@ private actor HistoryAppendGate {
     let arrivals: AsyncStream<Void>
     private let arrived: AsyncStream<Void>.Continuation
     private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
 
     init() {
         (arrivals, arrived) = AsyncStream.makeStream(of: Void.self)
     }
 
     func suspend() async {
+        guard !isOpen else { return }
         await withCheckedContinuation { continuation in
             self.continuation = continuation
             arrived.yield(())
@@ -1064,6 +1354,7 @@ private actor HistoryAppendGate {
     }
 
     func finish() {
+        isOpen = true
         continuation?.resume()
         continuation = nil
     }
@@ -1090,5 +1381,36 @@ private actor StubSystemCompatibilityRecorder: SystemCompatibilityRecording {
 
     func recordedDiagnostics() -> [Entry] {
         entries
+    }
+}
+
+private func waitForControlledReadCount(_ count: Int, in reader: ControlledTelemetryReader) async {
+    for _ in 0..<1_000 {
+        if await reader.readCount() >= count { return }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+}
+
+@MainActor
+private func waitForSnapshot(_ snapshot: TelemetrySnapshot, in store: PowerLensStore) async {
+    for _ in 0..<1_000 {
+        if store.latest == snapshot { return }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+}
+
+private actor CountingEnergySampler: ProcessEnergySampling {
+    private(set) var sampleCount = 0
+    private(set) var resetCount = 0
+    private let gate: HistoryAppendGate?
+
+    init(gate: HistoryAppendGate? = nil) { self.gate = gate }
+
+    func reset() async { resetCount += 1 }
+
+    func sample(now: Date) async -> [AppEnergyUsage] {
+        sampleCount += 1
+        if let gate { await gate.suspend() }
+        return [.init(appPath: "/Test.app", name: "Test", energyImpact: 1)]
     }
 }
