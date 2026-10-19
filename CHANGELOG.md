@@ -27,6 +27,11 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   is already the primary status.
 - Opening the popover or Dashboard refreshes power readings immediately, and
   outdated readings are no longer shown as live.
+- Readings that disagree with the current power source are marked delayed until
+  a matching reading arrives.
+- Waking on the same power source preserves the menu bar's charging or warning
+  state while fresh readings are unavailable.
+- Slow high-energy app scans no longer delay subsequent power readings.
 - Insights includes retained raw and summarized history after retention changes,
   refreshes when new history is saved, and no longer shows results from a
   previously selected range.

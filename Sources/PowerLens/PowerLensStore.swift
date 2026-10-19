@@ -64,6 +64,7 @@ final class PowerLensStore: ObservableObject {
     private var activePersistencePolicy = RefreshPersistencePolicy.disabled
     private var sourceReconciliationTask: Task<Void, Never>?
     private var energyResetTask: Task<Void, Never>?
+    private var energySamplingTask: Task<Void, Never>?
     private var energySamplingGeneration = 0
     private var powerSourceObservation: PowerSourceObservation?
     private var powerSourceGeneration = 0
@@ -188,6 +189,7 @@ final class PowerLensStore: ObservableObject {
         refreshTask?.cancel()
         sourceReconciliationTask?.cancel()
         energyResetTask?.cancel()
+        energySamplingTask?.cancel()
     }
 
     func refreshNow() {
@@ -225,15 +227,18 @@ final class PowerLensStore: ObservableObject {
     ) {
         let previousSource = powerSourceObservation?.externalConnected
             ?? latest?.externalConnected
+        let sourceChanged = previousSource != observation.externalConnected
         powerSourceObservation = observation
-        guard previousSource != observation.externalConnected || reason == .wake else {
+        guard sourceChanged || reason == .wake else {
             return
         }
 
         powerSourceGeneration += 1
         powerStateTracker.reset()
         resetEnergySampling()
-        publishPowerSource(observation)
+        if sourceChanged {
+            publishPowerSource(observation)
+        }
 
         let generation = powerSourceGeneration
         sourceReconciliationTask?.cancel()
@@ -274,8 +279,8 @@ final class PowerLensStore: ObservableObject {
     }
 
     func refreshMenuBarLocalization() {
-        if lastAppliedSourceGeneration != powerSourceGeneration,
-           let powerSourceObservation {
+        if let powerSourceObservation,
+           latest?.externalConnected != powerSourceObservation.externalConnected {
             publishPowerSource(powerSourceObservation)
         } else if let latest {
             menuBarPresentation = MenuBarPresentation(
@@ -289,6 +294,7 @@ final class PowerLensStore: ObservableObject {
 
     private func resetEnergySampling() {
         energySamplingGeneration += 1
+        energySamplingTask?.cancel()
         if !topEnergyApps.isEmpty {
             topEnergyApps = []
         }
@@ -300,17 +306,27 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
-    private func sampleEnergyAppsIfVisible() async {
-        guard refreshCadence == .interactive else { return }
+    private func scheduleEnergySamplingIfVisible() {
+        guard refreshCadence == .interactive, energySamplingTask == nil else { return }
         let generation = energySamplingGeneration
-        await energyResetTask?.value
-        guard generation == energySamplingGeneration,
-              refreshCadence == .interactive else { return }
-        let apps = await energySampler.sample(now: now())
-        guard generation == energySamplingGeneration,
-              refreshCadence == .interactive else { return }
-        if topEnergyApps != apps {
-            topEnergyApps = apps
+        let reset = energyResetTask
+        let sampler = energySampler
+        let clock = now
+        // Keep one scan in flight without holding the serialized telemetry slot.
+        // Cancellation invalidates its result even if the sampler cannot stop.
+        energySamplingTask = Task { [weak self] in
+            defer { self?.energySamplingTask = nil }
+            await reset?.value
+            guard !Task.isCancelled,
+                  self?.energySamplingGeneration == generation,
+                  self?.refreshCadence == .interactive else { return }
+            let apps = await sampler.sample(now: clock())
+            guard !Task.isCancelled, let self,
+                  self.energySamplingGeneration == generation,
+                  self.refreshCadence == .interactive else { return }
+            if self.topEnergyApps != apps {
+                self.topEnergyApps = apps
+            }
         }
     }
 
@@ -511,13 +527,9 @@ final class PowerLensStore: ObservableObject {
                 return
             }
 
-            lastRefreshAttemptAt = now()
-            let failedAttempts = telemetryHealth.failedAttempts + 1
-            telemetryHealth = latest == nil
-                ? .unavailable(failedAttempts: failedAttempts)
-                : .delayed(failedAttempts: failedAttempts)
+            recordTelemetryFailure()
             Self.telemetryLogger.warning(
-                "Telemetry refresh failed; consecutive attempts: \(failedAttempts, privacy: .public); error: \(String(describing: error), privacy: .private)"
+                "Telemetry refresh failed; consecutive attempts: \(self.telemetryHealth.failedAttempts, privacy: .public); error: \(String(describing: error), privacy: .private)"
             )
             return
         }
@@ -542,7 +554,7 @@ final class PowerLensStore: ObservableObject {
                 }
             }
             guard powerSourceObservation?.externalConnected == snapshot.externalConnected else {
-                lastRefreshAttemptAt = now()
+                recordTelemetryFailure()
                 return
             }
         }
@@ -604,8 +616,16 @@ final class PowerLensStore: ObservableObject {
             )
         }
         if sequence == refreshSequence {
-            await sampleEnergyAppsIfVisible()
+            scheduleEnergySamplingIfVisible()
         }
+    }
+
+    private func recordTelemetryFailure() {
+        lastRefreshAttemptAt = now()
+        let failedAttempts = telemetryHealth.failedAttempts + 1
+        telemetryHealth = latest == nil
+            ? .unavailable(failedAttempts: failedAttempts)
+            : .delayed(failedAttempts: failedAttempts)
     }
 
     private func shouldPersist(snapshot: TelemetrySnapshot) -> Bool {
