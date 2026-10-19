@@ -3,7 +3,8 @@ import Combine
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = PowerLensStore()
+    let store: PowerLensStore
+    private let powerSourceMonitor: PowerSourceMonitor
     let softwareUpdateController = SoftwareUpdateController()
     let launchAtLoginController = LaunchAtLoginController()
 
@@ -19,6 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var openSettingsWindowAction: (() -> Void)?
     private var cancellables: Set<AnyCancellable> = []
+
+    override init() {
+        let monitor = PowerSourceMonitor()
+        powerSourceMonitor = monitor
+        store = PowerLensStore(powerSourceReader: { monitor.readCurrent() })
+        super.init()
+    }
 
     private lazy var statusItemController = MenuBarStatusItemController { [weak self] sender in
         self?.togglePopover(sender)
@@ -45,13 +53,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = statusItemController
         _ = popoverPresenter
         observeChanges()
+        powerSourceMonitor.start { [weak self] observation, reason in
+            self?.store.receivePowerSourceObservation(observation, reason: reason)
+        }
         softwareUpdateController.startIfConfigured()
-        updateStatusItem(using: store.latest)
+        updateStatusItem(using: store.menuBarPresentation)
         updateRefreshCadence()
 
         if DockIconPreference.current {
             dashboardSceneController.showDashboard()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        powerSourceMonitor.stop()
     }
 
     func setDashboardWindowAction(_ action: @escaping () -> Void) {
@@ -93,8 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                self.updateStatusItem(using: snapshot)
                 self.popoverPresenter.updateLayoutIfShown(using: snapshot)
+            }
+            .store(in: &cancellables)
+
+        store.$menuBarPresentation
+            .removeDuplicates()
+            .sink { [weak self] presentation in
+                self?.updateStatusItem(using: presentation)
             }
             .store(in: &cancellables)
 
@@ -144,7 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshLocalizedViews() {
         popoverPresenter.refreshLocalizedViews(snapshot: store.latest)
-        updateStatusItem(using: store.latest)
+        store.refreshMenuBarLocalization()
+        updateStatusItem(using: store.menuBarPresentation)
         managedWindowController.updateManagedWindowTitle(
             identifier: PowerLensWindowIdentifier.dashboard,
             title: L10n.text("ui.window.dashboard")
@@ -155,14 +177,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func updateStatusItem(using snapshot: TelemetrySnapshot?) {
+    private func updateStatusItem(using presentation: MenuBarPresentation) {
         statusItemController.update(
-            snapshot: snapshot,
-            symbolName: store.menuBarSymbolName,
-            batteryBadge: store.menuBarBatteryBadge,
-            statusHeadline: snapshot?.statusHeadline(
-                resolvedState: store.resolvedPowerState
-            )
+            snapshot: presentation.snapshot,
+            symbolName: presentation.symbolName,
+            batteryBadge: presentation.batteryBadge,
+            statusHeadline: presentation.statusHeadline
         )
     }
 

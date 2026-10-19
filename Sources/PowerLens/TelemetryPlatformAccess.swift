@@ -21,17 +21,37 @@ protocol TelemetryPlatformAccessing {
     func readEnvironment() -> TelemetryReadEnvironment
 }
 
+enum PowerSourceDescriptionSelector {
+    static func internalBattery(in descriptions: [[String: Any]]) -> [String: Any]? {
+        descriptions.first { description in
+            if let type = description[kIOPSTypeKey] as? String {
+                return type == kIOPSInternalBatteryType
+            }
+            return description[kIOPSTransportTypeKey] as? String
+                == kIOPSInternalType
+        }
+    }
+
+    static func preferred(in descriptions: [[String: Any]]) -> [String: Any]? {
+        // Keep the existing first-source behavior for Macs without a built-in
+        // battery, while preventing a UPS from replacing laptop battery data.
+        internalBattery(in: descriptions) ?? descriptions.first
+    }
+}
+
 struct SystemTelemetryPlatformAccess: TelemetryPlatformAccessing {
     func readPowerSourceDescription() -> [String: Any] {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef],
-              let source = list.first,
-              let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any]
+              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef]
         else {
             return [:]
         }
 
-        return description
+        let descriptions = list.compactMap { source in
+            IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue()
+                as? [String: Any]
+        }
+        return PowerSourceDescriptionSelector.preferred(in: descriptions) ?? [:]
     }
 
     func readAdapterDetails() -> [String: Any] {

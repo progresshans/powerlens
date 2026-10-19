@@ -156,6 +156,8 @@ struct DashboardView: View {
     }
 
     private func dashboardSection(_ snapshot: TelemetrySnapshot) -> some View {
+        let powerReadings = PowerFlowReadings(snapshot: snapshot)
+        let powerTooltip = PowerFlowTooltip.text(snapshot: snapshot, readings: powerReadings)
         let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
             store.diagnostics,
             resolvedState: store.resolvedPowerState
@@ -175,15 +177,17 @@ struct DashboardView: View {
                 )
                 metricCard(
                     L10n.text("ui.metric.powerIn"),
-                    snapshot.adapterInputPowerW.map(Formatters.power) ?? L10n.text("common.none"),
+                    powerReadings.inputPower?.formatted ?? L10n.text("common.none"),
                     detail: snapshot.adapterMaxPowerW.map { L10n.tr("ui.metric.ratedPowerDetail", Formatters.power($0)) } ?? L10n.text("ui.metric.adapterNotConnected"),
-                    systemImage: "powerplug.fill"
+                    systemImage: "powerplug.fill",
+                    help: powerTooltip
                 )
                 metricCard(
                     L10n.text("ui.metric.systemLoad"),
-                    snapshot.systemLoadW.map(Formatters.power) ?? L10n.text("common.none"),
+                    powerReadings.systemPower?.formatted ?? L10n.text("common.none"),
                     detail: snapshot.frontmostAppName ?? L10n.text("ui.metric.noForegroundApp"),
-                    systemImage: "waveform.path.ecg"
+                    systemImage: "waveform.path.ecg",
+                    help: powerTooltip
                 )
                 metricCard(
                     L10n.text("ui.metric.batteryTemp"),
@@ -298,7 +302,13 @@ struct DashboardView: View {
         }
     }
 
-    private func metricCard(_ title: String, _ value: String, detail: String, systemImage: String) -> some View {
+    private func metricCard(
+        _ title: String,
+        _ value: String,
+        detail: String,
+        systemImage: String,
+        help: String? = nil
+    ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(title, systemImage: systemImage)
                 .font(.headline)
@@ -311,6 +321,10 @@ struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
         .padding(18)
+        // Attach the tooltip under the card surface: applied outside the
+        // macOS 26 glass effect, `.help` never appeared on hover.
+        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xLarge, style: .continuous))
+        .modifier(OptionalHelp(text: help))
         .cardSurface(cornerRadius: CornerRadius.xLarge)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value). \(detail)")
@@ -342,5 +356,18 @@ struct DashboardView: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .cardSurface(cornerRadius: CornerRadius.xLarge)
+    }
+}
+
+private struct OptionalHelp: ViewModifier {
+    let text: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let text {
+            content.help(text)
+        } else {
+            content
+        }
     }
 }

@@ -3,6 +3,10 @@ import Foundation
 struct DisplayedPowerMeasurement: Equatable, Sendable {
     let watts: Double
     let isApproximate: Bool
+
+    var formatted: String {
+        Formatters.power(watts)
+    }
 }
 
 extension TelemetrySnapshot {
@@ -350,36 +354,14 @@ extension TelemetrySnapshot {
     }
 
     var primaryDisplayedPower: DisplayedPowerMeasurement? {
-        if let systemLoadW {
-            return DisplayedPowerMeasurement(
-                watts: systemLoadW,
-                isApproximate: false
-            )
-        }
-
-        if let adapterInputPowerW {
-            return DisplayedPowerMeasurement(
-                watts: adapterInputPowerW,
-                isApproximate: false
-            )
-        }
-
-        if let batteryPowerW {
-            return DisplayedPowerMeasurement(
-                watts: abs(batteryPowerW),
-                isApproximate: batteryPowerIsDerived
-            )
-        }
-
-        return nil
+        PowerFlowReadings(snapshot: self).systemPower
     }
 
     var menuBarTitle: String {
         let battery = batteryLevel.map(Formatters.percent) ?? "--"
 
         if let primaryDisplayedPower {
-            let approximation = primaryDisplayedPower.isApproximate ? "≈" : ""
-            return "\(battery) · \(approximation)\(Formatters.power(primaryDisplayedPower.watts))"
+            return "\(battery) · \(primaryDisplayedPower.formatted)"
         }
 
         return battery

@@ -5,6 +5,7 @@ protocol TelemetryReading: Sendable {
 }
 
 protocol HistoryStoring: Sendable {
+    func latestSampleTimestamp() async throws -> Date?
     func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot]
     func append(_ snapshot: TelemetrySnapshot) async throws
     func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async throws

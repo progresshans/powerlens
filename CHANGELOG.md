@@ -6,22 +6,47 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ## [Unreleased]
 
+### Changed
+
+- Power flow, Dashboard summaries, and the menu bar now calculate displayed
+  values from the system power reading, so input, battery, and system power add
+  up and stay within the adapter rating. Tooltips show the original sensor
+  readings and how each value was calculated; history and diagnostics keep the
+  original measurements. This replaces the 0.9.3 approach of showing each
+  sensor's reading even when they did not add up.
+- Connecting or disconnecting a charger updates the menu bar immediately instead
+  of waiting for the next refresh, and the status is refreshed after the Mac
+  wakes.
+- High-energy app sampling pauses while no PowerLens window or popover is open,
+  and startup no longer loads 30 days of history.
+- Updated Sparkle to 2.10.0.
+
 ### Fixed
 
 - Managed charging status is no longer repeated in summary diagnostics when it
   is already the primary status.
-- Opening the popover or Dashboard now refreshes power telemetry immediately,
-  and stale samples are no longer presented as live.
+- Opening the popover or Dashboard refreshes power readings immediately, and
+  outdated readings are no longer shown as live.
+- Readings that disagree with the current power source are marked delayed until
+  a matching reading arrives.
+- Waking on the same power source preserves the menu bar's charging or warning
+  state while fresh readings are unavailable.
+- Slow high-energy app scans no longer delay subsequent power readings.
 - Insights includes retained raw and summarized history after retention changes,
-  refreshes after history updates, and ignores superseded range queries.
-- Newly summarized history preserves averages with missing sensor readings and
-  avoids counting an uninterrupted charge again at a storage boundary.
-- Refresh, settings, Dashboard, and quit actions remain available when initial
-  telemetry is unavailable; saved history can still be opened.
-- Menu bar power preserves the approximation marker for calculated readings,
-  and diagnostic notifications remain consistent across language changes.
-- History exports report save failures and write files without blocking the UI.
-- Manual refreshes during startup wait for history initialization before saving.
+  refreshes when new history is saved, and no longer shows results from a
+  previously selected range.
+- Summarized history keeps accurate averages when some sensor readings are
+  missing, and no longer counts one continuous charge twice.
+- Refresh, Settings, Dashboard, and Quit remain available when the first
+  telemetry read fails, and saved history can still be opened.
+- Changing the app language no longer sends diagnostic notifications again.
+- History exports report save failures and no longer freeze the interface while
+  writing files.
+- Manual refreshes during startup wait until history is ready before saving.
+- On Macs with a built-in battery, a connected UPS no longer replaces the
+  battery's status.
+- On Korean systems, the standard Edit, View, Window, and Help menus and other
+  system-provided panels appear in Korean instead of English.
 
 ## [0.9.4] - 2026-08-29
 

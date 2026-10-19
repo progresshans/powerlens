@@ -62,13 +62,13 @@ struct TelemetrySnapshotMapperTests {
         )
         #expect(!snapshot.isBatteryChargingForDisplay)
         #expect(snapshot.externalPowerState == .onBattery)
-        #expect(snapshot.primaryDisplayedPower?.watts == snapshot.batteryPowerW)
+        #expect(snapshot.primaryDisplayedPower?.watts == 10.0)
         #expect(snapshot.primaryDisplayedPower?.isApproximate == true)
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .discharging)
-        #expect(flow.showsIndependentReadingsNotice)
-        #expect(flow.routes.first?.source.value == "≈10.0W")
+        #expect(flow.routes.first?.source.value == "10.0W")
+        #expect(flow.routes.first?.target.value == "10.0W")
     }
 
     @Test
@@ -100,10 +100,18 @@ struct TelemetrySnapshotMapperTests {
         #expect(snapshot.isBatteryChargingForDisplay)
         #expect(snapshot.externalPowerState == .charging)
 
+        // The battery measurement remains available, but neither a measured
+        // system value nor a complete balance can anchor a flow diagram.
+        let readings = PowerFlowReadings(snapshot: snapshot)
+        #expect(readings.state == .charging)
+        #expect(!readings.hasBalancedFlow)
+        #expect(readings.systemPowerSource == .unavailable)
+        #expect(readings.systemPower == nil)
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
-        #expect(flow.state == .charging)
-        #expect(flow.showsIndependentReadingsNotice)
-        #expect(flow.routes[1].target.value == "≈43.4W")
+        #expect(flow.state == .unknown)
+        #expect(flow.routes.count == 1)
+        #expect(flow.routes.first?.source.value == L10n.text("common.none"))
+        #expect(flow.routes.first?.target.value == L10n.text("common.none"))
     }
 
     @Test
@@ -134,7 +142,6 @@ struct TelemetrySnapshotMapperTests {
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .charging)
-        #expect(!flow.showsIndependentReadingsNotice)
         #expect(flow.routes.last?.target.value == "12.0W")
     }
 
@@ -166,7 +173,6 @@ struct TelemetrySnapshotMapperTests {
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .underpowered)
-        #expect(!flow.showsIndependentReadingsNotice)
         #expect(flow.routes.last?.source.value == "12.0W")
     }
 
@@ -217,11 +223,12 @@ struct TelemetrySnapshotMapperTests {
 
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .charging)
-        #expect(flow.showsIndependentReadingsNotice)
         #expect(flow.routes.map(\.role) == [.input, .charge])
-        #expect(flow.routes.first?.source.value == "82.9W")
+        #expect(flow.routes.first?.source.value == "82.7W")
         #expect(flow.routes.first?.target.value == "8.8W")
         #expect(flow.routes.last?.target.value == "73.9W")
+        #expect(snapshot.adapterInputPowerW == 82.9)
+        #expect(snapshot.systemLoadW == 8.8)
     }
 
     @Test
@@ -255,6 +262,8 @@ struct TelemetrySnapshotMapperTests {
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .unknown)
         #expect(flow.routes.map(\.role) == [.input])
+        #expect(flow.routes.first?.source.value == L10n.text("common.none"))
+        #expect(flow.routes.first?.target.value == "8.8W")
     }
 
     @Test
@@ -288,6 +297,13 @@ struct TelemetrySnapshotMapperTests {
         #expect(snapshot.adapterVoltageV == 18.74)
         #expect(snapshot.adapterCurrentA == 4.187)
         #expect(snapshot.systemLoadW == 7.4)
+
+        let flow = PowerFlowPresentationModel(snapshot: snapshot)
+        #expect(flow.state == .charging)
+        #expect(flow.routes.first?.source.value == "17.2W")
+        #expect(flow.routes.first?.target.value == "7.4W")
+        #expect(flow.routes.last?.target.value == "9.8W")
+        #expect(snapshot.primaryDisplayedPower?.watts == 7.4)
     }
 }
 

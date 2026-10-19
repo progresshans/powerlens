@@ -9,10 +9,15 @@ final class PowerLensStore: ObservableObject {
         case background
     }
 
-    private enum RefreshPersistencePolicy {
+    private enum RefreshPersistencePolicy: Int {
+        case disabled
         case ifDue
         case immediately
-        case disabled
+    }
+
+    private struct RefreshRequest {
+        let sequence: Int
+        let persistencePolicy: RefreshPersistencePolicy
     }
 
     private enum AutomaticRefreshPhase {
@@ -27,9 +32,7 @@ final class PowerLensStore: ObservableObject {
     @Published private(set) var historyHealth = HistoryHealth.checking
     @Published private(set) var diagnostics: [DiagnosticItem] = []
     @Published private(set) var topEnergyApps: [AppEnergyUsage] = []
-    @Published private(set) var menuBarSymbolName = "bolt.fill"
-    @Published private(set) var menuBarBatteryBadge = MenuBarStatusItemRenderer.Badge.none
-    @Published private(set) var history: [TelemetrySnapshot] = []
+    @Published private(set) var menuBarPresentation = MenuBarPresentation.waiting
     @Published private(set) var historyRevision = 0
     @Published private(set) var lastRefreshAt: Date?
     @Published private(set) var lastRefreshAttemptAt: Date?
@@ -44,6 +47,7 @@ final class PowerLensStore: ObservableObject {
     private let energySampler: any ProcessEnergySampling
     private let systemCompatibilityRecorder: any SystemCompatibilityRecording
     private let now: () -> Date
+    private let powerSourceReader: @MainActor () -> PowerSourceObservation?
     private static let telemetryLogger = Logger(
         subsystem: "com.progresshans.powerlens",
         category: "Telemetry"
@@ -55,10 +59,20 @@ final class PowerLensStore: ObservableObject {
     private var startupTask: Task<Void, Never>?
     private var startupInteractiveRefreshTask: Task<Void, Never>?
     private var refreshLoopTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var pendingRefresh: RefreshRequest?
+    private var activePersistencePolicy = RefreshPersistencePolicy.disabled
+    private var sourceReconciliationTask: Task<Void, Never>?
+    private var energyResetTask: Task<Void, Never>?
+    private var energySamplingTask: Task<Void, Never>?
+    private var energySamplingGeneration = 0
+    private var powerSourceObservation: PowerSourceObservation?
+    private var powerSourceGeneration = 0
+    private var lastAppliedSourceGeneration: Int?
     private var automaticRefreshPhase = AutomaticRefreshPhase.disabled
     private var refreshSequence = 0
     private var powerStateTracker: PowerStateTracker
-    private let memoryWindow: TimeInterval = 30 * 24 * 3600
+    private var lastPersistedAt: Date?
     private let purgeInterval: TimeInterval = 24 * 3600
     private var lastPurgeAt: Date?
     private let interactiveRefreshInterval: Duration
@@ -67,6 +81,11 @@ final class PowerLensStore: ObservableObject {
 
     var telemetryUnavailable: Bool {
         telemetryHealth.isUnavailable
+    }
+
+    var menuBarSymbolName: String { menuBarPresentation.symbolName }
+    var menuBarBatteryBadge: MenuBarStatusItemRenderer.Badge {
+        menuBarPresentation.batteryBadge
     }
 
     init(
@@ -79,6 +98,7 @@ final class PowerLensStore: ObservableObject {
         interactiveRefreshInterval: Duration = .seconds(3),
         backgroundRefreshInterval: Duration = .seconds(10),
         now: @escaping () -> Date = Date.init,
+        powerSourceReader: @escaping @MainActor () -> PowerSourceObservation? = { nil },
         powerStateConfiguration: PowerStateHysteresisConfiguration = .init()
     ) {
         self.telemetryReader = telemetryReader
@@ -88,6 +108,7 @@ final class PowerLensStore: ObservableObject {
         self.interactiveRefreshInterval = interactiveRefreshInterval
         self.backgroundRefreshInterval = backgroundRefreshInterval
         self.now = now
+        self.powerSourceReader = powerSourceReader
         self.powerStateTracker = PowerStateTracker(
             configuration: powerStateConfiguration
         )
@@ -108,13 +129,11 @@ final class PowerLensStore: ObservableObject {
 
     private func prepareForAutomaticRefresh() async {
         do {
-            history = try await historyStore.loadRecent(
-                since: now().addingTimeInterval(-memoryWindow)
-            )
+            lastPersistedAt = try await historyStore.latestSampleTimestamp()
             recordHistorySuccess()
             historyRevision += 1
         } catch {
-            recordHistoryFailure(error, operation: "load recent history")
+            recordHistoryFailure(error, operation: "load latest history timestamp")
         }
         guard !Task.isCancelled else {
             return
@@ -129,7 +148,7 @@ final class PowerLensStore: ObservableObject {
         startupInteractiveRefreshTask?.cancel()
         startupInteractiveRefreshTask = nil
         await refresh(
-            persistencePolicy: history.isEmpty ? .immediately : .ifDue
+            persistencePolicy: lastPersistedAt == nil ? .immediately : .ifDue
         )
         guard !Task.isCancelled else {
             return
@@ -167,12 +186,14 @@ final class PowerLensStore: ObservableObject {
         startupTask?.cancel()
         startupInteractiveRefreshTask?.cancel()
         refreshLoopTask?.cancel()
+        refreshTask?.cancel()
+        sourceReconciliationTask?.cancel()
+        energyResetTask?.cancel()
+        energySamplingTask?.cancel()
     }
 
     func refreshNow() {
-        Task {
-            await refresh(persistencePolicy: .immediately)
-        }
+        _ = enqueueRefresh(persistencePolicy: .immediately)
     }
 
     func refreshOnce(persistImmediately: Bool = true) async {
@@ -187,6 +208,7 @@ final class PowerLensStore: ObservableObject {
         }
 
         refreshCadence = cadence
+        resetEnergySampling()
         switch automaticRefreshPhase {
         case .preparingHistory:
             if cadence == .interactive {
@@ -199,16 +221,120 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
+    func receivePowerSourceObservation(
+        _ observation: PowerSourceObservation,
+        reason: PowerSourceObservationReason
+    ) {
+        let previousSource = powerSourceObservation?.externalConnected
+            ?? latest?.externalConnected
+        let sourceChanged = previousSource != observation.externalConnected
+        powerSourceObservation = observation
+        guard sourceChanged || reason == .wake else {
+            return
+        }
+
+        powerSourceGeneration += 1
+        powerStateTracker.reset()
+        resetEnergySampling()
+        if sourceChanged {
+            publishPowerSource(observation)
+        }
+
+        let generation = powerSourceGeneration
+        sourceReconciliationTask?.cancel()
+        let refresh = enqueueRefresh(persistencePolicy: .ifDue)
+        sourceReconciliationTask = Task { [weak self] in
+            await refresh.value
+            guard !Task.isCancelled,
+                  let self,
+                  self.powerSourceGeneration == generation,
+                  self.lastAppliedSourceGeneration != generation else {
+                return
+            }
+
+            // The registry can briefly lag the source notification. Retry once
+            // without turning a connection change into a fast polling loop.
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            guard self.powerSourceGeneration == generation else { return }
+            await self.refresh(persistencePolicy: .ifDue)
+        }
+    }
+
+    private func publishPowerSource(_ observation: PowerSourceObservation) {
+        let state: ExternalPowerState = observation.externalConnected
+            ? .connected : .onBattery
+        menuBarPresentation = MenuBarPresentation(
+            snapshot: latest,
+            symbolName: state.menuBarSymbolName,
+            batteryBadge: .resolved(for: state),
+            statusHeadline: L10n.text(
+                observation.externalConnected
+                    ? "status.externalPowerConnected" : "status.runningOnBattery"
+            )
+        )
+    }
+
+    func refreshMenuBarLocalization() {
+        if let powerSourceObservation,
+           latest?.externalConnected != powerSourceObservation.externalConnected {
+            publishPowerSource(powerSourceObservation)
+        } else if let latest {
+            menuBarPresentation = MenuBarPresentation(
+                snapshot: latest,
+                symbolName: menuBarSymbolName,
+                batteryBadge: menuBarBatteryBadge,
+                statusHeadline: latest.statusHeadline(resolvedState: resolvedPowerState)
+            )
+        }
+    }
+
+    private func resetEnergySampling() {
+        energySamplingGeneration += 1
+        energySamplingTask?.cancel()
+        if !topEnergyApps.isEmpty {
+            topEnergyApps = []
+        }
+        let previousReset = energyResetTask
+        let sampler = energySampler
+        energyResetTask = Task {
+            await previousReset?.value
+            await sampler.reset()
+        }
+    }
+
+    private func scheduleEnergySamplingIfVisible() {
+        guard refreshCadence == .interactive, energySamplingTask == nil else { return }
+        let generation = energySamplingGeneration
+        let reset = energyResetTask
+        let sampler = energySampler
+        let clock = now
+        // Keep one scan in flight without holding the serialized telemetry slot.
+        // Cancellation invalidates its result even if the sampler cannot stop.
+        energySamplingTask = Task { [weak self] in
+            defer { self?.energySamplingTask = nil }
+            await reset?.value
+            guard !Task.isCancelled,
+                  self?.energySamplingGeneration == generation,
+                  self?.refreshCadence == .interactive else { return }
+            let apps = await sampler.sample(now: clock())
+            guard !Task.isCancelled, let self,
+                  self.energySamplingGeneration == generation,
+                  self.refreshCadence == .interactive else { return }
+            if self.topEnergyApps != apps {
+                self.topEnergyApps = apps
+            }
+        }
+    }
+
     func historyRetentionPreferencesChanged() {
         lastPurgeAt = nil
         Task {
             await purgeIfNeeded()
         }
-    }
-
-    func history(hours: Double) -> [TelemetrySnapshot] {
-        let cutoff = now().addingTimeInterval(-(hours * 3600))
-        return history.filter { $0.timestamp >= cutoff }
     }
 
     /// Loads aggregated series, summary statistics, and the long-term battery
@@ -332,12 +458,61 @@ final class PowerLensStore: ObservableObject {
     private func refresh(
         persistencePolicy: RefreshPersistencePolicy
     ) async {
+        await enqueueRefresh(persistencePolicy: persistencePolicy).value
+    }
+
+    private func enqueueRefresh(
+        persistencePolicy: RefreshPersistencePolicy
+    ) -> Task<Void, Never> {
         // Every entry point, including manual refreshes, must leave persistence
         // to startup until the initial history load has finished.
         let effectivePersistencePolicy: RefreshPersistencePolicy =
             automaticRefreshPhase == .preparingHistory ? .disabled : persistencePolicy
         refreshSequence += 1
         let sequence = refreshSequence
+
+        if let refreshTask {
+            // Preserve manual persistence when a newer request supersedes the
+            // current read. Any number of events share one follow-up read.
+            let policy = max(
+                effectivePersistencePolicy.rawValue,
+                pendingRefresh?.persistencePolicy.rawValue ?? 0,
+                activePersistencePolicy.rawValue
+            )
+            pendingRefresh = RefreshRequest(
+                sequence: sequence,
+                persistencePolicy: RefreshPersistencePolicy(rawValue: policy)!
+            )
+            return refreshTask
+        }
+
+        let request = RefreshRequest(
+            sequence: sequence,
+            persistencePolicy: effectivePersistencePolicy
+        )
+        activePersistencePolicy = effectivePersistencePolicy
+        let task = Task { [weak self] in
+            guard let self else { return }
+            var request = request
+            repeat {
+                self.activePersistencePolicy = request.persistencePolicy
+                await self.performRefresh(request)
+                guard let pending = self.pendingRefresh else { break }
+                self.pendingRefresh = nil
+                request = pending
+            } while !Task.isCancelled
+            self.activePersistencePolicy = .disabled
+            self.pendingRefresh = nil
+            self.refreshTask = nil
+        }
+        refreshTask = task
+        return task
+    }
+
+    private func performRefresh(_ request: RefreshRequest) async {
+        let sequence = request.sequence
+        guard sequence == refreshSequence else { return }
+        let sourceGeneration = powerSourceGeneration
         let preference = TelemetryEnginePreference.current
         requestedTelemetryEngine = preference
 
@@ -347,28 +522,90 @@ final class PowerLensStore: ObservableObject {
                 preference: preference
             )
         } catch {
-            guard sequence == refreshSequence else {
+            guard sequence == refreshSequence,
+                  sourceGeneration == powerSourceGeneration else {
                 return
             }
 
-            lastRefreshAttemptAt = now()
-            let failedAttempts = telemetryHealth.failedAttempts + 1
-            telemetryHealth = latest == nil
-                ? .unavailable(failedAttempts: failedAttempts)
-                : .delayed(failedAttempts: failedAttempts)
+            recordTelemetryFailure()
             Self.telemetryLogger.warning(
-                "Telemetry refresh failed; consecutive attempts: \(failedAttempts, privacy: .public); error: \(String(describing: error), privacy: .private)"
+                "Telemetry refresh failed; consecutive attempts: \(self.telemetryHealth.failedAttempts, privacy: .public); error: \(String(describing: error), privacy: .private)"
             )
             return
         }
 
-        guard sequence == refreshSequence else {
+        guard sequence == refreshSequence,
+              sourceGeneration == powerSourceGeneration else {
             return
         }
 
-        let sampledEnergyApps = await energySampler.sample(now: now())
-        guard sequence == refreshSequence else {
-            return
+        let snapshot = result.snapshot
+        if let observation = powerSourceObservation,
+           observation.externalConnected != snapshot.externalConnected {
+            // Reconfirm through IOPS so polling also recovers from a missed
+            // notification. Never rewrite a raw sensor snapshot to match it.
+            if let current = powerSourceReader() {
+                powerSourceObservation = current
+                if current.externalConnected != observation.externalConnected {
+                    powerSourceGeneration += 1
+                    powerStateTracker.reset()
+                    resetEnergySampling()
+                    publishPowerSource(current)
+                }
+            }
+            guard powerSourceObservation?.externalConnected == snapshot.externalConnected else {
+                recordTelemetryFailure()
+                return
+            }
+        }
+
+        telemetryHealth = .live
+        lastRefreshAttemptAt = now()
+
+        let resolvedState = powerStateTracker.resolve(snapshot)
+        let resolvedDiagnostics = snapshot.diagnostics(
+            resolvedState: resolvedState
+        )
+        resolvedPowerState = resolvedState
+        latest = snapshot
+        diagnostics = resolvedDiagnostics
+        lastRefreshAt = snapshot.timestamp
+        activeTelemetryEngine = result.activeEngine
+        systemCompatibilityDiagnostics =
+            result.systemCompatibilityDiagnostics
+        lastAppliedSourceGeneration = powerSourceGeneration
+        menuBarPresentation = MenuBarPresentation(
+            snapshot: snapshot,
+            symbolName: snapshot.menuBarSymbolName(
+                using: resolvedDiagnostics,
+                externalPowerState: resolvedState.externalPowerState
+            ),
+            batteryBadge: .resolved(for: resolvedState.externalPowerState),
+            statusHeadline: snapshot.statusHeadline(resolvedState: resolvedState)
+        )
+
+        let shouldWriteHistory: Bool
+        switch request.persistencePolicy {
+        case .ifDue:
+            shouldWriteHistory = shouldPersist(snapshot: snapshot)
+        case .immediately:
+            shouldWriteHistory = true
+        case .disabled:
+            shouldWriteHistory = false
+        }
+        activePersistencePolicy = .disabled
+        if shouldWriteHistory {
+            // Charging policy remains a live explanation only. Raw electrical
+            // readings retain their original values and observation time.
+            let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
+            do {
+                try await historyStore.append(historicalSnapshot)
+                lastPersistedAt = snapshot.timestamp
+                recordHistorySuccess()
+                historyRevision += 1
+            } catch {
+                recordHistoryFailure(error, operation: "append history")
+            }
         }
 
         let compatibilityObservedAt = now()
@@ -378,73 +615,25 @@ final class PowerLensStore: ObservableObject {
                 observedAt: compatibilityObservedAt
             )
         }
-        guard sequence == refreshSequence else {
-            return
-        }
-
-        telemetryHealth = .live
-        lastRefreshAttemptAt = now()
-
-        let snapshot = result.snapshot
-        let resolvedState = powerStateTracker.resolve(snapshot)
-        let resolvedDiagnostics = snapshot.diagnostics(
-            resolvedState: resolvedState
-        )
-        menuBarSymbolName = snapshot.menuBarSymbolName(
-            using: resolvedDiagnostics,
-            externalPowerState: resolvedState.externalPowerState
-        )
-        menuBarBatteryBadge = .resolved(
-            for: resolvedState.externalPowerState
-        )
-
-        // Publish the resolved interpretation before the raw snapshot. The
-        // existing `$latest` subscriber is the commit signal for AppKit UI.
-        resolvedPowerState = resolvedState
-        latest = snapshot
-        diagnostics = resolvedDiagnostics
-        lastRefreshAt = snapshot.timestamp
-        activeTelemetryEngine = result.activeEngine
-        topEnergyApps = sampledEnergyApps
-        systemCompatibilityDiagnostics =
-            result.systemCompatibilityDiagnostics
-
-        let shouldWriteHistory: Bool
-        switch effectivePersistencePolicy {
-        case .ifDue:
-            shouldWriteHistory = shouldPersist(snapshot: snapshot)
-        case .immediately:
-            shouldWriteHistory = true
-        case .disabled:
-            shouldWriteHistory = false
-        }
-        guard shouldWriteHistory else {
-            return
-        }
-
-        // Charging-policy observations explain the current UI only. Keeping
-        // them out of history avoids silently changing Insights, CSV, or JSON
-        // semantics before a dedicated history schema is designed.
-        let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
-        history.append(historicalSnapshot)
-        let cutoff = now().addingTimeInterval(-memoryWindow)
-        history.removeAll { $0.timestamp < cutoff }
-
-        do {
-            try await historyStore.append(historicalSnapshot)
-            recordHistorySuccess()
-            historyRevision += 1
-        } catch {
-            recordHistoryFailure(error, operation: "append history")
+        if sequence == refreshSequence {
+            scheduleEnergySamplingIfVisible()
         }
     }
 
+    private func recordTelemetryFailure() {
+        lastRefreshAttemptAt = now()
+        let failedAttempts = telemetryHealth.failedAttempts + 1
+        telemetryHealth = latest == nil
+            ? .unavailable(failedAttempts: failedAttempts)
+            : .delayed(failedAttempts: failedAttempts)
+    }
+
     private func shouldPersist(snapshot: TelemetrySnapshot) -> Bool {
-        guard let last = history.last else {
+        guard let lastPersistedAt else {
             return true
         }
 
-        return snapshot.timestamp.timeIntervalSince(last.timestamp) >= 60
+        return snapshot.timestamp.timeIntervalSince(lastPersistedAt) >= 60
     }
 
     private func recordHistorySuccess() {

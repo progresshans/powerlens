@@ -5,6 +5,37 @@ import Testing
 
 struct HistoryStoreTests {
     @Test
+    func latestSampleTimestampIsAbsentForEmptyHistory() async throws {
+        let store = HistoryStore(
+            databaseURL: makeTemporaryDatabaseURL(name: "latest-empty")
+        )
+
+        #expect(try await store.latestSampleTimestamp() == nil)
+    }
+
+    @Test
+    func latestSampleTimestampUsesSampleTimeAndTracksPurge() async throws {
+        let store = HistoryStore(
+            databaseURL: makeTemporaryDatabaseURL(name: "latest-timestamp")
+        )
+        let first = Date(timeIntervalSince1970: 0)
+        let latest = first.addingTimeInterval(120)
+
+        try await store.append(makeSnapshot(timestamp: first))
+        #expect(try await store.latestSampleTimestamp() == first)
+
+        try await store.append(makeSnapshot(timestamp: latest))
+        try await store.append(makeSnapshot(timestamp: first.addingTimeInterval(60)))
+        #expect(try await store.latestSampleTimestamp() == latest)
+
+        try await store.purge(
+            olderThan: latest.addingTimeInterval(1),
+            rollupBucketSeconds: nil
+        )
+        #expect(try await store.latestSampleTimestamp() == nil)
+    }
+
+    @Test
     func liveChargingPolicyIsNotPersisted() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "live-policy-not-persisted")
         let store = HistoryStore(databaseURL: dbURL)

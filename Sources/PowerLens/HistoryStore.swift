@@ -14,6 +14,33 @@ actor HistoryStore: HistoryStoring {
         }
     }
 
+    /// Reads only the indexed time boundary needed to resume periodic recording.
+    func latestSampleTimestamp() async throws -> Date? {
+        let db = try openDatabase()
+        defer { sqlite3_close(db) }
+
+        let operation = "load latest history timestamp"
+        let statement = try SQLiteStatement.prepare(
+            "SELECT MAX(ts) FROM telemetry_samples",
+            using: db,
+            operation: operation
+        )
+        defer { sqlite3_finalize(statement) }
+
+        let result = sqlite3_step(statement)
+        guard result == SQLITE_ROW else {
+            throw SQLiteStatement.error(
+                operation: operation,
+                result: result,
+                using: db
+            )
+        }
+        guard sqlite3_column_type(statement, 0) != SQLITE_NULL else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0)))
+    }
+
     func loadRecent(
         since cutoffDate: Date
     ) async throws -> [TelemetrySnapshot] {

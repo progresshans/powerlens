@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 enum MenuBarStatusItemRenderer {
-    enum Badge {
+    enum Badge: Equatable {
         case none
         case chargingBolt
         case pluggedHolding

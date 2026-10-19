@@ -68,17 +68,9 @@ struct PowerFlowCard: View {
 
             PowerDistributionPanel(
                 rows: model.routes,
-                density: density
+                density: density,
+                connectionStyle: model.connectionStyle
             )
-
-            if model.showsIndependentReadingsNotice {
-                Label(
-                    L10n.text("ui.flow.independentReadingsNotice"),
-                    systemImage: "info.circle"
-                )
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
         }
         .padding(density.cardPadding)
         .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -88,10 +80,15 @@ struct PowerFlowCard: View {
 private struct PowerDistributionPanel: View {
     let rows: [PowerFlowRouteModel]
     let density: PowerFlowCardDensity
+    let connectionStyle: PowerFlowConnectionStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: density.rowSpacing) {
-            PowerDistributionDiagram(rows: rows, density: density)
+            PowerDistributionDiagram(
+                rows: rows,
+                density: density,
+                connectionStyle: connectionStyle
+            )
         }
         .padding(density.panelPadding)
         .background(
