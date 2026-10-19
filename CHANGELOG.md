@@ -6,37 +6,42 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ## [Unreleased]
 
+### Changed
+
+- Power flow, Dashboard summaries, and the menu bar now calculate displayed
+  values from the system power reading, so input, battery, and system power add
+  up and stay within the adapter rating. Tooltips show the original sensor
+  readings and how each value was calculated; history and diagnostics keep the
+  original measurements. This replaces the 0.9.3 approach of showing each
+  sensor's reading even when they did not add up.
+- Connecting or disconnecting a charger updates the menu bar immediately instead
+  of waiting for the next refresh, and the status is refreshed after the Mac
+  wakes.
+- High-energy app sampling pauses while no PowerLens window or popover is open,
+  and startup no longer loads 30 days of history.
+- Updated Sparkle to 2.10.0.
+
 ### Fixed
 
-- Power flow, dashboard summaries, and the menu bar use the system-load sensor
-  as a consistent display reference. Flow contributions are calculated to balance
-  at the displayed precision, without switching references when sensors disagree.
-  Displayed input is the system reading minus measured battery power, kept
-  between 0 W and the adapter rating. Holding states above the rating also show
-  the remaining power as calculated battery assist. With a complete SMC reading
-  set, the battery power sign decides the flow direction, so a lagging battery current no
-  longer hides the diagram after a charger is connected. Tooltips explain the
-  display calculations separately from observed battery directions, retain
-  original sensor readings, and explain adjustments without claiming a fixed
-  sensor delay; history and diagnostics still use the original measurements.
-- Charger connection changes update the menu bar from macOS power-source
-  events without waiting for the telemetry polling interval. Old reads cannot
-  undo a newer connection state, and wake events refresh the current state.
-- High-energy app sampling pauses while live views are hidden, and startup
-  reads only the latest history timestamp instead of loading 30 days of data.
 - Managed charging status is no longer repeated in summary diagnostics when it
   is already the primary status.
-- Opening the popover or Dashboard now refreshes power telemetry immediately,
-  and stale samples are no longer presented as live.
+- Opening the popover or Dashboard refreshes power readings immediately, and
+  outdated readings are no longer shown as live.
 - Insights includes retained raw and summarized history after retention changes,
-  refreshes after history updates, and ignores superseded range queries.
-- Newly summarized history preserves averages with missing sensor readings and
-  avoids counting an uninterrupted charge again at a storage boundary.
-- Refresh, settings, Dashboard, and quit actions remain available when initial
-  telemetry is unavailable; saved history can still be opened.
-- Diagnostic notifications remain consistent across language changes.
-- History exports report save failures and write files without blocking the UI.
-- Manual refreshes during startup wait for history initialization before saving.
+  refreshes when new history is saved, and no longer shows results from a
+  previously selected range.
+- Summarized history keeps accurate averages when some sensor readings are
+  missing, and no longer counts one continuous charge twice.
+- Refresh, Settings, Dashboard, and Quit remain available when the first
+  telemetry read fails, and saved history can still be opened.
+- Changing the app language no longer sends diagnostic notifications again.
+- History exports report save failures and no longer freeze the interface while
+  writing files.
+- Manual refreshes during startup wait until history is ready before saving.
+- On Macs with a built-in battery, a connected UPS no longer replaces the
+  battery's status.
+- On Korean systems, the standard Edit, View, Window, and Help menus and other
+  system-provided panels appear in Korean instead of English.
 
 ## [0.9.4] - 2026-08-29
 
