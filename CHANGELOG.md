@@ -4,7 +4,7 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
-## [Unreleased]
+## [0.9.5] - 2026-10-20
 
 ### Changed
 
@@ -15,8 +15,10 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   original measurements. This replaces the 0.9.3 approach of showing each
   sensor's reading even when they did not add up.
 - Connecting or disconnecting a charger updates the menu bar immediately instead
-  of waiting for the next refresh, and the status is refreshed after the Mac
-  wakes.
+  of waiting for the next refresh. Readings that still reflect the previous
+  power source are shown as delayed until a matching reading arrives, and waking
+  the Mac refreshes the status without losing the current charging or warning
+  state.
 - High-energy app sampling pauses while no PowerLens window or popover is open,
   and startup no longer loads 30 days of history.
 - Updated Sparkle to 2.10.0.
@@ -27,10 +29,6 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   is already the primary status.
 - Opening the popover or Dashboard refreshes power readings immediately, and
   outdated readings are no longer shown as live.
-- Readings that disagree with the current power source are marked delayed until
-  a matching reading arrives.
-- Waking on the same power source preserves the menu bar's charging or warning
-  state while fresh readings are unavailable.
 - Slow high-energy app scans no longer delay subsequent power readings.
 - Insights includes retained raw and summarized history after retention changes,
   refreshes when new history is saved, and no longer shows results from a
