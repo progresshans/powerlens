@@ -15,10 +15,10 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   original measurements. This replaces the 0.9.3 approach of showing each
   sensor's reading even when they did not add up.
 - Connecting or disconnecting a charger updates the menu bar immediately instead
-  of waiting for the next refresh. Readings that still reflect the previous
-  power source are shown as delayed until a matching reading arrives, and waking
-  the Mac refreshes the status without losing the current charging or warning
-  state.
+  of waiting for the next refresh. Cached readings from the previous power
+  source are marked delayed as soon as the connection changes, until a matching
+  reading arrives. Waking the Mac refreshes the status without losing the current
+  charging or warning state.
 - High-energy app sampling pauses while no PowerLens window or popover is open,
   and startup no longer loads 30 days of history.
 - Updated Sparkle to 2.10.0.

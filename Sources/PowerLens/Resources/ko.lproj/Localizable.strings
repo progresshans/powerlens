@@ -31,6 +31,7 @@
 "telemetry.status.manual" = "현재 %@ 경로가 활성화되어 있습니다.";
 "telemetry.status.fallback" = "지금은 %@ 경로를 사용할 수 없어 %@ 경로로 동작 중입니다.";
 "telemetry.status.waiting" = "첫 텔레메트리 새로 고침을 기다리는 중입니다.";
+"telemetry.status.sourceTransition" = "전원 연결 상태가 바뀌어 새 측정값을 기다리는 중입니다.";
 "telemetry.status.delayed" = "새로 고침이 연속 %d회 실패해 마지막 측정값을 표시하고 있습니다.";
 "telemetry.status.unavailable" = "새로 고침이 연속 %d회 실패해 아직 표시할 전력 측정값이 없습니다.";
 "telemetry.live" = "라이브";

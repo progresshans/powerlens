@@ -31,6 +31,7 @@
 "telemetry.status.manual" = "%@ is active.";
 "telemetry.status.fallback" = "%@ is unavailable right now, so %@ is active.";
 "telemetry.status.waiting" = "Waiting for the first telemetry refresh.";
+"telemetry.status.sourceTransition" = "The power source changed. Waiting for a new reading.";
 "telemetry.status.delayed" = "%d consecutive refresh attempts failed. Showing the last reading.";
 "telemetry.status.unavailable" = "%d consecutive refresh attempts failed. No power reading is available yet.";
 "telemetry.live" = "Live";

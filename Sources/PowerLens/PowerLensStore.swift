@@ -237,6 +237,11 @@ final class PowerLensStore: ObservableObject {
         powerStateTracker.reset()
         resetEnergySampling()
         if sourceChanged {
+            if let latest, latest.externalConnected != observation.externalConnected {
+                // The cached sample is stale before a new read starts, but
+                // observing a source change is not a failed refresh attempt.
+                telemetryHealth = .delayed(failedAttempts: telemetryHealth.failedAttempts)
+            }
             publishPowerSource(observation)
         }
 
@@ -376,6 +381,8 @@ final class PowerLensStore: ObservableObject {
         switch telemetryHealth {
         case .waiting:
             return L10n.text("telemetry.status.waiting")
+        case .delayed(failedAttempts: 0):
+            return L10n.text("telemetry.status.sourceTransition")
         case let .delayed(failedAttempts):
             return L10n.tr(
                 "telemetry.status.delayed",

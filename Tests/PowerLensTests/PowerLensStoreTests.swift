@@ -763,6 +763,7 @@ struct PowerLensStoreTests {
         await initial.value
         let oldDiagnostics = store.diagnostics
         let oldResolvedState = store.resolvedPowerState
+        let oldRefreshAttempt = store.lastRefreshAttemptAt
         var presentations: [MenuBarPresentation] = []
         let subscription = store.$menuBarPresentation.sink { presentations.append($0) }
 
@@ -775,6 +776,13 @@ struct PowerLensStoreTests {
         #expect(store.latest == battery)
         #expect(store.menuBarPresentation.snapshot == battery)
         #expect(store.lastRefreshAt == start)
+        #expect(store.lastRefreshAttemptAt == oldRefreshAttempt)
+        #expect(store.telemetryHealth == .delayed(failedAttempts: 0))
+        #expect(store.telemetryStatusText == L10n.text("telemetry.status.sourceTransition"))
+        #expect(TelemetryFreshness(
+            refreshDate: store.lastRefreshAt, health: store.telemetryHealth,
+            now: start.addingTimeInterval(1)
+        ).state == .delayed)
         #expect(store.diagnostics == oldDiagnostics)
         #expect(store.resolvedPowerState == oldResolvedState)
         #expect(await history.appendedSnapshots() == [battery])
@@ -783,6 +791,7 @@ struct PowerLensStoreTests {
         await waitForControlledReadCount(2, in: reader)
         await reader.resumeFirst(with: .init(snapshot: connected, activeEngine: .livePrecision))
         await waitForSnapshot(connected, in: store)
+        #expect(store.telemetryHealth == .live)
         #expect(store.menuBarBatteryBadge == .pluggedHolding)
         #expect(await history.appendedSnapshots() == [battery])
         withExtendedLifetime(subscription) {}
@@ -816,6 +825,7 @@ struct PowerLensStoreTests {
         )
         #expect(store.menuBarBatteryBadge == .none)
         #expect(store.latest == charging)
+        #expect(store.telemetryHealth == .delayed(failedAttempts: 0))
         await reader.resumeFirst(with: .init(snapshot: charging, activeEngine: .livePrecision))
         await waitForControlledReadCount(3, in: reader)
         #expect(store.menuBarBatteryBadge == .none)
@@ -823,6 +833,7 @@ struct PowerLensStoreTests {
         await reader.resumeFirst(with: .init(snapshot: battery, activeEngine: .livePrecision))
         await manual.value
         #expect(store.latest == battery)
+        #expect(store.telemetryHealth == .live)
         #expect(await history.appendedSnapshots() == [charging, battery])
     }
 
@@ -844,6 +855,7 @@ struct PowerLensStoreTests {
             )
         }
         #expect(store.menuBarBatteryBadge == .none)
+        #expect(store.telemetryHealth == .waiting)
         #expect(await reader.readCount() == 1)
         await reader.resumeFirst(with: .init(snapshot: makeTelemetrySnapshot(), activeEngine: .livePrecision))
         await waitForControlledReadCount(2, in: reader)
@@ -871,6 +883,7 @@ struct PowerLensStoreTests {
         )
         #expect(store.menuBarBatteryBadge == .pluggedHolding)
         #expect(store.menuBarPresentation.snapshot == nil)
+        #expect(store.telemetryHealth == .waiting)
         await waitForControlledReadCount(1, in: reader)
         await reader.resumeFirst(with: .init(snapshot: battery, activeEngine: .livePrecision))
         await waitForControlledReadCount(2, in: reader)
@@ -932,6 +945,40 @@ struct PowerLensStoreTests {
         #expect(store.telemetryHealth == .live)
         #expect(store.latest == connected)
         #expect(store.lastRefreshAt == connected.timestamp)
+    }
+
+    @Test
+    @MainActor
+    func sourceTransitionPreservesExistingFailureCountUntilMatchingTelemetryArrives() async {
+        let connected = makeTelemetrySnapshot()
+        let battery = makeTelemetrySnapshot(
+            timestamp: connected.timestamp.addingTimeInterval(1),
+            powerSource: .battery, externalConnected: false
+        )
+        let reader = OutcomeTelemetryReader(outcomes: [
+            .success(.init(snapshot: connected, activeEngine: .livePrecision)),
+            .unavailable,
+            .success(.init(snapshot: battery, activeEngine: .livePrecision)),
+        ])
+        let store = PowerLensStore(
+            telemetryReader: reader, historyStore: StubHistoryStore(), energySampler: EmptyEnergySampler(),
+            startsAutomatically: false
+        )
+        await store.refreshOnce(persistImmediately: false)
+        await store.refreshOnce(persistImmediately: false)
+        let lastAttempt = store.lastRefreshAttemptAt
+        #expect(store.telemetryHealth == .delayed(failedAttempts: 1))
+
+        store.receivePowerSourceObservation(
+            .init(externalConnected: false, observedAt: battery.timestamp), reason: .powerSourceChanged
+        )
+        #expect(store.telemetryHealth == .delayed(failedAttempts: 1))
+        #expect(store.lastRefreshAttemptAt == lastAttempt)
+        #expect(store.latest == connected)
+
+        await waitForSnapshot(battery, in: store)
+        #expect(store.telemetryHealth == .live)
+        #expect(store.telemetryHealth.failedAttempts == 0)
     }
 
     @Test
@@ -1004,6 +1051,7 @@ struct PowerLensStoreTests {
             .init(externalConnected: true, observedAt: snapshot.timestamp), reason: .wake
         )
         #expect(store.menuBarPresentation == presentation)
+        #expect(store.telemetryHealth == .live)
         store.refreshMenuBarLocalization()
         #expect(store.menuBarPresentation == presentation)
 
