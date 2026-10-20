@@ -63,10 +63,11 @@ work as a small utility first, with the Dock icon optional.
 The popover is the fast check: battery level, power-flow diagram, diagnostics,
 high-energy app, battery snapshot, and raw power details. The flow diagram
 distinguishes adapter-only power, battery-only power, battery assist, charging,
-and holding-current states. When independently sampled sensors do not line up,
-the diagram keeps its additive layout and preserves the observed readings
-instead of forcing the totals to balance. It discloses the timing mismatch and
-marks values derived from other readings with `≈`.
+and holding-current states. Because the sensors update at slightly different
+moments, the displayed values are calculated from the system power reading so
+input, battery, and system power add up. Hovering a value shows the original
+sensor readings and how it was calculated, and the raw power details mark
+battery power derived from current and voltage with `≈`.
 
 ### Dashboard
 
