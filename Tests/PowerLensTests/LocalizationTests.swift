@@ -61,6 +61,7 @@ struct LocalizationTests {
             "ui.flow.tooltip.observedBalance",
             "ui.flow.tooltip.observedBalanceDifference",
             "telemetry.status.waiting",
+            "telemetry.status.sourceTransition",
             "telemetry.status.delayed",
             "telemetry.status.unavailable",
             "telemetry.delayed",
