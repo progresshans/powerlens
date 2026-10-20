@@ -40,11 +40,16 @@ final class MenuBarStatusItemController: NSObject {
             for: style,
             snapshot: snapshot,
             symbolName: symbolName,
-            batteryBadge: snapshot == nil ? .none : batteryBadge
+            batteryBadge: batteryBadge
         )
         button.imagePosition = imagePosition(for: style)
         button.attributedTitle = menuBarTitle(for: style, snapshot: snapshot)
-        button.toolTip = statusHeadline ?? "PowerLens"
+        let tooltip = PowerFlowTooltip.menuBar(
+            snapshot: snapshot,
+            statusHeadline: statusHeadline
+        )
+        button.toolTip = tooltip
+        button.setAccessibilityHelp(tooltip)
     }
 
     @objc
@@ -60,7 +65,6 @@ final class MenuBarStatusItemController: NSObject {
     ) -> NSImage? {
         switch style {
         case .powerLens:
-            let symbolName = snapshot == nil ? "bolt.fill" : symbolName
             let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "PowerLens")
             image?.isTemplate = true
             return image

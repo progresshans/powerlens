@@ -94,8 +94,12 @@ CI uses `hosted` mode: it verifies packaging, the report schema, and static ABI
 while reporting unavailable VM hardware as warnings rather than claiming it
 was exercised. CI keeps the existing native macOS 26 release check, adds an
 explicit SwiftBuild check on macOS 26, and runs the same SwiftBuild path on the
-`xcode-27` preview image. The latter is Xcode 27 and the macOS 27 SDK on a macOS
-26 host; it is not macOS 27 runtime coverage.
+`xcode-27` preview image, which now runs macOS 27. Each matrix entry selects its
+explicit OS contract (`macos-26.json` or `macos-27.json`); an unexpected host OS
+still fails verification. The macOS 27 profile preserves the existing static
+ABI and hardware checks, with the app's minimum deployment version kept at
+26.0. Its hosted probe establishes VM compatibility, not physical macOS 27
+battery or charging-policy coverage.
 
 If physical compatibility checks are automated later, do not attach a
 self-hosted Mac to the public `pull_request` trigger. Run untrusted code only on

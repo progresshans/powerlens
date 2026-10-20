@@ -31,6 +31,7 @@
 "telemetry.status.manual" = "%@ is active.";
 "telemetry.status.fallback" = "%@ is unavailable right now, so %@ is active.";
 "telemetry.status.waiting" = "Waiting for the first telemetry refresh.";
+"telemetry.status.sourceTransition" = "The power source changed. Waiting for a new reading.";
 "telemetry.status.delayed" = "%d consecutive refresh attempts failed. Showing the last reading.";
 "telemetry.status.unavailable" = "%d consecutive refresh attempts failed. No power reading is available yet.";
 "telemetry.live" = "Live";
@@ -204,7 +205,37 @@
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
 "ui.flow.batteryOnlyDetail" = "System load is being covered only by battery power.";
 "ui.flow.balanced" = "Input power and system load are nearly balanced right now.";
-"ui.flow.independentReadingsNotice" = "Sensor readings update independently, so totals may differ. ≈ marks a value derived from other readings.";
+"ui.flow.tooltip.displayedSystem" = "Displayed system load: %@";
+"ui.flow.tooltip.noCalculation" = "The supply value and connections are withheld because a display route cannot be established.";
+"ui.flow.tooltip.expression.charging" = "Input %@ − battery charge %@";
+"ui.flow.tooltip.expression.assist" = "Input %@ + battery discharge %@";
+"ui.flow.tooltip.expression.input" = "Input %@";
+"ui.flow.tooltip.expression.battery" = "Battery discharge %@";
+"ui.flow.tooltip.rawInput" = "Original input power: %@";
+"ui.flow.tooltip.rawBattery" = "Original battery power: %@";
+"ui.flow.tooltip.rawSystem" = "Original system load: %@";
+"ui.flow.tooltip.currentVoltageBattery" = "%@ (current × voltage)";
+"ui.flow.tooltip.batteryCurrentVoltageCalculation" = "Observed battery power calculation: |%@ × %@| = %@";
+"ui.flow.tooltip.batteryResidualCalculation" = "Observed battery power calculation: %@ − %@ = %@";
+"ui.flow.tooltip.reason.invalidBalance" = "A power measurement or branch calculation is invalid.";
+"ui.flow.tooltip.reason.conflictingDirection" = "The battery flow direction cannot be determined.";
+"ui.flow.tooltip.reason.missingMeasurement" = "A power measurement required to establish the display route is unavailable.";
+"ui.flow.tooltip.anchor.measured" = "Reference: the original system load sensor reading is preserved.";
+"ui.flow.tooltip.anchor.powerBalance" = "Reference: the observed power balance is used because no valid system load sensor reading is available.";
+"ui.flow.tooltip.anchor.unavailable" = "Reference: a valid system load is unavailable.";
+"ui.flow.tooltip.displayCharging" = "Display calculation: input %@ = system %@ + battery charge %@";
+"ui.flow.tooltip.displayAssist" = "Display calculation: input %@ + battery %@ = system %@";
+"ui.flow.tooltip.displayInput" = "Display calculation: input %@ = system %@";
+"ui.flow.tooltip.displayBattery" = "Display calculation: battery %@ = system %@";
+"ui.flow.tooltip.inputFromAnchor" = "The displayed input is calculated from the system reference by adding or subtracting the battery flow, not taken from the original input.";
+"ui.flow.tooltip.smcTiming" = "SMC power readings can update at different times, so the calculated input can differ from the original input.";
+"ui.flow.tooltip.adjust.inputFloor" = "The calculated input was below 0 W, so it is shown as 0 W and the battery value matches the system load.";
+"ui.flow.tooltip.adjust.inputRating" = "The calculated input exceeded the adapter rating (%@), so it is capped at the rating and the battery value is adjusted.";
+"ui.flow.tooltip.adjustedBatteryCharge" = "Displayed battery charge: %@ (calculated)";
+"ui.flow.tooltip.adjustedBatteryAssist" = "Displayed battery assist: %@ (calculated)";
+"ui.flow.tooltip.smcDirection" = "The observed battery direction is determined from SMC battery power. The registry battery current (%@) can update late.";
+"ui.flow.tooltip.observedBalance" = "Observed power balance (for comparison): %@ = %@";
+"ui.flow.tooltip.observedBalanceDifference" = "Difference between observed power balance and system sensor: %@";
 "ui.highEnergyApp.label" = "High Energy Usage";
 "ui.highEnergyApp.unknown" = "Unknown App";
 
@@ -287,6 +318,8 @@
 "notifications.toggle" = "Diagnostic Notifications";
 "notifications.description" = "Notify me when PowerLens detects a charger or battery issue.";
 "insights.export" = "Export";
+"insights.export.failed.title" = "Could Not Export History";
+"insights.export.noSamples" = "No retained history samples could be loaded for this export.";
 
 "ui.telemetryUnavailable.title" = "Power Data Unavailable";
 "ui.telemetryUnavailable.message" = "PowerLens couldn't read battery or power telemetry on this Mac. It will keep trying in the background.";

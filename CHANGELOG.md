@@ -4,6 +4,48 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [0.9.5] - 2026-10-20
+
+### Changed
+
+- Power flow, Dashboard summaries, and the menu bar now calculate displayed
+  values from the system power reading, so input, battery, and system power add
+  up and stay within the adapter rating. Tooltips show the original sensor
+  readings and how each value was calculated; history and diagnostics keep the
+  original measurements. This replaces the 0.9.3 approach of showing each
+  sensor's reading even when they did not add up.
+- Connecting or disconnecting a charger updates the menu bar immediately instead
+  of waiting for the next refresh. Cached readings from the previous power
+  source are marked delayed as soon as the connection changes, until a matching
+  reading arrives. Waking the Mac refreshes the status without losing the current
+  charging or warning state.
+- High-energy app sampling pauses while no PowerLens window or popover is open,
+  and startup no longer loads 30 days of history.
+- Updated Sparkle to 2.10.0.
+
+### Fixed
+
+- Managed charging status is no longer repeated in summary diagnostics when it
+  is already the primary status.
+- Opening the popover or Dashboard refreshes power readings immediately, and
+  outdated readings are no longer shown as live.
+- Slow high-energy app scans no longer delay subsequent power readings.
+- Insights includes retained raw and summarized history after retention changes,
+  refreshes when new history is saved, and no longer shows results from a
+  previously selected range.
+- Summarized history keeps accurate averages when some sensor readings are
+  missing, and no longer counts one continuous charge twice.
+- Refresh, Settings, Dashboard, and Quit remain available when the first
+  telemetry read fails, and saved history can still be opened.
+- Changing the app language no longer sends diagnostic notifications again.
+- History exports report save failures and no longer freeze the interface while
+  writing files.
+- Manual refreshes during startup wait until history is ready before saving.
+- On Macs with a built-in battery, a connected UPS no longer replaces the
+  battery's status.
+- On Korean systems, the standard Edit, View, Window, and Help menus and other
+  system-provided panels appear in Korean instead of English.
+
 ## [0.9.4] - 2026-08-29
 
 ### Security

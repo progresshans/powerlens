@@ -7,7 +7,7 @@ struct MenuBarRootView: View {
     let quitApplication: () -> Void
     let maxContentHeight: CGFloat?
 
-    static let loadingSize = CGSize(width: 320, height: 220)
+    static let loadingSize = CGSize(width: 320, height: 260)
     static let contentWidth: CGFloat = 420
 
     var body: some View {
@@ -17,41 +17,61 @@ struct MenuBarRootView: View {
                     .modifier(PopoverContainerStyle(maxContentHeight: maxContentHeight))
                     .frame(width: Self.contentWidth, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: maxContentHeight == nil)
-            } else if store.telemetryUnavailable {
-                VStack(spacing: 10) {
-                    Image(systemName: "bolt.slash")
-                        .font(.title)
-                        .foregroundStyle(.secondary)
-                    Text(L10n.text("ui.telemetryUnavailable.title"))
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                    Text(L10n.text("ui.telemetryUnavailable.message"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
             } else {
-                ProgressView(L10n.text("ui.readingPowerData"))
-                    .padding(32)
-                    .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
+                VStack(spacing: 0) {
+                    Group {
+                        if store.telemetryUnavailable {
+                            VStack(spacing: 10) {
+                                Image(systemName: "bolt.slash")
+                                    .font(.title)
+                                    .foregroundStyle(.secondary)
+                                Text(L10n.text("ui.telemetryUnavailable.title"))
+                                    .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                Text(L10n.text("ui.telemetryUnavailable.message"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(24)
+                        } else {
+                            ProgressView(L10n.text("ui.readingPowerData"))
+                                .padding(24)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    Divider()
+                    HStack {
+                        Spacer()
+                        toolbarActions
+                    }
+                    .padding(12)
+                }
+                .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
             }
         }
     }
 
     private func popoverContent(_ snapshot: TelemetrySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
+            store.diagnostics,
+            resolvedState: store.resolvedPowerState
+        )
+
+        return VStack(alignment: .leading, spacing: 12) {
             popoverHeader(snapshot)
 
             PowerFlowCard(snapshot: snapshot, density: .compact)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.text("ui.section.diagnostics"))
-                    .font(.subheadline.weight(.semibold))
+            if !diagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.text("ui.section.diagnostics"))
+                        .font(.subheadline.weight(.semibold))
 
-                ForEach(store.diagnostics.prefix(2)) { item in
-                    DiagnosticRow(item: item)
+                    ForEach(diagnostics.prefix(2)) { item in
+                        DiagnosticRow(item: item)
+                    }
                 }
             }
 
@@ -102,32 +122,36 @@ struct MenuBarRootView: View {
                     health: store.telemetryHealth
                 )
 
-                HStack(spacing: 5) {
-                    PopoverToolbarButton(
-                        systemImage: "arrow.clockwise",
-                        title: L10n.text("ui.refreshNow"),
-                        action: store.refreshNow
-                    )
-
-                    PopoverToolbarButton(
-                        systemImage: "gearshape",
-                        title: L10n.text("ui.section.settings"),
-                        action: openSettings
-                    )
-
-                    PopoverToolbarButton(
-                        systemImage: "square.grid.2x2",
-                        title: L10n.text("ui.openDashboard"),
-                        action: openDashboard
-                    )
-
-                    PopoverToolbarButton(
-                        systemImage: "power",
-                        title: L10n.text("common.quit"),
-                        action: quitApplication
-                    )
-                }
+                toolbarActions
             }
+        }
+    }
+
+    private var toolbarActions: some View {
+        HStack(spacing: 5) {
+            PopoverToolbarButton(
+                systemImage: "arrow.clockwise",
+                title: L10n.text("ui.refreshNow"),
+                action: store.refreshNow
+            )
+
+            PopoverToolbarButton(
+                systemImage: "gearshape",
+                title: L10n.text("ui.section.settings"),
+                action: openSettings
+            )
+
+            PopoverToolbarButton(
+                systemImage: "square.grid.2x2",
+                title: L10n.text("ui.openDashboard"),
+                action: openDashboard
+            )
+
+            PopoverToolbarButton(
+                systemImage: "power",
+                title: L10n.text("common.quit"),
+                action: quitApplication
+            )
         }
     }
 }
@@ -143,13 +167,22 @@ private struct CompactLiveStatusChip: View {
     }
 
     private func content(now: Date) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(dotColor(now: now))
-                .frame(width: 7, height: 7)
-                .shadow(color: dotColor(now: now).opacity(0.35), radius: 2)
+        let freshness = TelemetryFreshness(
+            refreshDate: refreshDate,
+            health: health,
+            now: now
+        )
 
-            Text(detailText(now: now))
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(dotColor(freshness))
+                .frame(width: 7, height: 7)
+                .shadow(
+                    color: dotColor(freshness).opacity(0.35),
+                    radius: 2
+                )
+
+            Text(detailText(freshness, now: now))
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -159,50 +192,28 @@ private struct CompactLiveStatusChip: View {
         .background(.quaternary.opacity(0.24), in: Capsule())
     }
 
-    private func detailText(now: Date) -> String {
+    private func detailText(
+        _ freshness: TelemetryFreshness,
+        now: Date
+    ) -> String {
         guard let refreshDate else {
-            let title = health.isUnavailable
-                ? L10n.text("telemetry.unavailable")
-                : L10n.text("telemetry.live")
-            return "\(title) · \(L10n.text("telemetry.live.waiting"))"
+            return "\(freshness.title) · \(L10n.text("telemetry.live.waiting"))"
         }
 
-        let title: String
-        if case .delayed = health {
-            title = L10n.text("telemetry.delayed")
-        } else {
-            title = L10n.text("telemetry.live")
-        }
-        return "\(title) · \(Formatters.relativeAge(since: refreshDate, now: now))"
+        return "\(freshness.title) · \(Formatters.relativeAge(since: refreshDate, now: now))"
     }
 
-    private func dotColor(now: Date) -> Color {
-        switch health {
+    private func dotColor(_ freshness: TelemetryFreshness) -> Color {
+        switch freshness.state {
         case .waiting:
             return .gray
         case .unavailable:
             return .red
         case .delayed:
-            guard let refreshDate else {
-                return .red
-            }
-            return now.timeIntervalSince(refreshDate) <= 60 ? .orange : .red
+            return freshness.isCriticallyDelayed ? .red : .orange
         case .live:
-            break
-        }
-
-        guard let refreshDate else {
-            return .gray
-        }
-
-        let age = now.timeIntervalSince(refreshDate)
-        if age <= 6 {
             return .green
         }
-        if age <= 15 {
-            return .orange
-        }
-        return .red
     }
 }
 

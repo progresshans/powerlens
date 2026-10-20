@@ -7,7 +7,7 @@ import UserNotifications
 @MainActor
 final class DiagnosticsNotifier {
     private let planner = DiagnosticsNotificationPlanner()
-    private var lastNotified: [String: Date] = [:]
+    private var lastNotified: [DiagnosticKind: Date] = [:]
     private var didRequestAuthorization = false
 
     func process(diagnostics: [DiagnosticItem]) {

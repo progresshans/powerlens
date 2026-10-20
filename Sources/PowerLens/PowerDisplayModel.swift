@@ -1,5 +1,14 @@
 import Foundation
 
+struct DisplayedPowerMeasurement: Equatable, Sendable {
+    let watts: Double
+    let isApproximate: Bool
+
+    var formatted: String {
+        Formatters.power(watts)
+    }
+}
+
 extension TelemetrySnapshot {
     var statusHeadline: String {
         statusHeadline(resolvedState: nil)
@@ -318,27 +327,41 @@ extension TelemetrySnapshot {
         }
     }
 
-    var primaryDisplayedPowerW: Double? {
-        if let systemLoadW {
-            return systemLoadW
+    func diagnosticsExcludingPrimaryStatus(
+        _ diagnostics: [DiagnosticItem],
+        resolvedState: ResolvedPowerState?
+    ) -> [DiagnosticItem] {
+        guard managedChargingIsPrimaryStatus(
+            resolvedState: resolvedState
+        ) else {
+            return diagnostics
         }
 
-        if let adapterInputPowerW {
-            return adapterInputPowerW
+        return diagnostics.filter { $0.kind != .managedCharging }
+    }
+
+    private func managedChargingIsPrimaryStatus(
+        resolvedState: ResolvedPowerState?
+    ) -> Bool {
+        guard externalConnected,
+              resolvedState?.powerDeliveryState != .sustainedShortfall else {
+            return false
         }
 
-        if let batteryPowerW {
-            return abs(batteryPowerW)
-        }
+        let managedState = resolvedState?.managedChargingState
+            ?? managedChargingState
+        return managedChargingHeadline(for: managedState) != nil
+    }
 
-        return nil
+    var primaryDisplayedPower: DisplayedPowerMeasurement? {
+        PowerFlowReadings(snapshot: self).systemPower
     }
 
     var menuBarTitle: String {
         let battery = batteryLevel.map(Formatters.percent) ?? "--"
 
-        if let primaryDisplayedPowerW {
-            return "\(battery) · \(Formatters.power(primaryDisplayedPowerW))"
+        if let primaryDisplayedPower {
+            return "\(battery) · \(primaryDisplayedPower.formatted)"
         }
 
         return battery
@@ -361,7 +384,7 @@ extension TelemetrySnapshot {
 
         if resolvedState == .connected,
            diagnostics.contains(where: {
-               Self.powerDiagnosticTitles.contains($0.title)
+               $0.kind == .powerDeliveryShortfall
            }) {
             return "exclamationmark.triangle.fill"
         }

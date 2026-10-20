@@ -3,8 +3,65 @@ import Testing
 @testable import PowerLens
 
 struct DiagnosticsNotificationPlannerTests {
-    private func item(_ title: String, severity: DiagnosticSeverity = .warning) -> DiagnosticItem {
-        DiagnosticItem(severity: severity, title: title, message: "message for \(title)")
+    @Test
+    func changingTheTitleDoesNotRepeatAnActiveDiagnostic() {
+        let planner = DiagnosticsNotificationPlanner()
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let first = planner.plan(
+            diagnostics: [DiagnosticItem(
+                kind: .powerDeliveryShortfall,
+                severity: .warning,
+                title: "Power delivery shortfall",
+                message: "English"
+            )],
+            lastNotified: [:],
+            now: now
+        )
+        let translated = planner.plan(
+            diagnostics: [DiagnosticItem(
+                kind: .powerDeliveryShortfall,
+                severity: .warning,
+                title: "전력 공급 부족",
+                message: "한국어"
+            )],
+            lastNotified: first.lastNotified,
+            now: now.addingTimeInterval(60)
+        )
+
+        #expect(translated.notifications.isEmpty)
+    }
+
+    @Test
+    func differentDiagnosticKindsDoNotShareADebounceRecord() {
+        let planner = DiagnosticsNotificationPlanner()
+        let result = planner.plan(
+            diagnostics: [
+                DiagnosticItem(
+                    kind: .powerDeliveryShortfall,
+                    severity: .warning,
+                    title: "Warning",
+                    message: "Power"
+                ),
+                DiagnosticItem(
+                    kind: .temperatureHigh,
+                    severity: .caution,
+                    title: "Warning",
+                    message: "Temperature"
+                ),
+            ],
+            lastNotified: [:],
+            now: Date(timeIntervalSince1970: 1_000_000)
+        )
+
+        #expect(result.notifications.map(\.body) == ["Power", "Temperature"])
+    }
+
+    private func item(
+        _ title: String,
+        severity: DiagnosticSeverity = .warning,
+        kind: DiagnosticKind = .powerDeliveryShortfall
+    ) -> DiagnosticItem {
+        DiagnosticItem(kind: kind, severity: severity, title: title, message: "message for \(title)")
     }
 
     @Test
@@ -13,7 +70,7 @@ struct DiagnosticsNotificationPlannerTests {
         let now = Date(timeIntervalSince1970: 1_000_000)
 
         let result = planner.plan(
-            diagnostics: [item("Power Flow Looks Healthy", severity: .info)],
+            diagnostics: [item("Power Flow Looks Healthy", severity: .info, kind: .healthy)],
             lastNotified: [:],
             now: now
         )
@@ -32,7 +89,7 @@ struct DiagnosticsNotificationPlannerTests {
 
         let result = planner.plan(
             diagnostics: [
-                item(managedChargingTitle, severity: .info),
+                item(managedChargingTitle, severity: .info, kind: .managedCharging),
                 item(warningTitle),
             ],
             lastNotified: [:],
@@ -40,8 +97,8 @@ struct DiagnosticsNotificationPlannerTests {
         )
 
         #expect(result.notifications.map(\.title) == [warningTitle])
-        #expect(result.lastNotified.keys.contains(warningTitle))
-        #expect(!result.lastNotified.keys.contains(managedChargingTitle))
+        #expect(result.lastNotified.keys.contains(.powerDeliveryShortfall))
+        #expect(!result.lastNotified.keys.contains(.managedCharging))
     }
 
     @Test

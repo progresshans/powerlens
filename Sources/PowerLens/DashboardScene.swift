@@ -36,16 +36,6 @@ final class DashboardSceneController {
         hasPendingOpenRequest = false
         openDashboardWindow()
     }
-
-    @discardableResult
-    func handleReopen(hasVisibleWindows: Bool) -> Bool {
-        guard !hasVisibleWindows else {
-            return true
-        }
-
-        showDashboard()
-        return false
-    }
 }
 
 struct DashboardSceneRootView: View {

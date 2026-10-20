@@ -5,6 +5,7 @@ protocol TelemetryReading: Sendable {
 }
 
 protocol HistoryStoring: Sendable {
+    func latestSampleTimestamp() async throws -> Date?
     func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot]
     func append(_ snapshot: TelemetrySnapshot) async throws
     func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async throws
@@ -19,6 +20,29 @@ protocol HistoryStoring: Sendable {
     func batteryHealthTrend(
         since cutoffDate: Date
     ) async throws -> [BatteryHealthPoint]
+    func loadInsights(for range: HistoryRange, now: Date) async throws -> InsightsData
+}
+
+extension HistoryStoring {
+    func loadInsights(for range: HistoryRange, now: Date) async throws -> InsightsData {
+        let interval = range.interval(now: now)
+        try Task.checkCancellation()
+        let rawSeries = try await aggregatedSeries(for: interval, bucketSeconds: range.bucketSeconds)
+        try Task.checkCancellation()
+        let rollups = try await rollupSeries(for: interval)
+        try Task.checkCancellation()
+        let summary = try await summary(for: interval)
+        try Task.checkCancellation()
+        let healthTrend = try await batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
+        try Task.checkCancellation()
+        return InsightsData(
+            range: range,
+            interval: interval,
+            series: (rollups + rawSeries).sorted { $0.bucketStart < $1.bucketStart },
+            summary: summary,
+            healthTrend: healthTrend
+        )
+    }
 }
 
 enum TelemetryHealth: Equatable, Sendable {

@@ -295,9 +295,8 @@ extension TelemetrySnapshot {
             return false
         }
 
-        // Hold candidacy intentionally has a wider tolerance than the
-        // instantaneous flow diagram. Small battery drift is handled by the
-        // temporal tracker instead of making this predicate unreachable.
+        // Hold candidacy has wider tolerances than the instantaneous flow
+        // diagram. The temporal tracker separately requires it to persist.
         let calmSignals = [
             batteryPowerW.map { abs($0) <= PowerStateThresholds.holdBatteryPowerToleranceW },
             batteryCurrentA.map { abs($0) <= PowerStateThresholds.holdBatteryCurrentToleranceA },
@@ -499,35 +498,6 @@ extension TelemetrySnapshot {
         isHoldingBatteryLevelCandidate
             || (managedChargingState?.suppressesPowerDeliveryWarnings ?? false)
     }
-
-    static func stableExternalPowerState(
-        for recentSnapshots: [TelemetrySnapshot],
-        requiredConsecutiveSamples: Int = 3
-    ) -> ExternalPowerState {
-        guard let current = recentSnapshots.last else {
-            return .connected
-        }
-
-        if !current.externalConnected {
-            return .onBattery
-        }
-
-        if current.isBatteryChargingForDisplay {
-            return .charging
-        }
-
-        let stableWindow = Array(recentSnapshots.suffix(requiredConsecutiveSamples))
-        let levels = stableWindow.compactMap(\.batteryLevel)
-        let levelDrift = levels.isEmpty ? 0 : (levels.max() ?? 0) - (levels.min() ?? 0)
-
-        if stableWindow.count >= requiredConsecutiveSamples,
-           stableWindow.allSatisfy(\.isHoldingBatteryLevelCandidate),
-           levelDrift <= PowerStateThresholds.holdBatteryLevelDriftPercent {
-            return .holding
-        }
-
-        return .connected
-    }
 }
 
 private enum PowerStateThresholds {
@@ -542,7 +512,6 @@ private enum PowerStateThresholds {
     static let lowInputDeficitW = 2.5
     static let holdBatteryPowerToleranceW = 4.0
     static let holdBatteryCurrentToleranceA = 0.2
-    static let holdBatteryLevelDriftPercent = 1.0
     static let powerCoherenceMinimumMagnitudeW = 2.0
     static let powerCoherenceAbsoluteToleranceW = 4.0
     static let powerCoherenceRelativeTolerance = 0.5

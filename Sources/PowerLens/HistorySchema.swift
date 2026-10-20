@@ -1,7 +1,7 @@
 import Foundation
 
 enum HistorySchema {
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     static let creationStatements = [
         """
@@ -115,6 +115,15 @@ enum HistorySchema {
             on_battery_seconds INTEGER,
             on_external_seconds INTEGER,
             charge_sessions INTEGER,
+            system_load_sum_mw INTEGER,
+            system_load_count INTEGER,
+            adapter_input_power_sum_mw INTEGER,
+            adapter_input_power_count INTEGER,
+            battery_temperature_sum_c_x100 INTEGER,
+            battery_temperature_count INTEGER,
+            first_sample_ts INTEGER,
+            first_is_charging INTEGER,
+            last_is_charging INTEGER,
             PRIMARY KEY (bucket_start, bucket_seconds)
         );
         """,
@@ -159,6 +168,27 @@ enum HistorySchema {
             ADD COLUMN charge_sessions INTEGER;
             """
         ),
+    ] + rollupStatisticsColumns.map { column in
+        ColumnMigration(
+            table: "history_rollups",
+            column: column,
+            sql: "ALTER TABLE history_rollups ADD COLUMN \(column) INTEGER;"
+        )
+    }
+
+    // Version 3 discarded valid-value counts and charging boundary states.
+    // Leave these fields NULL in old rows: existing estimates remain readable,
+    // but migration cannot reconstruct observations whose raw rows are gone.
+    private static let rollupStatisticsColumns = [
+        "system_load_sum_mw",
+        "system_load_count",
+        "adapter_input_power_sum_mw",
+        "adapter_input_power_count",
+        "battery_temperature_sum_c_x100",
+        "battery_temperature_count",
+        "first_sample_ts",
+        "first_is_charging",
+        "last_is_charging",
     ]
 }
 

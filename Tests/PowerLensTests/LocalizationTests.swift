@@ -28,8 +28,40 @@ struct LocalizationTests {
             "diag.manualLimit.chargingBeyond.message",
             "diag.manualLimit.above.message",
             "ui.flow.unknown",
-            "ui.flow.independentReadingsNotice",
+            "ui.metric.systemLoad",
+            "ui.flow.tooltip.displayedSystem",
+            "ui.flow.tooltip.noCalculation",
+            "ui.flow.tooltip.expression.charging",
+            "ui.flow.tooltip.expression.assist",
+            "ui.flow.tooltip.expression.input",
+            "ui.flow.tooltip.expression.battery",
+            "ui.flow.tooltip.rawInput",
+            "ui.flow.tooltip.rawBattery",
+            "ui.flow.tooltip.rawSystem",
+            "ui.flow.tooltip.currentVoltageBattery",
+            "ui.flow.tooltip.batteryCurrentVoltageCalculation",
+            "ui.flow.tooltip.batteryResidualCalculation",
+            "ui.flow.tooltip.reason.invalidBalance",
+            "ui.flow.tooltip.reason.conflictingDirection",
+            "ui.flow.tooltip.reason.missingMeasurement",
+            "ui.flow.tooltip.anchor.measured",
+            "ui.flow.tooltip.anchor.powerBalance",
+            "ui.flow.tooltip.anchor.unavailable",
+            "ui.flow.tooltip.displayCharging",
+            "ui.flow.tooltip.displayAssist",
+            "ui.flow.tooltip.displayInput",
+            "ui.flow.tooltip.displayBattery",
+            "ui.flow.tooltip.inputFromAnchor",
+            "ui.flow.tooltip.smcTiming",
+            "ui.flow.tooltip.adjust.inputFloor",
+            "ui.flow.tooltip.adjust.inputRating",
+            "ui.flow.tooltip.adjustedBatteryCharge",
+            "ui.flow.tooltip.adjustedBatteryAssist",
+            "ui.flow.tooltip.smcDirection",
+            "ui.flow.tooltip.observedBalance",
+            "ui.flow.tooltip.observedBalanceDifference",
             "telemetry.status.waiting",
+            "telemetry.status.sourceTransition",
             "telemetry.status.delayed",
             "telemetry.status.unavailable",
             "telemetry.delayed",
@@ -66,6 +98,20 @@ struct LocalizationTests {
 
                 #expect(!localized.isEmpty)
                 #expect(localized != key)
+            }
+        }
+    }
+
+    @Test
+    func smcTimingCopyDoesNotPromiseAFixedOneSecondDelay() {
+        for language in [AppLanguage.english, .korean] {
+            let text = language.bundle.localizedString(
+                forKey: "ui.flow.tooltip.smcTiming",
+                value: nil,
+                table: "Localizable"
+            )
+            for unsupportedTiming in ["one second", "1 second", "1초", "1 초"] {
+                #expect(!text.contains(unsupportedTiming))
             }
         }
     }

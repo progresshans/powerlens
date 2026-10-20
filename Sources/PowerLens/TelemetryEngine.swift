@@ -97,7 +97,7 @@ struct TelemetryCoordinator {
         let result: TelemetryReadResult
 
         switch preference {
-        case .auto:
+        case .auto, .livePrecision:
             if let snapshot = try? livePrecisionReader.readSnapshot() {
                 result = TelemetryReadResult(
                     snapshot: snapshot,
@@ -114,18 +114,6 @@ struct TelemetryCoordinator {
                 snapshot: try compatibleReader.readSnapshot(),
                 activeEngine: .compatible
             )
-        case .livePrecision:
-            if let snapshot = try? livePrecisionReader.readSnapshot() {
-                result = TelemetryReadResult(
-                    snapshot: snapshot,
-                    activeEngine: .livePrecision
-                )
-            } else {
-                result = TelemetryReadResult(
-                    snapshot: try compatibleReader.readSnapshot(),
-                    activeEngine: .compatible
-                )
-            }
         }
 
         let chargingPolicyObservation = chargingPolicyReader
