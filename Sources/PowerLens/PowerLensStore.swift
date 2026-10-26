@@ -39,12 +39,15 @@ final class PowerLensStore: ObservableObject {
     @Published private(set) var requestedTelemetryEngine = TelemetryEnginePreference.current
     @Published private(set) var activeTelemetryEngine: TelemetryEngineKind = .compatible
     @Published private(set) var resolvedPowerState: ResolvedPowerState?
+    /// The current energy mode, or nil before the first read.
+    @Published private(set) var energyMode: EnergyMode?
     @Published private(set) var systemCompatibilityDiagnostics:
         [SystemCompatibilityDiagnostic] = []
 
     private let telemetryReader: any TelemetryReading
     private let historyStore: any HistoryStoring
     private let energySampler: any ProcessEnergySampling
+    private let energyModeReader: any EnergyModeReading
     private let systemCompatibilityRecorder: any SystemCompatibilityRecording
     private let now: () -> Date
     private let powerSourceReader: @MainActor () -> PowerSourceObservation?
@@ -66,6 +69,8 @@ final class PowerLensStore: ObservableObject {
     private var energyResetTask: Task<Void, Never>?
     private var energySamplingTask: Task<Void, Never>?
     private var energySamplingGeneration = 0
+    private(set) var energyModeTask: Task<Void, Never>?
+    private var energyModeGeneration = 0
     private var powerSourceObservation: PowerSourceObservation?
     private var powerSourceGeneration = 0
     private var lastAppliedSourceGeneration: Int?
@@ -92,6 +97,7 @@ final class PowerLensStore: ObservableObject {
         telemetryReader: any TelemetryReading = TelemetryReadService(),
         historyStore: any HistoryStoring = HistoryStore(),
         energySampler: any ProcessEnergySampling = ProcessEnergySampler(),
+        energyModeReader: any EnergyModeReading = PmsetEnergyModeReader(),
         systemCompatibilityRecorder: any SystemCompatibilityRecording =
             SystemCompatibilityRecorder.shared,
         startsAutomatically: Bool = true,
@@ -104,6 +110,7 @@ final class PowerLensStore: ObservableObject {
         self.telemetryReader = telemetryReader
         self.historyStore = historyStore
         self.energySampler = energySampler
+        self.energyModeReader = energyModeReader
         self.systemCompatibilityRecorder = systemCompatibilityRecorder
         self.interactiveRefreshInterval = interactiveRefreshInterval
         self.backgroundRefreshInterval = backgroundRefreshInterval
@@ -118,6 +125,7 @@ final class PowerLensStore: ObservableObject {
         }
 
         startRefreshTask()
+        refreshEnergyMode()
     }
 
     private func startRefreshTask() {
@@ -190,10 +198,12 @@ final class PowerLensStore: ObservableObject {
         sourceReconciliationTask?.cancel()
         energyResetTask?.cancel()
         energySamplingTask?.cancel()
+        energyModeTask?.cancel()
     }
 
     func refreshNow() {
         _ = enqueueRefresh(persistencePolicy: .immediately)
+        refreshEnergyMode()
     }
 
     func refreshOnce(persistImmediately: Bool = true) async {
@@ -209,6 +219,9 @@ final class PowerLensStore: ObservableObject {
 
         refreshCadence = cadence
         resetEnergySampling()
+        if cadence == .interactive {
+            refreshEnergyMode()
+        }
         switch automaticRefreshPhase {
         case .preparingHistory:
             if cadence == .interactive {
@@ -243,6 +256,7 @@ final class PowerLensStore: ObservableObject {
                 telemetryHealth = .delayed(failedAttempts: telemetryHealth.failedAttempts)
             }
             publishPowerSource(observation)
+            refreshEnergyMode()
         }
 
         let generation = powerSourceGeneration
@@ -577,7 +591,13 @@ final class PowerLensStore: ObservableObject {
             resolvedState: resolvedState
         )
         resolvedPowerState = resolvedState
+        let previous = latest
         latest = snapshot
+        if let previous,
+           previous.externalConnected != snapshot.externalConnected
+            || previous.lowPowerModeEnabled != snapshot.lowPowerModeEnabled {
+            refreshEnergyMode()
+        }
         diagnostics = resolvedDiagnostics
         lastRefreshAt = snapshot.timestamp
         activeTelemetryEngine = result.activeEngine
@@ -629,6 +649,27 @@ final class PowerLensStore: ObservableObject {
         }
         if sequence == refreshSequence {
             scheduleEnergySamplingIfVisible()
+        }
+    }
+
+    /// Reads the energy mode again. macOS keeps a separate mode for each power
+    /// source and announces no change, so this runs at launch, when the popover
+    /// or Dashboard opens, when the source or Low Power Mode changes, and on a
+    /// manual refresh, never on every telemetry tick.
+    private func refreshEnergyMode() {
+        energyModeGeneration += 1
+        let generation = energyModeGeneration
+        let reader = energyModeReader
+        let lowPower = latest?.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled
+        energyModeTask?.cancel()
+        energyModeTask = Task { [weak self] in
+            let mode = await reader.read(lowPowerFallback: lowPower)
+            guard !Task.isCancelled, let self, self.energyModeGeneration == generation else {
+                return
+            }
+            if self.energyMode != mode {
+                self.energyMode = mode
+            }
         }
     }
 

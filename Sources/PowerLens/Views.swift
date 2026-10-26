@@ -11,7 +11,6 @@ struct MenuBarRootView: View {
     let maxContentHeight: CGFloat?
 
     @AppStorage("popover.showsDetails") private var showsDetails = false
-    @State private var energyMode: EnergyMode = .standard
 
     static let loadingSize = CGSize(width: 360, height: 300)
     static let contentWidth: CGFloat = 360
@@ -27,9 +26,6 @@ struct MenuBarRootView: View {
                 placeholderContent
                     .frame(width: Self.loadingSize.width, height: Self.loadingSize.height, alignment: .top)
             }
-        }
-        .task(id: store.latest?.lowPowerModeEnabled) {
-            await refreshEnergyMode()
         }
     }
 
@@ -84,7 +80,9 @@ struct MenuBarRootView: View {
                 TopEnergyAppsCard(apps: store.topEnergyApps)
             }
 
-            EnergyModeRow(mode: energyMode)
+            if let energyMode = store.energyMode {
+                EnergyModeRow(mode: energyMode)
+            }
 
             if showsDetails {
                 details(snapshot)
@@ -252,12 +250,6 @@ struct MenuBarRootView: View {
             }
             .padding(12)
         }
-    }
-
-    private func refreshEnergyMode() async {
-        let lowPower = store.latest?.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled
-        let output = await EnergyModeReader.readPmset()
-        energyMode = EnergyModeReader.mode(pmsetOutput: output, lowPowerFallback: lowPower)
     }
 }
 

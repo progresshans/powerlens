@@ -6,6 +6,68 @@ import Testing
 struct PowerLensStoreTests {
     @Test
     @MainActor
+    func energyModeIsReadAgainWhenThePowerSourceChanges() async {
+        // High Power on the charger and Automatic on battery leave Low Power
+        // Mode off in both states, so only the source change can trigger this.
+        let start = Date(timeIntervalSince1970: 1_775_000_000)
+        let charger = makeTelemetrySnapshot(timestamp: start)
+        let reader = StubEnergyModeReader([.highPower, .automatic])
+        let store = PowerLensStore(
+            telemetryReader: CountingTelemetryReader(snapshot: charger),
+            historyStore: StubHistoryStore(),
+            energySampler: EmptyEnergySampler(),
+            energyModeReader: reader,
+            startsAutomatically: false,
+            now: { start }
+        )
+        await store.refreshOnce()
+
+        store.setRefreshCadence(.interactive)
+        await store.energyModeTask?.value
+        #expect(store.energyMode == .highPower)
+
+        store.receivePowerSourceObservation(
+            .init(externalConnected: false, observedAt: start.addingTimeInterval(1)),
+            reason: .powerSourceChanged
+        )
+        await store.energyModeTask?.value
+        #expect(store.energyMode == .automatic)
+    }
+
+    @Test
+    @MainActor
+    func energyModeIsReadOnLowPowerChangesAndManualRefreshOnly() async {
+        let start = Date(timeIntervalSince1970: 1_775_000_000)
+        let normal = makeTelemetrySnapshot(timestamp: start)
+        let lowPower = makeTelemetrySnapshot(timestamp: start.addingTimeInterval(3), lowPowerModeEnabled: true)
+        let reader = StubEnergyModeReader([.lowPower])
+        let store = PowerLensStore(
+            telemetryReader: SequenceTelemetryReader(snapshots: [normal, normal, normal, lowPower]),
+            historyStore: StubHistoryStore(),
+            energySampler: EmptyEnergySampler(),
+            energyModeReader: reader,
+            startsAutomatically: false,
+            now: { start }
+        )
+
+        // Ordinary telemetry ticks do not run pmset.
+        await store.refreshOnce()
+        await store.refreshOnce()
+        await store.refreshOnce()
+        #expect(await reader.readCount == 0)
+
+        await store.refreshOnce()
+        await store.energyModeTask?.value
+        #expect(await reader.readCount == 1)
+        #expect(store.energyMode == .lowPower)
+
+        store.refreshNow()
+        await store.energyModeTask?.value
+        #expect(await reader.readCount == 2)
+    }
+
+    @Test
+    @MainActor
     func recentPowerHistoryReadsSavedHistoryAsBalancedReadings() async {
         let now = Date(timeIntervalSince1970: 1_775_000_000)
         let charging = makeTelemetrySnapshot(
@@ -1435,6 +1497,21 @@ private actor CountingTelemetryReader: TelemetryReading {
 private actor EmptyEnergySampler: ProcessEnergySampling {
     func sample(now: Date) async -> [AppEnergyUsage] {
         []
+    }
+}
+
+/// Returns the queued modes in order, then repeats the last one.
+private actor StubEnergyModeReader: EnergyModeReading {
+    private var modes: [EnergyMode]
+    private(set) var readCount = 0
+
+    init(_ modes: [EnergyMode]) {
+        self.modes = modes
+    }
+
+    func read(lowPowerFallback: Bool) async -> EnergyMode {
+        readCount += 1
+        return modes.count > 1 ? modes.removeFirst() : modes.first ?? .standard
     }
 }
 

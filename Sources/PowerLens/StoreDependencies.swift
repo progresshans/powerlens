@@ -4,6 +4,10 @@ protocol TelemetryReading: Sendable {
     func readSnapshot(preference: TelemetryEnginePreference) async throws -> TelemetryReadResult
 }
 
+protocol EnergyModeReading: Sendable {
+    func read(lowPowerFallback: Bool) async -> EnergyMode
+}
+
 protocol HistoryStoring: Sendable {
     func latestSampleTimestamp() async throws -> Date?
     func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot]

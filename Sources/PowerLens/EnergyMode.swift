@@ -86,6 +86,13 @@ enum EnergyModeReader {
     }
 }
 
+/// Reads the energy mode with `pmset -g`.
+struct PmsetEnergyModeReader: EnergyModeReading {
+    func read(lowPowerFallback: Bool) async -> EnergyMode {
+        EnergyModeReader.mode(pmsetOutput: await EnergyModeReader.readPmset(), lowPowerFallback: lowPowerFallback)
+    }
+}
+
 enum EnergyModeSettings {
     @MainActor
     static func open() {

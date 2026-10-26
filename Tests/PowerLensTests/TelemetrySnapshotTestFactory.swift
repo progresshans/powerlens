@@ -23,7 +23,8 @@ func makeTelemetrySnapshot(
     fullChargeCapacityMah: Int? = 5639,
     batteryHealthText: String? = "Normal",
     batteryHealthCondition: String? = nil,
-    thermalState: String = "Nominal"
+    thermalState: String = "Nominal",
+    lowPowerModeEnabled: Bool = false
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
         timestamp: timestamp,
@@ -53,7 +54,7 @@ func makeTelemetrySnapshot(
         adapterCurrentA: 0.6,
         systemLoadW: systemLoadW,
         powerMeasurementSetSource: powerMeasurementSetSource,
-        lowPowerModeEnabled: false,
+        lowPowerModeEnabled: lowPowerModeEnabled,
         thermalState: thermalState,
         serialNumber: "SERIAL",
         frontmostAppName: "PowerLens",
