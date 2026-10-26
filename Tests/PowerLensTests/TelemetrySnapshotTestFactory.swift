@@ -18,7 +18,12 @@ func makeTelemetrySnapshot(
     systemLoadW: Double? = 10,
     powerMeasurementSetSource: PowerMeasurementSetSource? = nil,
     adapterMaxPowerW: Double? = 97,
-    chargingPolicyStatus: ObservedChargingPolicyStatus? = nil
+    chargingPolicyStatus: ObservedChargingPolicyStatus? = nil,
+    designCapacityMah: Int? = 6249,
+    fullChargeCapacityMah: Int? = 5639,
+    batteryHealthText: String? = "Normal",
+    batteryHealthCondition: String? = nil,
+    thermalState: String = "Nominal"
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
         timestamp: timestamp,
@@ -29,13 +34,13 @@ func makeTelemetrySnapshot(
         externalConnected: externalConnected,
         timeToEmptyMinutes: timeToEmptyMinutes,
         timeToFullMinutes: timeToFullMinutes,
-        designCapacityMah: 6249,
-        fullChargeCapacityMah: 5639,
+        designCapacityMah: designCapacityMah,
+        fullChargeCapacityMah: fullChargeCapacityMah,
         nominalCapacityMah: 5791,
         cycleCount: 75,
         designCycleCount: 1000,
-        batteryHealthText: "Normal",
-        batteryHealthCondition: nil,
+        batteryHealthText: batteryHealthText,
+        batteryHealthCondition: batteryHealthCondition,
         batteryTemperatureC: 30.2,
         batteryVoltageV: batteryVoltageV,
         batteryCurrentA: batteryCurrentA,
@@ -49,7 +54,7 @@ func makeTelemetrySnapshot(
         systemLoadW: systemLoadW,
         powerMeasurementSetSource: powerMeasurementSetSource,
         lowPowerModeEnabled: false,
-        thermalState: "Nominal",
+        thermalState: thermalState,
         serialNumber: "SERIAL",
         frontmostAppName: "PowerLens",
         chargingPolicyStatus: chargingPolicyStatus

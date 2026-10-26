@@ -418,9 +418,9 @@
 "dashboard.lastHour" = "Last Hour";
 "dashboard.lastHour.collecting" = "The chart appears in a few minutes";
 "dashboard.insights" = "Good to Know";
-"insight.health.good" = "Battery is in good shape";
 "insight.health.detail" = "Maximum capacity %@ · %@";
 "insight.temperature" = "Temperature: %@";
+"insight.temperature.unknown" = "Temperature isn't available";
 "insight.topApp" = "%@ is using the most energy";
 "charger.usage.disconnected" = "No charger connected";
 "charger.usage.unknownRating" = "This charger’s maximum output is unknown";
@@ -431,9 +431,13 @@
 "battery.title.good" = "Battery is in good shape";
 "battery.title.aged" = "Battery is somewhat worn";
 "battery.title.service" = "Time to replace the battery";
+"battery.title.check" = "Battery needs a check";
+"battery.title.unknown" = "Battery health isn't available";
 "battery.capsule.good" = "Good";
 "battery.capsule.aged" = "Worn";
 "battery.capsule.service" = "Service";
+"battery.capsule.check" = "Check";
+"battery.capsule.unknown" = "Unknown";
 "battery.meta.cycles" = "%d charge cycles so far";
 "battery.subtitle.capacity" = "It holds %@ of what a new battery does";
 "battery.temperature.caption" = "%@ · Charging may slow above 35°C";

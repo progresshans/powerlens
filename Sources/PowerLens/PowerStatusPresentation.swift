@@ -232,13 +232,10 @@ struct MetricTilePresentation: Equatable, Sendable {
     }
 
     static func health(snapshot: TelemetrySnapshot) -> Self {
-        let tone: StatusTone
-        if snapshot.batteryHealthSummary == L10n.text("health.serviceRecommended") {
-            tone = .warning
-        } else if let health = snapshot.chargeHealthPercent, health < 85 {
-            tone = .caution
-        } else {
-            tone = .neutral
+        let tone: StatusTone = switch snapshot.batteryHealthAssessment {
+        case .serviceRecommended: .warning
+        case .aged, .checkBattery: .caution
+        case .normal, .unknown: .neutral
         }
 
         return Self(
@@ -268,6 +265,31 @@ struct MetricTilePresentation: Equatable, Sendable {
             caption: L10n.localizedThermalState(snapshot.thermalState),
             captionTone: tone
         )
+    }
+}
+
+/// The headline for a battery health assessment, shared by the Battery page
+/// and the Now page's insights so both say the same thing.
+struct BatteryHealthPresentation: Equatable {
+    let title: String
+    let capsuleTitle: String
+    let tone: StatusTone
+    let symbol: String
+
+    init(_ assessment: BatteryHealthAssessment) {
+        let alert = "exclamationmark.triangle.fill"
+        switch assessment {
+        case .normal:
+            (title, capsuleTitle, tone, symbol) = (L10n.text("battery.title.good"), L10n.text("battery.capsule.good"), .charging, "checkmark")
+        case .aged:
+            (title, capsuleTitle, tone, symbol) = (L10n.text("battery.title.aged"), L10n.text("battery.capsule.aged"), .caution, alert)
+        case .checkBattery:
+            (title, capsuleTitle, tone, symbol) = (L10n.text("battery.title.check"), L10n.text("battery.capsule.check"), .caution, alert)
+        case .serviceRecommended:
+            (title, capsuleTitle, tone, symbol) = (L10n.text("battery.title.service"), L10n.text("battery.capsule.service"), .warning, alert)
+        case .unknown:
+            (title, capsuleTitle, tone, symbol) = (L10n.text("battery.title.unknown"), L10n.text("battery.capsule.unknown"), .neutral, "questionmark")
+        }
     }
 }
 

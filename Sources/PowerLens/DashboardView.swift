@@ -388,6 +388,7 @@ struct DashboardView: View {
         )
         .filter { $0.kind != .healthy }
         let health = MetricTilePresentation.health(snapshot: snapshot)
+        let assessment = BatteryHealthPresentation(snapshot.batteryHealthAssessment)
         let temperature = MetricTilePresentation.temperature(snapshot: snapshot)
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -405,9 +406,9 @@ struct DashboardView: View {
             }
 
             InsightRow(
-                systemImage: health.captionTone == .neutral ? "checkmark" : "exclamationmark.triangle.fill",
-                tint: health.captionTone == .neutral ? LensPalette.battery : health.captionTone.tint,
-                title: health.captionTone == .neutral ? L10n.text("insight.health.good") : health.caption,
+                systemImage: assessment.symbol,
+                tint: assessment.tone.tint,
+                title: assessment.title,
                 detail: L10n.tr(
                     "insight.health.detail",
                     health.value,
@@ -418,7 +419,9 @@ struct DashboardView: View {
             InsightRow(
                 systemImage: "thermometer.medium",
                 tint: temperature.captionTone == .neutral ? .secondary : temperature.captionTone.tint,
-                title: L10n.tr("insight.temperature", temperature.caption),
+                title: L10n.isKnownThermalState(snapshot.thermalState)
+                    ? L10n.tr("insight.temperature", temperature.caption)
+                    : L10n.text("insight.temperature.unknown"),
                 detail: snapshot.batteryTemperatureC.map(Formatters.temperature)
             )
 
@@ -442,27 +445,13 @@ struct DashboardView: View {
 
     private func batteryPage(_ snapshot: TelemetrySnapshot) -> some View {
         let health = snapshot.chargeHealthPercent
-        let healthTile = MetricTilePresentation.health(snapshot: snapshot)
-        let tone: StatusTone = healthTile.captionTone == .neutral ? .charging : healthTile.captionTone
-        let titleKey: String
-        let capsuleKey: String
-        switch healthTile.captionTone {
-        case .warning:
-            titleKey = "battery.title.service"
-            capsuleKey = "battery.capsule.service"
-        case .caution:
-            titleKey = "battery.title.aged"
-            capsuleKey = "battery.capsule.aged"
-        default:
-            titleKey = "battery.title.good"
-            capsuleKey = "battery.capsule.good"
-        }
+        let assessment = BatteryHealthPresentation(snapshot.batteryHealthAssessment)
 
         return VStack(alignment: .leading, spacing: 20) {
             pageHeader(
-                capsule: StatusCapsule(title: L10n.text(capsuleKey), systemImage: "heart.fill", tone: tone),
+                capsule: StatusCapsule(title: assessment.capsuleTitle, systemImage: "heart.fill", tone: assessment.tone),
                 meta: { _ in snapshot.cycleCount.map { L10n.tr("battery.meta.cycles", $0) } },
-                title: L10n.text(titleKey),
+                title: assessment.title,
                 subtitle: health.map { L10n.tr("battery.subtitle.capacity", Formatters.percent($0)) },
                 showsRefresh: false
             )

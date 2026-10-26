@@ -418,9 +418,9 @@
 "dashboard.lastHour" = "지난 1시간";
 "dashboard.lastHour.collecting" = "몇 분 뒤에 그래프가 보여요";
 "dashboard.insights" = "알아두면 좋아요";
-"insight.health.good" = "배터리 상태가 좋아요";
 "insight.health.detail" = "최대 용량 %@ · 충전 %@";
 "insight.temperature" = "온도가 %@";
+"insight.temperature.unknown" = "온도를 확인할 수 없어요";
 "insight.topApp" = "%@ 앱이 에너지를 가장 많이 써요";
 "charger.usage.disconnected" = "연결된 충전기가 없어요";
 "charger.usage.unknownRating" = "이 충전기의 최대 출력은 알 수 없어요";
@@ -431,9 +431,13 @@
 "battery.title.good" = "배터리 상태가 좋아요";
 "battery.title.aged" = "배터리가 조금 지쳤어요";
 "battery.title.service" = "배터리를 바꿀 때가 됐어요";
+"battery.title.check" = "배터리 점검이 필요해요";
+"battery.title.unknown" = "배터리 상태를 확인할 수 없어요";
 "battery.capsule.good" = "상태 좋음";
 "battery.capsule.aged" = "조금 지침";
 "battery.capsule.service" = "교체 권장";
+"battery.capsule.check" = "점검 필요";
+"battery.capsule.unknown" = "알 수 없음";
 "battery.meta.cycles" = "이 배터리로 %d번 충전했어요";
 "battery.subtitle.capacity" = "새 배터리와 비교해 %@만큼 담을 수 있어요";
 "battery.temperature.caption" = "%@ · 35°C를 넘으면 충전이 느려질 수 있어요";
