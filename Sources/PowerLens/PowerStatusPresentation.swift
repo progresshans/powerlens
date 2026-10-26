@@ -298,8 +298,12 @@ enum BatterySymbol {
         if isCharging {
             return "battery.100percent.bolt"
         }
+        // A generic battery, not an empty one, when the level is unknown.
+        guard let level else {
+            return "minus.plus.batteryblock"
+        }
 
-        switch level ?? 0 {
+        switch level {
         case ..<13:
             return "battery.0percent"
         case ..<38:

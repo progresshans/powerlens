@@ -449,5 +449,6 @@
 "battery.charging.default" = "Default";
 "battery.charging.defaultCaption" = "Charging with macOS defaults";
 "battery.charging.unknownCaption" = "Charging settings aren't available";
+"charger.usage.unknown" = "Current use isn't available";
 "history.subtitle" = "Stored only on this Mac";
 "telemetry.label.preference.detail" = "Automatic works for most Macs";

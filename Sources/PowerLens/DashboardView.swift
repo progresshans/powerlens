@@ -298,7 +298,7 @@ struct DashboardView: View {
             caption: tile.caption
         ) {
             BarGauge(
-                fraction: (snapshot.batteryLevel ?? 0) / 100,
+                fraction: DashboardGauge.batteryLevel(snapshot),
                 tint: tint,
                 marker: limit.map { Double($0) / 100 }
             )
@@ -306,37 +306,17 @@ struct DashboardView: View {
     }
 
     private func chargerCard(_ snapshot: TelemetrySnapshot, readings: PowerFlowReadings) -> some View {
-        let input = readings.inputPower?.watts
-        let rated = snapshot.adapterMaxPowerW
-        let fraction = (input ?? 0) / max(rated ?? 0, 1)
+        let usage = ChargerUsagePresentation(snapshot: snapshot, readings: readings)
 
         return DashboardMetricCard(
             title: L10n.text("flow.node.charger"),
             systemImage: "powerplug.fill",
             iconTint: LensPalette.charger,
-            value: snapshot.externalConnected ? (input.map(Formatters.power) ?? L10n.text("common.none")) : L10n.text("common.none"),
-            unit: snapshot.externalConnected ? rated.map { "/ \(Formatters.ratedPower($0))" } : nil,
-            caption: chargerCaption(snapshot: snapshot, fraction: fraction)
+            value: usage.value,
+            unit: usage.unit,
+            caption: usage.caption
         ) {
-            BarGauge(
-                fraction: snapshot.externalConnected && rated != nil ? fraction : 0,
-                tint: LensPalette.charger
-            )
-        }
-    }
-
-    private func chargerCaption(snapshot: TelemetrySnapshot, fraction: Double) -> String {
-        guard snapshot.externalConnected else {
-            return L10n.text("charger.usage.disconnected")
-        }
-        guard snapshot.adapterMaxPowerW != nil else {
-            return L10n.text("charger.usage.unknownRating")
-        }
-        switch fraction {
-        case ..<0.35: return L10n.text("charger.usage.light")
-        case ..<0.7: return L10n.text("charger.usage.half")
-        case ..<0.9: return L10n.text("charger.usage.high")
-        default: return L10n.text("charger.usage.full")
+            BarGauge(fraction: usage.fraction, tint: LensPalette.charger)
         }
     }
 
@@ -419,9 +399,7 @@ struct DashboardView: View {
             InsightRow(
                 systemImage: "thermometer.medium",
                 tint: temperature.captionTone == .neutral ? .secondary : temperature.captionTone.tint,
-                title: L10n.isKnownThermalState(snapshot.thermalState)
-                    ? L10n.tr("insight.temperature", temperature.caption)
-                    : L10n.text("insight.temperature.unknown"),
+                title: DashboardInsight.temperatureTitle(snapshot: snapshot),
                 detail: snapshot.batteryTemperatureC.map(Formatters.temperature)
             )
 
@@ -468,10 +446,7 @@ struct DashboardView: View {
                     caption: snapshot.designCycleCount.map { L10n.tr("ui.metric.designTarget", $0) }
                         ?? L10n.text("ui.metric.cycleTargetUnknown")
                 ) {
-                    BarGauge(
-                        fraction: Double(snapshot.cycleCount ?? 0) / Double(max(snapshot.designCycleCount ?? 1000, 1)),
-                        tint: .secondary
-                    )
+                    BarGauge(fraction: DashboardGauge.cycles(snapshot), tint: .secondary)
                 }
 
                 DashboardMetricCard(
@@ -517,7 +492,7 @@ struct DashboardView: View {
             }
 
             VStack(spacing: 8) {
-                BarGauge(fraction: (health ?? 0) / 100, tint: tint, marker: 0.8)
+                BarGauge(fraction: DashboardGauge.capacity(snapshot), tint: tint, marker: 0.8)
                 HStack {
                     Text("0%")
                     Spacer()
