@@ -279,7 +279,8 @@ final class PowerLensStore: ObservableObject {
             statusHeadline: L10n.text(
                 observation.externalConnected
                     ? "status.externalPowerConnected" : "status.runningOnBattery"
-            )
+            ),
+            lowPowerMode: latest?.lowPowerModeEnabled ?? false
         )
     }
 
@@ -292,7 +293,9 @@ final class PowerLensStore: ObservableObject {
                 snapshot: latest,
                 symbolName: menuBarSymbolName,
                 batteryBadge: menuBarBatteryBadge,
-                statusHeadline: latest.statusHeadline(resolvedState: resolvedPowerState)
+                statusHeadline: latest.statusHeadline(resolvedState: resolvedPowerState),
+                lowPowerMode: menuBarPresentation.lowPowerMode,
+                powerWarning: menuBarPresentation.powerWarning
             )
         }
     }
@@ -588,7 +591,9 @@ final class PowerLensStore: ObservableObject {
                 externalPowerState: resolvedState.externalPowerState
             ),
             batteryBadge: .resolved(for: resolvedState.externalPowerState),
-            statusHeadline: snapshot.statusHeadline(resolvedState: resolvedState)
+            statusHeadline: snapshot.statusHeadline(resolvedState: resolvedState),
+            lowPowerMode: snapshot.lowPowerModeEnabled,
+            powerWarning: resolvedState.powerDeliveryState == .sustainedShortfall
         )
 
         let shouldWriteHistory: Bool

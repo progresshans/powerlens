@@ -44,3 +44,25 @@ struct MenuBarStatusItemRendererTests {
         }
     }
 }
+
+@MainActor
+struct MenuBarBatteryTintTests {
+    @Test
+    func untintedRequestsKeepTheTemplateImage() {
+        let image = MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: .none)
+
+        #expect(image.isTemplate)
+        #expect(image === MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt))
+    }
+
+    @Test
+    func tintedImagesAreColoredAndCachedPerTint() {
+        let lowPower = MenuBarStatusItemRenderer.Tint(lowPowerFill: true)
+        let warning = MenuBarStatusItemRenderer.Tint(warningBadge: true)
+        let first = MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: lowPower)
+
+        #expect(!first.isTemplate)
+        #expect(first === MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: lowPower))
+        #expect(first !== MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: warning))
+    }
+}

@@ -26,6 +26,43 @@ enum MenuBarStatusItemRenderer {
         cachedImage(percent: canonicalAssetPercent(level: level), badge: badge)
     }
 
+    /// Color on the glyph. The fill follows macOS (yellow in Low Power Mode);
+    /// PowerLens's own warning only ever tints the badge, so it cannot be
+    /// mistaken for Low Power Mode.
+    struct Tint: Hashable, Sendable {
+        var lowPowerFill = false
+        var warningBadge = false
+
+        static let none = Tint()
+    }
+
+    /// A colored, non-template variant. Falls back to the template image when
+    /// there is nothing to tint.
+    static func batteryImage(level: Double?, badge: Badge, tint: Tint) -> NSImage {
+        guard tint != .none else {
+            return batteryImage(level: level, badge: badge)
+        }
+
+        let percent = canonicalAssetPercent(level: level)
+        let key = ImageKey(assetName: assetName(percent: percent), badge: badge, tint: tint)
+        if let image = imageCache[key] {
+            return image
+        }
+
+        let image: NSImage
+        if let pathData = assetPathData(named: key.assetName) {
+            image = NSImage(size: Metrics.canvasSize, flipped: false) { rect in
+                drawTintedAsset(pathData: pathData, badge: badge, tint: tint, in: rect)
+                return true
+            }
+            image.isTemplate = false
+        } else {
+            image = cachedImage(percent: percent, badge: badge)
+        }
+        imageCache[key] = image
+        return image
+    }
+
     /// Returns the shared base asset; badges are composed at draw time.
     static func assetIdentifier(level: Double?, badge: Badge) -> String {
         assetName(percent: canonicalAssetPercent(level: level))
@@ -143,7 +180,50 @@ enum MenuBarStatusItemRenderer {
         fillPath.fill()
     }
 
-    private static func drawBolt(transform: AffineTransform, context: CGContext) {
+    private static func drawTintedAsset(pathData: String, badge: Badge, tint: Tint, in rect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else {
+            return
+        }
+
+        context.saveGState()
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+
+        // Non-template images are not recolored by the menu bar, so draw the
+        // shell in the text color of the current (menu bar) appearance.
+        let ink = NSColor.textColor
+        let transform = Metrics.assetSymbolTransform(in: rect)
+        let parts = splitFillSubpath(pathData)
+        draw(pathData: parts.shell, transform: transform, color: ink)
+        if let fill = parts.fill {
+            draw(pathData: fill, transform: transform, color: tint.lowPowerFill ? .systemYellow : ink)
+        }
+
+        let badgeColor = tint.warningBadge ? NSColor.systemRed : ink
+        switch badge {
+        case .none:
+            break
+        case .chargingBolt:
+            drawBolt(transform: transform, context: context, color: badgeColor)
+        case .pluggedHolding:
+            drawPlug(transform: transform, context: context, color: badgeColor)
+        }
+
+        context.restoreGState()
+    }
+
+    /// Asset paths start with the level fill as their own subpath when the
+    /// level is above zero; the remaining three subpaths are the shell.
+    private static func splitFillSubpath(_ pathData: String) -> (fill: String?, shell: String) {
+        let starts = pathData.indices.filter { pathData[$0] == "M" }
+        guard starts.count >= 4 else {
+            return (nil, pathData)
+        }
+        let boundary = starts[1]
+        return (String(pathData[..<boundary]), String(pathData[boundary...]))
+    }
+
+    private static func drawBolt(transform: AffineTransform, context: CGContext, color: NSColor = .black) {
         let haloPath = path(from: SymbolPaths.boltHalo)
         haloPath.transform(using: transform)
 
@@ -153,10 +233,10 @@ enum MenuBarStatusItemRenderer {
         haloPath.fill()
         context.restoreGState()
 
-        draw(pathData: SymbolPaths.boltCore, transform: transform)
+        draw(pathData: SymbolPaths.boltCore, transform: transform, color: color)
     }
 
-    private static func drawPlug(transform: AffineTransform, context: CGContext) {
+    private static func drawPlug(transform: AffineTransform, context: CGContext, color: NSColor = .black) {
         let haloPath = path(from: SymbolPaths.plugCore)
         haloPath.transform(using: transform)
         haloPath.lineCapStyle = .round
@@ -171,13 +251,13 @@ enum MenuBarStatusItemRenderer {
         haloPath.stroke()
         context.restoreGState()
 
-        draw(pathData: SymbolPaths.plugCore, transform: transform)
+        draw(pathData: SymbolPaths.plugCore, transform: transform, color: color)
     }
 
-    private static func draw(pathData: String, transform: AffineTransform) {
+    private static func draw(pathData: String, transform: AffineTransform, color: NSColor = .black) {
         let path = path(from: pathData)
         path.transform(using: transform)
-        NSColor.black.setFill()
+        color.setFill()
         path.fill()
     }
 
@@ -342,6 +422,7 @@ enum MenuBarStatusItemRenderer {
     private struct ImageKey: Hashable {
         let assetName: String
         let badge: Badge
+        var tint: Tint = .none
     }
 
     private enum SymbolPaths {

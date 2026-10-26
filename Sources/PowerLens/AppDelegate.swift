@@ -182,7 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             snapshot: presentation.snapshot,
             symbolName: presentation.symbolName,
             batteryBadge: presentation.batteryBadge,
-            statusHeadline: presentation.statusHeadline
+            statusHeadline: presentation.statusHeadline,
+            lowPowerMode: presentation.lowPowerMode,
+            powerWarning: presentation.powerWarning
         )
     }
 
