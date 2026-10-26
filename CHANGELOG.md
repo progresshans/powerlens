@@ -11,6 +11,8 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 - In Low Power Mode, the menu bar battery icon fills yellow, matching the macOS
   battery icon. A sustained charger shortfall adds a red badge instead of
   changing the fill.
+- The Dashboard and popover no longer draw while hidden, which lowers
+  PowerLens's energy use when only its menu bar icon is visible.
 
 ## [0.9.5] - 2026-10-20
 
