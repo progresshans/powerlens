@@ -240,7 +240,9 @@ struct DetailGroupCard: View {
 
 /// A rounded gauge with an optional reference mark (e.g. a charge limit).
 struct BarGauge: View {
-    let fraction: Double
+    /// Nil when the value is unknown: only the track is drawn, so a missing
+    /// reading never looks like zero.
+    let fraction: Double?
     let tint: Color
     var marker: Double?
 
@@ -249,9 +251,11 @@ struct BarGauge: View {
             let width = proxy.size.width
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.08))
-                Capsule()
-                    .fill(tint)
-                    .frame(width: max(8, width * min(max(fraction, 0), 1)))
+                if let fraction {
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: max(8, width * min(max(fraction, 0), 1)))
+                }
                 if let marker {
                     RoundedRectangle(cornerRadius: 1)
                         .fill(.secondary)

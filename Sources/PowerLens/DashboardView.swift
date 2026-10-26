@@ -546,37 +546,16 @@ struct DashboardView: View {
     }
 
     private func chargingMethodCard(_ snapshot: TelemetrySnapshot) -> some View {
-        let state = store.resolvedPowerState?.managedChargingState ?? snapshot.managedChargingState
-        let value: String
-        let caption: String
-        if let limit = Self.chargeLimit(state) {
-            value = Formatters.percent(Double(limit))
-            caption = L10n.tr("battery.charging.limitCaption", Formatters.percent(Double(limit)))
-        } else if case .some(.optimizedCharging) = state {
-            value = L10n.text("battery.charging.optimized")
-            caption = L10n.text("battery.charging.optimizedCaption")
-        } else if case .some(.optimizedHold) = state {
-            value = L10n.text("battery.charging.optimized")
-            caption = L10n.text("battery.charging.optimizedCaption")
-        } else if case .some(.optimizedActive) = state {
-            value = L10n.text("battery.charging.optimized")
-            caption = L10n.text("battery.charging.optimizedCaption")
-        } else {
-            value = L10n.text("battery.charging.default")
-            caption = L10n.text("battery.charging.defaultCaption")
-        }
+        let method = ChargingMethodPresentation(policy: snapshot.chargingPolicyStatus)
 
         return DashboardMetricCard(
             title: L10n.text("battery.charging.title"),
             systemImage: "bolt.batteryblock",
             iconTint: LensPalette.charger,
-            value: value,
-            caption: caption
+            value: method.value,
+            caption: method.caption
         ) {
-            BarGauge(
-                fraction: Self.chargeLimit(state).map { Double($0) / 100 } ?? 1,
-                tint: LensPalette.charger
-            )
+            BarGauge(fraction: method.fraction, tint: LensPalette.charger)
         }
     }
 

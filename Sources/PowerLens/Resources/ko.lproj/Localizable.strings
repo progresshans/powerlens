@@ -448,5 +448,6 @@
 "battery.charging.optimizedCaption" = "평소 쓰는 시간에 맞춰 macOS가 마저 채워요";
 "battery.charging.default" = "기본";
 "battery.charging.defaultCaption" = "macOS 기본 설정으로 충전해요";
+"battery.charging.unknownCaption" = "충전 설정을 확인할 수 없어요";
 "history.subtitle" = "이 Mac에만 저장된 기록이에요";
 "telemetry.label.preference.detail" = "대부분은 ‘자동’으로 두면 돼요";
