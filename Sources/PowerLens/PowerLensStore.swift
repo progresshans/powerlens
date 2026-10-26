@@ -632,6 +632,18 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
+    /// The last hour of saved history for the Dashboard chart. History is
+    /// written once a minute, so callers reload when `historyRevision` changes.
+    func recentPowerHistory() async -> [RecentPowerSample] {
+        let cutoff = now().addingTimeInterval(-RecentPowerSample.window)
+        do {
+            return try await historyStore.loadRecent(since: cutoff).map(RecentPowerSample.init(snapshot:))
+        } catch {
+            recordHistoryFailure(error, operation: "load recent power")
+            return []
+        }
+    }
+
     private func recordTelemetryFailure() {
         lastRefreshAttemptAt = now()
         let failedAttempts = telemetryHealth.failedAttempts + 1

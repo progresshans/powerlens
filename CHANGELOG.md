@@ -6,13 +6,35 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ## [Unreleased]
 
+### Added
+
+- The popover shows the current energy mode and opens Battery settings to
+  change it. Macs with High Power Mode show Automatic, Low Power, or High
+  Power; other Macs show whether Low Power Mode is on.
+- The popover lists up to three apps using the most energy.
+- The Dashboard charts charger and Mac power for the last hour from saved
+  history.
+- Settings previews each menu bar style and describes each telemetry engine.
+
 ### Changed
 
+- Redesigned the popover, Dashboard, and Settings for macOS 26 with Liquid
+  Glass controls, system colors, and system type sizes. Status text now says
+  what is happening and what to do next in plain language, in English and
+  Korean.
+- Power flow is drawn as soft gradient strands whose width follows watts. The
+  battery appears only while it is charging or supplying power. In the
+  popover, a thin light travels along each strand and changed digits roll into
+  place; both run in Core Animation and stop when Reduce Motion is on.
+- The Dashboard now has Now, Battery, and History pages. Power flow and up to
+  two current diagnostics appear on the Now page.
 - In Low Power Mode, the menu bar battery icon fills yellow, matching the macOS
   battery icon. A sustained charger shortfall adds a red badge instead of
   changing the fill.
 - The Dashboard and popover no longer draw while hidden, which lowers
   PowerLens's energy use when only its menu bar icon is visible.
+- Adapter ratings and battery capacities use whole numbers with digit
+  grouping, such as 97W and 6,249 mAh.
 
 ## [0.9.5] - 2026-10-20
 

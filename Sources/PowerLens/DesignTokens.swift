@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Spacing scale. Use these instead of inline magic numbers so padding and
@@ -20,58 +21,86 @@ enum CornerRadius {
     static let xLarge: CGFloat = 22
 }
 
-/// A consistent card surface. Adopts Liquid Glass when available and retains a
-/// defensive layered-material fallback. Use this instead of ad-hoc
-/// `.quaternary.opacity(...)` backgrounds.
+/// Semantic colors. Each energy endpoint keeps one system hue everywhere
+/// (flow ribbons run from source hue to destination hue); status hues are
+/// reserved for state so the two never compete.
+enum LensPalette {
+    static let charger = Color(nsColor: .systemBlue)
+    static let battery = Color(nsColor: .systemGreen)
+    static let mac = Color(nsColor: .systemIndigo)
+    static let lowPower = Color(nsColor: .systemYellow)
+    static let caution = Color(nsColor: .systemOrange)
+    static let warning = Color(nsColor: .systemRed)
+}
+
+extension Color {
+    /// The grouped gray behind window cards, so white cards read as cards.
+    static let lensWindowBackground = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.isDarkLens
+            ? NSColor(srgbRed: 0.118, green: 0.118, blue: 0.125, alpha: 1)
+            : NSColor(srgbRed: 0.961, green: 0.961, blue: 0.969, alpha: 1)
+    })
+
+    /// Content cards inside opaque windows: white in light mode and a faint
+    /// lift in dark mode. Cards carry no shadow.
+    static let lensWindowCard = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.isDarkLens ? NSColor.white.withAlphaComponent(0.07) : .white
+    })
+
+    /// Content sitting on the popover's Liquid Glass. Translucent so the glass
+    /// keeps showing through; never glass on glass.
+    static let lensGlassCard = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.isDarkLens
+            ? NSColor.white.withAlphaComponent(0.08)
+            : NSColor.white.withAlphaComponent(0.55)
+    })
+}
+
+private extension NSAppearance {
+    var isDarkLens: Bool {
+        bestMatch(from: [.aqua, .darkAqua, .vibrantLight, .vibrantDark]).map {
+            $0 == .darkAqua || $0 == .vibrantDark
+        } ?? false
+    }
+}
+
+/// A content card for windows. Liquid Glass belongs to the navigation layer
+/// (sidebar, toolbar, popover), so cards stay solid and shadowless.
 struct CardSurface: ViewModifier {
     var cornerRadius: CGFloat = CornerRadius.large
 
-    @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background(Color.lensWindowCard, in: shape)
+            .overlay {
+                shape.strokeBorder(Color.primary.opacity(0.05), lineWidth: 0.5)
+            }
+    }
+}
 
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
-        } else {
-            content
-                .background(.quaternary.opacity(0.28), in: shape)
-                .overlay {
-                    shape.strokeBorder(.quaternary.opacity(0.42), lineWidth: 0.8)
-                }
-        }
+/// A content plate on top of the popover glass.
+struct GlassCardSurface: ViewModifier {
+    var cornerRadius: CGFloat = CornerRadius.medium
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        content
+            .background(Color.lensGlassCard, in: shape)
+            .overlay {
+                shape.strokeBorder(.white.opacity(0.22), lineWidth: 0.5)
+            }
     }
 }
 
 extension View {
-    /// Applies the standard PowerLens card surface.
+    /// Applies the standard PowerLens window card surface.
     func cardSurface(cornerRadius: CGFloat = CornerRadius.large) -> some View {
         modifier(CardSurface(cornerRadius: cornerRadius))
     }
-}
 
-/// A small glass background for accent chrome (icons, chips). Liquid Glass on
-/// macOS 26+, layered material fallback otherwise.
-private struct AdaptiveGlassBackground<S: Shape>: ViewModifier {
-    let shape: S
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(.regular, in: shape)
-        } else {
-            content
-                .background(.quaternary.opacity(0.26), in: shape)
-                .overlay {
-                    shape
-                        .stroke(.quaternary.opacity(0.5), lineWidth: 0.8)
-                }
-        }
-    }
-}
-
-extension View {
-    func adaptiveGlassBackground<S: Shape>(in shape: S) -> some View {
-        modifier(AdaptiveGlassBackground(shape: shape))
+    /// Applies the translucent plate used inside the menu bar popover.
+    func glassCardSurface(cornerRadius: CGFloat = CornerRadius.medium) -> some View {
+        modifier(GlassCardSurface(cornerRadius: cornerRadius))
     }
 }

@@ -3,9 +3,9 @@ import Foundation
 enum TelemetryDetailRows {
     static func batterySnapshot(_ snapshot: TelemetrySnapshot) -> [(String, String)] {
         [
-            (L10n.text("ui.detail.designCapacity"), snapshot.designCapacityMah.map { "\($0) mAh" } ?? L10n.text("common.none")),
-            (L10n.text("ui.detail.fullChargeCapacity"), snapshot.fullChargeCapacityMah.map { "\($0) mAh" } ?? L10n.text("common.none")),
-            (L10n.text("ui.detail.macOSCapacity"), snapshot.nominalCapacityMah.map { "\($0) mAh" } ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.designCapacity"), snapshot.designCapacityMah.map(Formatters.capacity) ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.fullChargeCapacity"), snapshot.fullChargeCapacityMah.map(Formatters.capacity) ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.macOSCapacity"), snapshot.nominalCapacityMah.map(Formatters.capacity) ?? L10n.text("common.none")),
             (L10n.text("ui.metric.health"), snapshot.chargeHealthPercent.map(Formatters.percent) ?? L10n.text("common.none")),
             (L10n.text("ui.metric.cycles"), snapshot.cycleCount.map(String.init) ?? L10n.text("common.none")),
             (L10n.text("ui.metric.batteryTemp"), snapshot.batteryTemperatureC.map(Formatters.temperature) ?? L10n.text("common.none")),
@@ -34,7 +34,7 @@ enum TelemetryDetailRows {
     static func adapter(_ snapshot: TelemetrySnapshot) -> [(String, String)] {
         [
             (L10n.text("ui.detail.description"), snapshot.adapterDescription ?? L10n.text("common.none")),
-            (L10n.text("ui.detail.maxPower"), snapshot.adapterMaxPowerW.map(Formatters.power) ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.maxPower"), snapshot.adapterMaxPowerW.map(Formatters.ratedPower) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.inputVoltage"), snapshot.adapterVoltageV.map(Formatters.voltage) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.inputCurrent"), snapshot.adapterCurrentA.map(Formatters.current) ?? L10n.text("common.none")),
         ]
@@ -51,9 +51,9 @@ enum TelemetryDetailRows {
 
     static func batteryPack(_ snapshot: TelemetrySnapshot) -> [(String, String)] {
         [
-            (L10n.text("ui.detail.designCapacity"), snapshot.designCapacityMah.map { "\($0) mAh" } ?? L10n.text("common.none")),
-            (L10n.text("ui.detail.fullChargeCapacity"), snapshot.fullChargeCapacityMah.map { "\($0) mAh" } ?? L10n.text("common.none")),
-            (L10n.text("ui.detail.macOSCapacity"), snapshot.nominalCapacityMah.map { "\($0) mAh" } ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.designCapacity"), snapshot.designCapacityMah.map(Formatters.capacity) ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.fullChargeCapacity"), snapshot.fullChargeCapacityMah.map(Formatters.capacity) ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.macOSCapacity"), snapshot.nominalCapacityMah.map(Formatters.capacity) ?? L10n.text("common.none")),
             (L10n.text("ui.detail.serial"), snapshot.serialNumber ?? L10n.text("common.none")),
         ]
     }
@@ -71,5 +71,44 @@ enum TelemetryDetailRows {
             ),
             (L10n.text("ui.detail.timeToEmpty"), Formatters.minutes(snapshot.timeToEmptyMinutes)),
         ]
+    }
+
+    /// Battery facts behind the popover's "Show details" disclosure.
+    static func popoverBattery(_ snapshot: TelemetrySnapshot) -> [(String, String)] {
+        let none = L10n.text("common.none")
+        return [
+            (L10n.text("ui.detail.designCapacity"), snapshot.designCapacityMah.map(Formatters.capacity) ?? none),
+            (L10n.text("ui.detail.fullChargeCapacity"), snapshot.fullChargeCapacityMah.map(Formatters.capacity) ?? none),
+            (L10n.text("ui.detail.macOSCapacity"), snapshot.nominalCapacityMah.map(Formatters.capacity) ?? none),
+            (L10n.text("ui.metric.cycles"), snapshot.cycleCount.map { L10n.tr("format.cycleCount", $0) } ?? none),
+            (L10n.text("ui.detail.voltageCurrent"), voltageAndCurrent(
+                voltage: snapshot.batteryVoltageV.map(Formatters.voltage),
+                current: snapshot.batteryCurrentA.map { _ in Formatters.batteryCurrentFlow(snapshot.batteryCurrentA) }
+            )),
+            (
+                L10n.text("ui.detail.batteryPower"),
+                Formatters.batteryPowerFlow(snapshot.batteryPowerW, isApproximate: snapshot.batteryPowerIsDerived)
+            ),
+        ]
+    }
+
+    /// Charger facts behind the popover's "Show details" disclosure.
+    static func popoverCharger(_ snapshot: TelemetrySnapshot) -> [(String, String)] {
+        [
+            (L10n.text("ui.detail.maxPower"), snapshot.adapterMaxPowerW.map(Formatters.ratedPower) ?? L10n.text("common.none")),
+            (L10n.text("ui.detail.voltageCurrent"), voltageAndCurrent(
+                voltage: snapshot.adapterVoltageV.map(Formatters.voltage),
+                current: snapshot.adapterCurrentA.map(Formatters.current)
+            )),
+        ]
+    }
+
+    private static func voltageAndCurrent(voltage: String?, current: String?) -> String {
+        switch (voltage, current) {
+        case let (voltage?, current?): "\(voltage) · \(current)"
+        case let (voltage?, nil): voltage
+        case let (nil, current?): current
+        case (nil, nil): L10n.text("common.none")
+        }
     }
 }

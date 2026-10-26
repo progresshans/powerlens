@@ -9,6 +9,15 @@ enum Formatters {
         number(value, fractionDigits: 1, suffix: "W")
     }
 
+    static func capacity(_ mah: Int) -> String {
+        number(Double(mah), fractionDigits: 0, suffix: " mAh")
+    }
+
+    /// Adapter ratings are whole watts on the box, so show them that way.
+    static func ratedPower(_ value: Double) -> String {
+        number(value, fractionDigits: 0, suffix: "W")
+    }
+
     static func batteryPowerFlow(
         _ value: Double?,
         isApproximate: Bool = false
@@ -62,6 +71,11 @@ enum Formatters {
 
     static func temperature(_ value: Double) -> String {
         number(value, fractionDigits: 1, suffix: "°C")
+    }
+
+    /// Glanceable temperature for tiles, where a tenth of a degree is noise.
+    static func wholeTemperature(_ value: Double) -> String {
+        number(value, fractionDigits: 0, suffix: "°C")
     }
 
     static func minutes(_ value: Int?) -> String {

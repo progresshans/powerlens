@@ -27,6 +27,8 @@ the hardware expose:
 - battery serial number or hardware battery identifier
 - adapter description, negotiated input power, voltage, current, and rated power
 - estimated system load and low power mode state
+- the current energy mode (Automatic, Low Power, or High Power) read with
+  `pmset -g`, shown in the popover and not stored
 - thermal state
 - the frontmost app name and bundle identifier for the high energy usage badge
 

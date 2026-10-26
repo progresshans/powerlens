@@ -6,6 +6,47 @@ import Testing
 struct PowerLensStoreTests {
     @Test
     @MainActor
+    func recentPowerHistoryReadsSavedHistoryAsBalancedReadings() async {
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let charging = makeTelemetrySnapshot(
+            timestamp: now.addingTimeInterval(-120),
+            isCharging: true,
+            batteryCurrentA: 3.44,
+            batteryPowerW: -46.4,
+            adapterInputPowerW: 53.6,
+            systemLoadW: 7.2
+        )
+        let onBattery = makeTelemetrySnapshot(
+            timestamp: now.addingTimeInterval(-60),
+            powerSource: .battery,
+            externalConnected: false,
+            timeToEmptyMinutes: 240,
+            batteryCurrentA: -0.82,
+            batteryPowerW: 9.1,
+            adapterInputPowerW: 0,
+            systemLoadW: 9.1,
+            adapterMaxPowerW: nil
+        )
+        let store = PowerLensStore(
+            telemetryReader: CountingTelemetryReader(snapshot: onBattery),
+            historyStore: StubHistoryStore(loadedSnapshots: [charging, onBattery]),
+            energySampler: EmptyEnergySampler(),
+            startsAutomatically: false,
+            now: { now }
+        )
+
+        let samples = await store.recentPowerHistory()
+
+        #expect(samples.map(\.date) == [charging.timestamp, onBattery.timestamp])
+        #expect(abs((samples.first?.inputW ?? 0) - 53.6) < 0.05)
+        #expect(abs((samples.first?.systemW ?? 0) - 7.2) < 0.05)
+        // On battery the charger contributes nothing, not "unknown".
+        #expect(samples.last?.inputW == 0)
+        #expect(abs((samples.last?.systemW ?? 0) - 9.1) < 0.05)
+    }
+
+    @Test
+    @MainActor
     func insightsAreInvalidatedAfterPersistenceCompletesButNotAfterReads() async {
         let snapshot = makeTelemetrySnapshot()
         let gate = HistoryAppendGate()

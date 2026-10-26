@@ -310,14 +310,14 @@ private struct BatteryLevelChartCard: View {
                             x: .value(timeLabel, point.bucketStart),
                             y: .value(batteryLabel, level)
                         )
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(LensPalette.battery)
                         .interpolationMethod(.monotone)
 
                         AreaMark(
                             x: .value(timeLabel, point.bucketStart),
                             y: .value(batteryLabel, level)
                         )
-                        .foregroundStyle(.blue.opacity(0.12))
+                        .foregroundStyle(LensPalette.battery.opacity(0.14))
                         .interpolationMethod(.monotone)
                     }
                 }
@@ -404,9 +404,9 @@ private struct PowerFlowChartCard: View {
                 }
             }
             .chartForegroundStyleScale([
-                inputName: Color.green,
-                loadName: Color.orange,
-                batteryName: Color.purple,
+                inputName: LensPalette.charger,
+                loadName: LensPalette.mac,
+                batteryName: LensPalette.battery,
             ])
             .modifier(ChartXSelectionModifier(selection: $selectedDate))
             .accessibilityLabel(L10n.text("insights.chart.power.title"))

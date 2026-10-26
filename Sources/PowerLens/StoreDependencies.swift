@@ -74,3 +74,27 @@ enum HistoryHealth: Equatable, Sendable {
     case available
     case degraded
 }
+
+/// One point of the Dashboard's last-hour chart, read from saved history.
+struct RecentPowerSample: Equatable, Sendable, Identifiable {
+    static let window: TimeInterval = 3600
+
+    let date: Date
+    let inputW: Double?
+    let systemW: Double?
+
+    var id: Date { date }
+}
+
+extension RecentPowerSample {
+    /// Uses the same balanced values as the live readouts, so the chart agrees
+    /// with the cards above it.
+    init(snapshot: TelemetrySnapshot) {
+        let readings = PowerFlowReadings(snapshot: snapshot)
+        self.init(
+            date: snapshot.timestamp,
+            inputW: snapshot.externalConnected ? readings.inputPower?.watts : 0,
+            systemW: readings.systemPower?.watts
+        )
+    }
+}
