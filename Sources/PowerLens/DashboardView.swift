@@ -185,7 +185,7 @@ struct DashboardView: View {
     private func nowPage(_ snapshot: TelemetrySnapshot) -> some View {
         let status = PowerStatusPresentation(snapshot: snapshot, resolvedState: store.resolvedPowerState)
         let readings = PowerFlowReadings(snapshot: snapshot)
-        let graph = PowerFlowGraph(readings: readings)
+        let graph = PowerFlowGraph(model: PowerFlowPresentationModel(snapshot: snapshot))
 
         return VStack(alignment: .leading, spacing: 20) {
             pageHeader(

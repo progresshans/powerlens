@@ -4,7 +4,7 @@ import Testing
 
 struct PowerFlowGraphTests {
     private func graph(_ snapshot: TelemetrySnapshot) -> PowerFlowGraph {
-        PowerFlowGraph(readings: PowerFlowReadings(snapshot: snapshot))
+        PowerFlowGraph(model: PowerFlowPresentationModel(snapshot: snapshot))
     }
 
     private var chargingSnapshot: TelemetrySnapshot {
@@ -92,6 +92,23 @@ struct PowerFlowGraphTests {
         #expect(graph.state == .unknown)
         #expect(graph.links.isEmpty)
         #expect(graph.sources.first?.value == L10n.text("common.none"))
+    }
+
+    @Test
+    func unbalancedFlowKeepsTheKnownMacReading() {
+        // Battery direction is known but its wattage is missing, so the flow
+        // cannot balance. The system sensor still reads 15 W, as the menu bar
+        // and the Dashboard card show.
+        let graph = graph(makeTelemetrySnapshot(
+            batteryVoltageV: nil, batteryCurrentA: -1, batteryPowerW: nil,
+            adapterInputPowerW: 10, systemLoadW: 15
+        ))
+
+        #expect(graph.state == .unknown)
+        #expect(graph.links.isEmpty)
+        #expect(graph.sources.map(\.value) == [L10n.text("common.none")])
+        #expect(graph.destinations.map(\.endpoint) == [.mac])
+        #expect(graph.destinations.first?.value == "15.0W")
     }
 
     @Test

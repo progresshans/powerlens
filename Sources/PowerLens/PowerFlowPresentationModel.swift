@@ -52,6 +52,8 @@ struct PowerFlowEndpointModel: Equatable, Sendable {
     let tooltip: String
     let systemImage: String
     let role: PowerFlowEndpointRole
+    /// The displayed watts behind `value`, for sizing the drawn strands.
+    var watts: Double?
 
     var identity: String {
         "\(title)|\(systemImage)"
@@ -69,6 +71,9 @@ enum PowerFlowConnectionStyle: Equatable, Sendable {
     case hidden
 }
 
+/// Which routes the power flow shows and the value on each end. The popover
+/// and Dashboard both draw from this model through `PowerFlowGraph`, so the
+/// flow tests cover what is on screen.
 struct PowerFlowPresentationModel: Equatable, Sendable {
     let state: PowerFlowDiagramState
     let statusTitle: String
@@ -150,7 +155,8 @@ struct PowerFlowPresentationModel: Equatable, Sendable {
             value: power?.formatted ?? L10n.text("common.none"),
             tooltip: tooltip,
             systemImage: systemImage,
-            role: role
+            role: role,
+            watts: power?.watts
         )
     }
 }

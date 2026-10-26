@@ -3,8 +3,8 @@ import Foundation
 /// The flow drawn by `PowerFlowRibbonDiagram`: sources on the left, the places
 /// the power goes on the right, and one link per route sized by watts.
 ///
-/// Values come from `PowerFlowReadings`, so the displayed numbers balance the
-/// same way they always have; this type only decides what to draw.
+/// Built from `PowerFlowPresentationModel`, which decides the routes and the
+/// value on each end; this type only lays them out as nodes and links.
 struct PowerFlowGraph: Equatable, Sendable {
     enum Endpoint: Hashable, Sendable {
         case charger
@@ -47,61 +47,47 @@ struct PowerFlowGraph: Equatable, Sendable {
         self.links = links
     }
 
-    init(readings: PowerFlowReadings) {
-        let none = L10n.text("common.none")
-        func node(_ endpoint: Endpoint, _ power: DisplayedPowerMeasurement?) -> Node {
-            Node(endpoint: endpoint, watts: power?.watts, value: power?.formatted ?? none)
+    init(model: PowerFlowPresentationModel) {
+        func endpoint(_ role: PowerFlowEndpointRole) -> Endpoint {
+            switch role {
+            case .input: .charger
+            case .battery, .charge: .battery
+            case .system: .mac
+            }
+        }
+        func node(_ model: PowerFlowEndpointModel) -> Node {
+            Node(endpoint: endpoint(model.role), watts: model.watts, value: model.value)
         }
 
-        guard readings.hasBalancedFlow else {
-            state = .unknown
-            sources = [node(readings.isExternalPower ? .charger : .battery, nil)]
-            destinations = [node(.mac, nil)]
-            links = []
-            return
+        var sources: [Node] = []
+        var destinations: [Node] = []
+        for route in model.routes {
+            let source = node(route.source)
+            let target = node(route.target)
+            if !sources.contains(where: { $0.endpoint == source.endpoint }) {
+                sources.append(source)
+            }
+            if !destinations.contains(where: { $0.endpoint == target.endpoint }) {
+                destinations.append(target)
+            }
         }
 
-        state = readings.state
-        let input = readings.inputPower
-        let battery = readings.batteryPower
-        let system = readings.systemPower
-
-        switch readings.state {
-        case .charging:
-            sources = [node(.charger, input)]
-            destinations = [node(.mac, system), node(.battery, battery)]
-            links = [
-                Self.link(.charger, .mac, system),
-                Self.link(.charger, .battery, battery),
-            ].compactMap { $0 }
-        case .underpowered:
-            sources = [node(.charger, input), node(.battery, battery)]
-            destinations = [node(.mac, system)]
-            links = [
-                Self.link(.charger, .mac, input),
-                Self.link(.battery, .mac, battery),
-            ].compactMap { $0 }
-        case .discharging:
-            sources = [node(.battery, battery ?? system)]
-            destinations = [node(.mac, system)]
-            links = [Self.link(.battery, .mac, system ?? battery)].compactMap { $0 }
-        case .holding, .directPower:
-            // The battery only appears while power moves in or out of it.
-            sources = [node(.charger, input ?? system)]
-            destinations = [node(.mac, system)]
-            links = [Self.link(.charger, .mac, system ?? input)].compactMap { $0 }
-        case .unknown:
-            sources = [node(readings.isExternalPower ? .charger : .battery, nil)]
-            destinations = [node(.mac, nil)]
-            links = []
-        }
-    }
-
-    private static func link(_ from: Endpoint, _ to: Endpoint, _ power: DisplayedPowerMeasurement?) -> Link? {
-        guard let watts = power?.watts, watts > 0 else {
-            return nil
-        }
-        return Link(from: from, to: to, watts: watts)
+        state = model.state
+        self.sources = sources
+        self.destinations = destinations
+        // Unbalanced readings keep their known values but draw no routes.
+        links = model.showsConnections ? model.routes.compactMap { route in
+            // A split shares its source and a merge shares its target, so the
+            // smaller end is the power carried by this route.
+            guard let sourceWatts = route.source.watts, let targetWatts = route.target.watts else {
+                return nil
+            }
+            let watts = min(sourceWatts, targetWatts)
+            guard watts > 0 else {
+                return nil
+            }
+            return Link(from: endpoint(route.source.role), to: endpoint(route.target.role), watts: watts)
+        } : []
     }
 }
 

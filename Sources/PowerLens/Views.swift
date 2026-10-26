@@ -57,7 +57,7 @@ struct MenuBarRootView: View {
             hero(title: status.title, subtitle: status.subtitle)
 
             PowerFlowRibbonDiagram(
-                graph: PowerFlowGraph(readings: readings),
+                graph: PowerFlowGraph(model: PowerFlowPresentationModel(snapshot: snapshot)),
                 style: .compact,
                 batteryLevel: snapshot.batteryLevel,
                 tooltip: PowerFlowTooltip.text(snapshot: snapshot, readings: readings)
