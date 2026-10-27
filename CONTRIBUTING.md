@@ -121,6 +121,39 @@ account and no personal data or release credentials.
 - Never commit certificates, notarization credentials, `.env` files, Sparkle
   private keys, exported user history, or battery identifiers.
 
+## History Schema Upgrades and Recovery
+
+Schema v5 adds a versioned `measurement_payload` to new samples. It preserves
+the original timestamp, numeric measurements, and measurement-set provenance
+used by live power calculations. Existing scaled integer columns remain the
+SQL aggregation contract. Legacy rows retain their original precision and
+unknown provenance; migration must not infer missing sensor sources. Chart
+identity comes from `sample_id`, not the timestamp. An unreadable payload is a
+read failure, not an empty result or a fallback to differently rounded values.
+
+Before upgrading an existing schema, SQLite's backup API creates a copy beside
+the database named after the schema it holds, such as
+`history.sqlite3.schema-v4.sqlite3` before the v4 to v5 upgrade, including
+committed WAL pages. Each upgrade keeps its own copy. A standalone backup has
+owner-only permissions, is never overwritten, and must be completed before the
+transactional migration starts. A failed migration rolls back. Each copy is kept
+for 14 days after it is created, even if its samples pass the retention window,
+so a downgrade soon after an update stays possible. The daily retention pass
+then deletes it, also under `Forever`, and deletes every copy at once when
+long-term history is set to `Don't keep`. Its age comes from the file's creation
+date; a copy with no readable date is deleted. The same pass removes temporary
+files left by an interrupted backup. These copies are short-lived recovery aids,
+not a separate permanent archive.
+
+To restore an available backup, quit PowerLens first. Move the current database
+and any matching `-wal` and `-shm` files together into a separate recovery
+directory, then copy the backup whose schema the older app supports to
+`history.sqlite3` before starting that app. Keep the moved files: the backup does not include records written
+after the upgrade. Do not lower `PRAGMA user_version` to make a newer database
+look compatible. After 14 days, or once `Don't keep` has removed the backup,
+preserve the current database and export needed records before planning a
+downgrade.
+
 ## Dependency and Security Updates
 
 Routine Dependabot version updates target `develop` and follow the same review

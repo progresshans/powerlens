@@ -11,8 +11,10 @@ protocol EnergyModeReading: Sendable {
 protocol HistoryStoring: Sendable {
     func latestSampleTimestamp() async throws -> Date?
     func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot]
+    func loadRecentRecords(since cutoffDate: Date) async throws -> [StoredTelemetrySample]
     func append(_ snapshot: TelemetrySnapshot) async throws
     func purge(olderThan cutoffDate: Date, rollupBucketSeconds: Int?) async throws
+    func removeExpiredBackups(now: Date, discardingAll: Bool) async throws
     func summary(for range: DateInterval) async throws -> HistorySummary
     func aggregatedSeries(
         for range: DateInterval,
@@ -28,6 +30,14 @@ protocol HistoryStoring: Sendable {
 }
 
 extension HistoryStoring {
+    func removeExpiredBackups(now: Date, discardingAll: Bool) async throws {}
+
+    func loadRecentRecords(since cutoffDate: Date) async throws -> [StoredTelemetrySample] {
+        try await loadRecent(since: cutoffDate).map {
+            StoredTelemetrySample(id: .snapshot($0.id), snapshot: $0)
+        }
+    }
+
     func loadInsights(for range: HistoryRange, now: Date) async throws -> InsightsData {
         let interval = range.interval(now: now)
         try Task.checkCancellation()
@@ -86,8 +96,7 @@ struct RecentPowerSample: Equatable, Sendable, Identifiable {
     let date: Date
     let inputW: Double?
     let systemW: Double?
-
-    var id: Date { date }
+    var id: StoredTelemetrySample.ID = .snapshot(UUID())
 }
 
 extension RecentPowerSample {
@@ -100,5 +109,11 @@ extension RecentPowerSample {
             inputW: snapshot.externalConnected ? readings.inputPower?.watts : 0,
             systemW: readings.systemPower?.watts
         )
+        id = .snapshot(snapshot.id)
+    }
+
+    init(record: StoredTelemetrySample) {
+        self.init(snapshot: record.snapshot)
+        id = record.id
     }
 }

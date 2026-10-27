@@ -502,13 +502,15 @@ struct PowerLensStoreTests {
         )
 
         for _ in 0..<200 {
-            if await historyStore.purgedCutoffDates().count >= 1 {
+            // Backup cleanup follows the purge in the same pass.
+            if await historyStore.backupCleanupCount() >= 1 {
                 break
             }
             try? await Task.sleep(for: .milliseconds(5))
         }
 
         #expect(await historyStore.purgedCutoffDates().count == 1)
+        #expect(await historyStore.backupCleanupCount() == 1)
         withExtendedLifetime(store) {}
     }
 
@@ -1550,6 +1552,7 @@ private actor ControlledTelemetryReader: TelemetryReading {
 private actor StubHistoryStore: HistoryStoring {
     private var appended: [TelemetrySnapshot] = []
     private var purgedCutoffs: [Date] = []
+    private var backupCleanups = 0
     private var requestedAggregatedRanges: [DateInterval] = []
     private var requestedRollupRanges: [DateInterval] = []
     private let failAppend: Bool
@@ -1608,6 +1611,10 @@ private actor StubHistoryStore: HistoryStoring {
         purgedCutoffs.append(cutoffDate)
     }
 
+    func removeExpiredBackups(now: Date, discardingAll: Bool) async throws {
+        backupCleanups += 1
+    }
+
     func summary(for range: DateInterval) async throws -> HistorySummary {
         .empty(range: range)
     }
@@ -1639,6 +1646,10 @@ private actor StubHistoryStore: HistoryStoring {
 
     func purgedCutoffDates() -> [Date] {
         purgedCutoffs
+    }
+
+    func backupCleanupCount() -> Int {
+        backupCleanups
     }
 
     func aggregatedRanges() -> [DateInterval] {

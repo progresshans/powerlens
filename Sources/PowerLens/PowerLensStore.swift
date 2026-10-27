@@ -173,18 +173,26 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        guard let window = RawHistoryWindow.current.seconds else {
-            return  // Full-detail history kept forever: nothing to prune.
-        }
-
         lastPurgeAt = current
+        let window = RawHistoryWindow.current.seconds
+        let bucketSeconds = LongTermResolution.current.bucketSeconds
         do {
-            try await historyStore.purge(
-                olderThan: current.addingTimeInterval(-window),
-                rollupBucketSeconds: LongTermResolution.current.bucketSeconds
+            // A nil window keeps full-detail history forever: nothing to prune.
+            if let window {
+                try await historyStore.purge(
+                    olderThan: current.addingTimeInterval(-window),
+                    rollupBucketSeconds: bucketSeconds
+                )
+            }
+            // Pre-upgrade copies expire on their own schedule in every mode.
+            try await historyStore.removeExpiredBackups(
+                now: current,
+                discardingAll: HistoryDatabaseBackup.discardsAll(rawWindow: window, rollupBucketSeconds: bucketSeconds)
             )
             recordHistorySuccess()
-            historyRevision += 1
+            if window != nil {
+                historyRevision += 1
+            }
         } catch {
             recordHistoryFailure(error, operation: "purge history")
         }
@@ -676,9 +684,11 @@ final class PowerLensStore: ObservableObject {
     /// The last hour of saved history for the Dashboard chart. History is
     /// written once a minute, so callers reload when `historyRevision` changes.
     func recentPowerHistory() async -> [RecentPowerSample] {
-        let cutoff = now().addingTimeInterval(-RecentPowerSample.window)
+        let end = now()
+        let cutoff = end.addingTimeInterval(-RecentPowerSample.window)
         do {
-            return try await historyStore.loadRecent(since: cutoff).map(RecentPowerSample.init(snapshot:))
+            let records = try await historyStore.loadRecentRecords(since: cutoff)
+            return records.filter { $0.snapshot.timestamp <= end }.map(RecentPowerSample.init(record:))
         } catch {
             recordHistoryFailure(error, operation: "load recent power")
             return []

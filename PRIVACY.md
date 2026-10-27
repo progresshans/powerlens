@@ -64,6 +64,21 @@ telemetry samples, and the frontmost high energy usage app name/bundle
 identifier. This data stays on the Mac unless you manually share, back up, or
 sync that directory.
 
+New telemetry samples also preserve the original timestamp, numeric measurement
+precision, and measurement-set source so saved power charts use the same inputs
+as the live display. This payload does not add app or hardware identifiers or
+store charging-policy or energy-mode metadata.
+
+Before upgrading an older history schema, PowerLens creates a local recovery
+copy in the same folder, named after the schema it holds, such as
+`history.sqlite3.schema-v4.sqlite3`. Each copy contains the pre-upgrade
+database, including its existing identifiers, and is readable only by the file
+owner. It lets you go back to the previous version soon after an update. A copy
+is kept for 14 days, even if some of its samples are older than your retention
+window, and the next daily cleanup after that deletes it, including with
+**Forever**. With **Don't keep**, copies are deleted at the next cleanup instead
+of after 14 days. They are not uploaded.
+
 The History settings control retention:
 
 - full-detail telemetry samples remain for the selected window
