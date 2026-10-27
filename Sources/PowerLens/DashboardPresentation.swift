@@ -9,7 +9,7 @@ struct ChargerUsagePresentation: Equatable {
     /// Share of the rating in use, or nil when unknown.
     let fraction: Double?
 
-    init(snapshot: TelemetrySnapshot, readings: PowerFlowReadings) {
+    init(snapshot: TelemetrySnapshot, readings: PowerFlowReadings, resolvedState: ResolvedPowerState? = nil) {
         guard snapshot.externalConnected else {
             value = L10n.text("common.none")
             unit = nil
@@ -19,7 +19,7 @@ struct ChargerUsagePresentation: Equatable {
         }
 
         let input = readings.inputPower?.watts
-        let rated = snapshot.adapterMaxPowerW.flatMap { $0 > 0 ? $0 : nil }
+        let rated = snapshot.adapterMaxPowerW.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         value = input.map(Formatters.power) ?? L10n.text("common.none")
         unit = rated.map { "/ \(Formatters.ratedPower($0))" }
 
@@ -36,6 +36,10 @@ struct ChargerUsagePresentation: Equatable {
 
         let used = input / rated
         fraction = used
+        if resolvedState?.powerDeliveryState == .sustainedShortfall {
+            caption = L10n.text("charger.usage.shortfall")
+            return
+        }
         caption = switch used {
         case ..<0.35: L10n.text("charger.usage.light")
         case ..<0.7: L10n.text("charger.usage.half")

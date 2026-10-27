@@ -99,7 +99,7 @@ struct LivePowerPresentation {
         battery = .battery(snapshot: snapshot, resolvedState: resolvedState)
         health = .health(snapshot: snapshot)
         temperature = .temperature(snapshot: snapshot)
-        charger = ChargerUsagePresentation(snapshot: snapshot, readings: readings)
+        charger = ChargerUsagePresentation(snapshot: snapshot, readings: readings, resolvedState: resolvedState)
         self.diagnostics = isAwaitingSource ? []
             : snapshot.diagnosticsExcludingPrimaryStatus(diagnostics, resolvedState: resolvedState)
         notice = isAwaitingSource ? nil

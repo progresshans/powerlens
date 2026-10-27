@@ -137,19 +137,13 @@ struct PowerNotice: Equatable, Sendable {
         diagnostics: [DiagnosticItem]
     ) -> PowerNotice? {
         if snapshot.externalConnected, resolvedState?.powerDeliveryState == .sustainedShortfall {
-            let message: String
-            if let rated = snapshot.adapterMaxPowerW,
-               let system = PowerFlowReadings(snapshot: snapshot).systemPower {
-                message = L10n.tr("notice.shortfall.message", system.formatted, Formatters.ratedPower(rated))
-            } else {
-                message = L10n.text("notice.shortfall.messageGeneric")
+            // The confirmed diagnostic owns both the evidence and the copy.
+            // A delivery shortfall does not identify the adapter as its cause.
+            if let item = diagnostics.first(where: { $0.kind == .powerDeliveryShortfall }) {
+                return PowerNotice(tone: .warning, symbol: "exclamationmark.triangle.fill",
+                                   title: item.title, message: item.message)
             }
-            return PowerNotice(
-                tone: .warning,
-                symbol: "exclamationmark.triangle.fill",
-                title: L10n.text("notice.shortfall.title"),
-                message: message
-            )
+            return nil
         }
 
         if snapshot.externalConnected, resolvedState?.powerDeliveryState == .transientBatteryAssist {

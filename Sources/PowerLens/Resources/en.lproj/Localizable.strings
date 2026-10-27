@@ -101,7 +101,7 @@
 
 "status.runningOnBattery" = "Running on battery";
 "status.chargingFromExternalPower" = "Charging the battery";
-"status.adapterBatteryAssist" = "Charger isn’t keeping up";
+"status.adapterBatteryAssist" = "Not enough power coming in";
 "status.chargedHolding" = "Charged and holding";
 "status.holdingCurrentLevel" = "The charger is enough";
 "status.externalPowerConnected" = "Charger connected";
@@ -140,8 +140,8 @@
 
 "diag.manualLimit.chargingBeyond.message" = "The charge limit is still set. macOS battery management or a Charge to Full Now request can charge past it. PowerLens can observe the current power flow, but cannot determine macOS's intended stopping percentage.";
 "diag.manualLimit.above.message" = "The charge limit is still set, and the battery is currently above it. macOS battery management or a Charge to Full Now request can produce this state. PowerLens cannot determine the earlier cause or intended target percentage.";
-"diag.powerDeliveryShortfall.title" = "Charger isn’t keeping up";
-"diag.powerDeliveryShortfall.message" = "Coming in: %@. Your Mac is using %@. The battery is covering the difference.";
+"diag.powerDeliveryShortfall.title" = "The battery is covering the difference";
+"diag.powerDeliveryShortfall.message" = "Coming in: %@. Your Mac is using %@.";
 "diag.temperatureHigh.title" = "Battery is hot";
 "diag.temperatureHigh.message" = "It’s %@ right now. Charging may slow down for a while.";
 "diag.healthWear.title" = "Battery is somewhat worn";
@@ -309,7 +309,7 @@
 "insights.health.empty" = "Battery health history builds up as capacity readings change over days and weeks.";
 
 "notifications.toggle" = "Notifications";
-"notifications.description" = "Get notified when the charger isn’t keeping up or the battery gets hot";
+"notifications.description" = "Get notified when not enough power is coming in or the battery gets hot";
 "insights.export" = "Export";
 "insights.export.failed.title" = "Could Not Export History";
 "insights.export.noSamples" = "No retained history samples could be loaded for this export.";
@@ -353,7 +353,7 @@
 "capsule.remeasuring" = "Measuring Again";
 "status.title.timeRemaining" = "%@ left on battery";
 "status.subtitle.macUsing" = "Your Mac is using %@ right now";
-"status.title.shortfall" = "Charger isn’t keeping up";
+"status.title.shortfall" = "Not enough power coming in";
 "status.subtitle.shortfall" = "Your Mac is using %@ more than is coming in";
 "status.title.assist" = "Battery is helping out briefly";
 "status.subtitle.assist" = "Your Mac is using %@ more than the charger provides";
@@ -363,9 +363,6 @@
 "status.subtitle.holding" = "The battery is resting at %@";
 "status.title.sourceTransition" = "Power source changed";
 "status.subtitle.sourceTransition" = "Previous values are dimmed while new ones come in";
-"notice.shortfall.title" = "Try a higher-wattage charger";
-"notice.shortfall.message" = "Your Mac is using %@, and this charger supplies up to %@.";
-"notice.shortfall.messageGeneric" = "This charger can’t keep up with what your Mac is using.";
 "notice.assist.title" = "A short assist is fine";
 "notice.assist.message" = "If it continues, you’ll see it here right away.";
 "notice.unavailable.title" = "Try another measurement method?";
@@ -421,6 +418,7 @@
 "charger.usage.half" = "Using about half of its maximum";
 "charger.usage.high" = "Close to its maximum";
 "charger.usage.full" = "Using nearly all of its maximum";
+"charger.usage.shortfall" = "Less than your Mac is using";
 "battery.title.good" = "Battery is in good shape";
 "battery.title.aged" = "Battery is somewhat worn";
 "battery.title.service" = "Time to replace the battery";

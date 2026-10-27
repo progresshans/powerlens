@@ -56,6 +56,24 @@ struct LivePresentationIntegrationTests {
     }
 
     @Test
+    func confirmedShortfallHasOneInterpretationAndDoesNotAssignAHardwareCause() {
+        let snapshot = makeTelemetrySnapshot(timeToEmptyMinutes: 84, batteryVoltageV: 12.38,
+            batteryCurrentA: -0.54, batteryPowerW: 6.7, adapterInputPowerW: 20.9, systemLoadW: 28.6)
+        var tracker = PowerStateTracker(configuration: .init(transientAssistGrace: 0, shortfallEvidenceConfirmation: 0))
+        let resolved = tracker.resolve(snapshot)
+        #expect(resolved.powerDeliveryState == .sustainedShortfall)
+        let diagnostics = snapshot.diagnostics(resolvedState: resolved)
+        let presentation = LivePowerPresentation(snapshot: snapshot, resolvedState: resolved, diagnostics: diagnostics, isAwaitingSource: false)
+        #expect(presentation.charger.caption == L10n.text("charger.usage.shortfall"))
+        #expect(presentation.notice?.title == diagnostics.first?.title)
+        #expect(presentation.notice?.message == diagnostics.first?.message)
+        // Each surface adds something instead of repeating the headline.
+        #expect(presentation.notice?.title != presentation.status.title)
+        #expect(presentation.charger.caption != presentation.status.title)
+        #expect(diagnostics.map(\.id) == snapshot.diagnostics(resolvedState: resolved).map(\.id))
+    }
+
+    @Test
     func workDemandMatchesConsumersRatherThanAnyOpenWindow() {
         var activity = PresentationActivity(settings: true)
         #expect(activity.needsLiveReadings && !activity.needsEnergyApps)

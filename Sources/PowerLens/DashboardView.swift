@@ -306,7 +306,7 @@ struct DashboardView: View {
     }
 
     private func chargerCard(_ snapshot: TelemetrySnapshot, readings: PowerFlowReadings) -> some View {
-        let usage = ChargerUsagePresentation(snapshot: snapshot, readings: readings)
+        let usage = ChargerUsagePresentation(snapshot: snapshot, readings: readings, resolvedState: store.resolvedPowerState)
 
         return DashboardMetricCard(
             title: L10n.text("flow.node.charger"),
