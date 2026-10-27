@@ -11,7 +11,11 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let popoverController = NSHostingController(rootView: AnyView(EmptyView()))
     private let popoverSizingController = NSHostingController(rootView: AnyView(EmptyView()))
+    private let visibility = PopoverVisibility()
     private var currentMaxContentHeight: CGFloat?
+    /// The SwiftUI content exists only while the popover is open, so a closed
+    /// popover does no work on refreshes or timer ticks.
+    private var isContentMounted = false
 
     var isShown: Bool {
         popover.isShown
@@ -44,6 +48,7 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
             return
         }
 
+        mountContent()
         updateLayout(using: snapshot)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
@@ -54,8 +59,10 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
     }
 
     func refreshLocalizedViews(snapshot: TelemetrySnapshot?) {
-        popoverController.rootView = makeRootView(maxContentHeight: currentMaxContentHeight)
-        popoverSizingController.rootView = makeRootView()
+        guard isContentMounted else {
+            return
+        }
+        mountContent()
         if popover.isShown {
             updateLayout(using: snapshot)
         }
@@ -70,10 +77,14 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidShow(_ notification: Notification) {
+        visibility.isShown = true
+        store.presentationDidBecomeActive()
         onVisibilityChange()
     }
 
     func popoverDidClose(_ notification: Notification) {
+        visibility.isShown = false
+        unmountContent()
         onVisibilityChange()
     }
 
@@ -84,20 +95,33 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
         popoverController.sizingOptions = [.preferredContentSize]
         popoverSizingController.sizingOptions = [.preferredContentSize]
         popover.contentViewController = popoverController
-        popoverController.rootView = makeRootView(maxContentHeight: currentMaxContentHeight)
-        popoverSizingController.rootView = makeRootView()
-        updateLayout(using: store.latest)
     }
 
-    private func makeRootView(maxContentHeight: CGFloat? = nil) -> AnyView {
+    private func mountContent() {
+        popoverController.rootView = makeRootView(maxContentHeight: currentMaxContentHeight, visibility: visibility)
+        popoverSizingController.rootView = makeRootView()
+        isContentMounted = true
+    }
+
+    private func unmountContent() {
+        popoverController.rootView = AnyView(EmptyView())
+        popoverSizingController.rootView = AnyView(EmptyView())
+        isContentMounted = false
+    }
+
+    /// Pass `visibility` only for the on-screen copy, so the off-screen sizing
+    /// copy never animates.
+    private func makeRootView(maxContentHeight: CGFloat? = nil, visibility: PopoverVisibility? = nil) -> AnyView {
         AnyView(
-            MenuBarRootView(
-                store: store,
-                openDashboard: openDashboard,
-                openSettings: openSettings,
-                quitApplication: quitApplication,
-                maxContentHeight: maxContentHeight
-            )
+            PopoverVisibilityReader(visibility: visibility ?? PopoverVisibility()) {
+                MenuBarRootView(
+                    store: store,
+                    openDashboard: openDashboard,
+                    openSettings: openSettings,
+                    quitApplication: quitApplication,
+                    maxContentHeight: maxContentHeight
+                )
+            }
             .environment(\.locale, L10n.locale)
         )
     }
@@ -106,7 +130,7 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
         guard snapshot != nil else {
             if currentMaxContentHeight != nil {
                 currentMaxContentHeight = nil
-                popoverController.rootView = makeRootView()
+                popoverController.rootView = makeRootView(visibility: visibility)
             }
             currentMaxContentHeight = nil
             popover.contentSize = NSSize(
@@ -125,7 +149,7 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
 
         if currentMaxContentHeight != desiredMaxContentHeight {
             currentMaxContentHeight = desiredMaxContentHeight
-            popoverController.rootView = makeRootView(maxContentHeight: currentMaxContentHeight)
+            popoverController.rootView = makeRootView(maxContentHeight: currentMaxContentHeight, visibility: visibility)
         }
 
         popoverController.view.invalidateIntrinsicContentSize()
@@ -143,4 +167,25 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
         let visibleHeight = screen?.visibleFrame.height ?? 800
         return max(360, visibleHeight - 80)
     }
+}
+
+/// Whether the popover is on screen. Motion inside it, like the light moving
+/// along the power flow, runs only while someone can see it.
+@MainActor
+final class PopoverVisibility: ObservableObject {
+    @Published var isShown = false
+}
+
+private struct PopoverVisibilityReader<Content: View>: View {
+    @ObservedObject var visibility: PopoverVisibility
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.environment(\.flowLightIsActive, visibility.isShown)
+    }
+}
+
+extension EnvironmentValues {
+    /// True only inside a popover that is on screen.
+    @Entry var flowLightIsActive = false
 }

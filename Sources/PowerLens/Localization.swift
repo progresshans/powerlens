@@ -99,6 +99,10 @@ enum L10n {
         }
     }
 
+    static func isKnownThermalState(_ state: String) -> Bool {
+        ["Nominal", "Fair", "Serious", "Critical"].contains(state)
+    }
+
     static func localizedThermalState(_ state: String) -> String {
         switch state {
         case "Nominal":

@@ -9,6 +9,15 @@ enum Formatters {
         number(value, fractionDigits: 1, suffix: "W")
     }
 
+    static func capacity(_ mah: Int) -> String {
+        number(Double(mah), fractionDigits: 0, suffix: " mAh")
+    }
+
+    /// Adapter ratings are whole watts on the box, so show them that way.
+    static func ratedPower(_ value: Double) -> String {
+        number(value, fractionDigits: 0, suffix: "W")
+    }
+
     static func batteryPowerFlow(
         _ value: Double?,
         isApproximate: Bool = false
@@ -64,6 +73,11 @@ enum Formatters {
         number(value, fractionDigits: 1, suffix: "°C")
     }
 
+    /// Glanceable temperature for tiles, where a tenth of a degree is noise.
+    static func wholeTemperature(_ value: Double) -> String {
+        number(value, fractionDigits: 0, suffix: "°C")
+    }
+
     static func minutes(_ value: Int?) -> String {
         guard let value, value > 0 else {
             return L10n.text("common.none")
@@ -87,7 +101,11 @@ enum Formatters {
     }
 
     static func relativeAge(since date: Date, now: Date = .now) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(date).rounded()))
+        relativeAge(seconds: now.timeIntervalSince(date))
+    }
+
+    static func relativeAge(seconds age: TimeInterval) -> String {
+        let seconds = max(0, Int(age.rounded()))
 
         if seconds < 5 {
             return L10n.text("format.justNow")

@@ -78,3 +78,75 @@ struct LiveDot: View {
             .shadow(color: color.opacity(0.45), radius: 3)
     }
 }
+
+/// Menu bar style choices shown as small previews of the actual readout.
+struct MenuBarStylePicker: View {
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(MenuBarDisplayStylePreference.allCases) { style in
+                option(style)
+            }
+        }
+    }
+
+    private func option(_ style: MenuBarDisplayStylePreference) -> some View {
+        let isSelected = selection == style.rawValue
+
+        return Button {
+            selection = style.rawValue
+        } label: {
+            VStack(spacing: 8) {
+                preview(style)
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text(style.title)
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+            }
+            .padding(8)
+            .background(
+                isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.03),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(style.detail)
+        .accessibilityLabel(style.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func preview(_ style: MenuBarDisplayStylePreference) -> some View {
+        let sample = "64% · 18W"
+        switch style {
+        case .powerLens:
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill")
+                Text(sample)
+            }
+        case .powerText:
+            Text(sample)
+        case .nativeBattery:
+            HStack(spacing: 4) {
+                Text("64%")
+                glyph
+            }
+        case .nativeBatteryOnly:
+            glyph
+        }
+    }
+
+    private var glyph: some View {
+        Image(nsImage: MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt))
+            .renderingMode(.template)
+    }
+}

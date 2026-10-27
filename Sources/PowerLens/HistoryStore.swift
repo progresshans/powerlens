@@ -41,9 +41,11 @@ actor HistoryStore: HistoryStoring {
         return Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0)))
     }
 
-    func loadRecent(
-        since cutoffDate: Date
-    ) async throws -> [TelemetrySnapshot] {
+    func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot] {
+        try await loadRecentRecords(since: cutoffDate).map(\.snapshot)
+    }
+
+    func loadRecentRecords(since cutoffDate: Date) async throws -> [StoredTelemetrySample] {
         let db = try openDatabase()
 
         defer {
@@ -82,14 +84,16 @@ actor HistoryStore: HistoryStoring {
             a.max_power_mw,
             ap.bundle_identifier,
             ap.display_name,
-            s.battery_power_source_code
+            s.battery_power_source_code,
+            s.sample_id,
+            s.measurement_payload
         FROM telemetry_samples s
         LEFT JOIN batteries b ON b.battery_id = s.battery_id
         LEFT JOIN battery_states bs ON bs.battery_state_id = s.battery_state_id
         LEFT JOIN adapters a ON a.adapter_id = s.adapter_id
         LEFT JOIN apps ap ON ap.app_id = s.app_id
         WHERE s.ts >= ?
-        ORDER BY s.ts ASC
+        ORDER BY s.ts ASC, s.sample_id ASC
         """
 
         let statement = try SQLiteStatement.prepare(
@@ -102,13 +106,13 @@ actor HistoryStore: HistoryStoring {
             sqlite3_finalize(statement)
         }
 
-        sqlite3_bind_int64(statement, 1, sqlite3_int64(cutoffDate.timeIntervalSince1970.rounded()))
+        sqlite3_bind_int64(statement, 1, sqlite3_int64(cutoffDate.timeIntervalSince1970.rounded(.down)))
 
-        var snapshots: [TelemetrySnapshot] = []
+        var snapshots: [StoredTelemetrySample] = []
         var result = sqlite3_step(statement)
         while result == SQLITE_ROW {
-            if let snapshot = snapshot(from: statement) {
-                snapshots.append(snapshot)
+            if let snapshot = try snapshot(from: statement), snapshot.timestamp >= cutoffDate {
+                snapshots.append(StoredTelemetrySample(id: .database(sqlite3_column_int64(statement, 31)), snapshot: snapshot))
             }
             result = sqlite3_step(statement)
         }
@@ -118,7 +122,10 @@ actor HistoryStore: HistoryStoring {
             operation: "load recent history"
         )
 
-        return snapshots
+        // The indexed timestamp is rounded to seconds; preserve precise order
+        // within each second as well. Stable sorting retains sample_id order
+        // for genuinely identical observation times.
+        return snapshots.sorted { $0.snapshot.timestamp < $1.snapshot.timestamp }
     }
 
     func append(_ snapshot: TelemetrySnapshot) async throws {
@@ -243,6 +250,12 @@ actor HistoryStore: HistoryStoring {
             using: db,
             operation: "reclaim history pages"
         )
+    }
+
+    /// Pre-upgrade copies follow their own 14-day limit, so this runs even
+    /// when full-detail history is kept forever and `purge` never does.
+    func removeExpiredBackups(now: Date, discardingAll: Bool) async throws {
+        try HistoryDatabaseBackup.removeExpired(at: databaseURL, now: now, discardingAll: discardingAll)
     }
 
     private func purgeOrphanedReferences(
@@ -1028,6 +1041,7 @@ actor HistoryStore: HistoryStoring {
                 )
             }
             if schemaVersion < HistorySchema.currentVersion {
+                try HistoryDatabaseBackup.preserveBeforeUpgrade(db, at: databaseURL, schemaVersion: schemaVersion)
                 try migrateSchema(using: db)
             }
         } catch {
@@ -1328,10 +1342,12 @@ actor HistoryStore: HistoryStoring {
             adapter_voltage_mv,
             adapter_current_ma,
             system_load_mw,
-            battery_power_source_code
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            battery_power_source_code,
+            measurement_payload
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
+        let payload = try HistoricalMeasurements(snapshot).encoded()
         try SQLiteStatement.executePrepared(sql, using: db) { statement in
             sqlite3_bind_int64(statement, 1, timestamp)
             SQLiteStatement.bind(batteryID, to: statement, index: 2)
@@ -1362,19 +1378,26 @@ actor HistoryStore: HistoryStoring {
                 to: statement,
                 index: 23
             )
+            SQLiteStatement.bind(payload, to: statement, index: 24)
         }
     }
 
-    private func snapshot(from statement: OpaquePointer?) -> TelemetrySnapshot? {
+    private func snapshot(from statement: OpaquePointer?) throws -> TelemetrySnapshot? {
         guard let statement,
               let powerSource = HistoryValueCoding.powerSourceKind(from: sqlite3_column_int(statement, 1))
         else {
             return nil
         }
 
+        let precise = try SQLiteStatement.textValue(statement, index: 32).map(HistoricalMeasurements.decode)
+        func value(_ path: KeyPath<HistoricalMeasurements, Double?>, legacy: @autoclosure () -> Double?) -> Double? {
+            if let precise { return precise[keyPath: path] }
+            return legacy()
+        }
+
         return TelemetrySnapshot(
-            timestamp: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
-            batteryLevel: HistoryValueCoding.percent(fromTenths: SQLiteStatement.optionalIntValue(statement, index: 7)),
+            timestamp: precise?.capturedAt ?? Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0))),
+            batteryLevel: value(\.batteryLevel, legacy: HistoryValueCoding.percent(fromTenths: SQLiteStatement.optionalIntValue(statement, index: 7))),
             powerSource: powerSource,
             isCharging: sqlite3_column_int(statement, 3) == 1,
             isCharged: sqlite3_column_int(statement, 4) == 1,
@@ -1388,10 +1411,10 @@ actor HistoryStore: HistoryStoring {
             designCycleCount: SQLiteStatement.optionalIntValue(statement, index: 20),
             batteryHealthText: SQLiteStatement.textValue(statement, index: 24),
             batteryHealthCondition: SQLiteStatement.textValue(statement, index: 25),
-            batteryTemperatureC: HistoryValueCoding.celsius(fromHundredths: SQLiteStatement.optionalIntValue(statement, index: 10)),
-            batteryVoltageV: HistoryValueCoding.volts(fromMillivolts: SQLiteStatement.optionalIntValue(statement, index: 11)),
-            batteryCurrentA: HistoryValueCoding.amps(fromMilliamps: SQLiteStatement.optionalIntValue(statement, index: 12)),
-            batteryPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 13)),
+            batteryTemperatureC: value(\.batteryTemperatureC, legacy: HistoryValueCoding.celsius(fromHundredths: SQLiteStatement.optionalIntValue(statement, index: 10))),
+            batteryVoltageV: value(\.batteryVoltageV, legacy: HistoryValueCoding.volts(fromMillivolts: SQLiteStatement.optionalIntValue(statement, index: 11))),
+            batteryCurrentA: value(\.batteryCurrentA, legacy: HistoryValueCoding.amps(fromMilliamps: SQLiteStatement.optionalIntValue(statement, index: 12))),
+            batteryPowerW: value(\.batteryPowerW, legacy: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 13))),
             batteryPowerSource: HistoryValueCoding.batteryPowerSource(
                 from: SQLiteStatement.optionalIntValue(
                     statement,
@@ -1399,11 +1422,12 @@ actor HistoryStore: HistoryStoring {
                 )
             ),
             adapterDescription: SQLiteStatement.textValue(statement, index: 26),
-            adapterMaxPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 27)),
-            adapterInputPowerW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 14)),
-            adapterVoltageV: HistoryValueCoding.volts(fromMillivolts: SQLiteStatement.optionalIntValue(statement, index: 15)),
-            adapterCurrentA: HistoryValueCoding.amps(fromMilliamps: SQLiteStatement.optionalIntValue(statement, index: 16)),
-            systemLoadW: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 17)),
+            adapterMaxPowerW: value(\.adapterMaxPowerW, legacy: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 27))),
+            adapterInputPowerW: value(\.adapterInputPowerW, legacy: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 14))),
+            adapterVoltageV: value(\.adapterVoltageV, legacy: HistoryValueCoding.volts(fromMillivolts: SQLiteStatement.optionalIntValue(statement, index: 15))),
+            adapterCurrentA: value(\.adapterCurrentA, legacy: HistoryValueCoding.amps(fromMilliamps: SQLiteStatement.optionalIntValue(statement, index: 16))),
+            systemLoadW: value(\.systemLoadW, legacy: HistoryValueCoding.watts(fromMilliwatts: SQLiteStatement.optionalIntValue(statement, index: 17))),
+            powerMeasurementSetSource: precise?.powerMeasurementSetSource,
             lowPowerModeEnabled: sqlite3_column_int(statement, 6) == 1,
             thermalState: HistoryValueCoding.thermalStateName(from: sqlite3_column_int(statement, 2)),
             serialNumber: SQLiteStatement.textValue(statement, index: 18),

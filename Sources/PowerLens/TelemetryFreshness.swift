@@ -54,6 +54,17 @@ struct TelemetryFreshness: Equatable, Sendable {
         state == .live
     }
 
+    var updatedText: String {
+        switch state {
+        case .waiting: L10n.text("telemetry.live.waiting")
+        case .live: L10n.text("ui.updated.justNow")
+        case .delayed:
+            age.map { L10n.tr("ui.updated.stale", Formatters.relativeAge(seconds: $0)) }
+                ?? L10n.text("telemetry.delayed")
+        case .unavailable: L10n.text("telemetry.unavailable")
+        }
+    }
+
     var isCriticallyDelayed: Bool {
         state == .delayed
             && (age ?? .infinity) > Self.criticalDelayAge

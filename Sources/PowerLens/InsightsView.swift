@@ -7,9 +7,8 @@ import SwiftUI
 struct InsightsView: View {
     @ObservedObject var store: PowerLensStore
     @SceneStorage(HistoryRange.storageKey) private var selectedRangeRaw = HistoryRange.last24Hours.rawValue
-    @StateObject private var model = InsightsViewModel()
-    @State private var isExporting = false
-    @State private var exportError: String?
+    @ObservedObject var model: InsightsViewModel
+    @ObservedObject var exportState: HistoryExportState
 
     private let columns = [
         GridItem(.adaptive(minimum: 170), spacing: 14, alignment: .top),
@@ -31,7 +30,7 @@ struct InsightsView: View {
                 exportMenu
             }
 
-            if store.historyHealth == .degraded {
+            if store.historyHealth == .degraded || model.hasReadFailure {
                 Label(
                     L10n.text("history.status.degraded.detail"),
                     systemImage: "externaldrive.badge.exclamationmark"
@@ -59,7 +58,7 @@ struct InsightsView: View {
                 }
 
                 BatteryHealthSection(trend: data.healthTrend)
-            } else {
+            } else if !model.hasReadFailure {
                 loadingState
             }
         }
@@ -69,13 +68,13 @@ struct InsightsView: View {
         .alert(
             L10n.text("insights.export.failed.title"),
             isPresented: Binding(
-                get: { exportError != nil },
-                set: { if !$0 { exportError = nil } }
+                get: { exportState.error != nil },
+                set: { if !$0 { exportState.error = nil } }
             )
         ) {
-            Button(L10n.text("common.ok")) { exportError = nil }
+            Button(L10n.text("common.ok")) { exportState.error = nil }
         } message: {
-            Text(exportError ?? "")
+            Text(exportState.error ?? "")
         }
     }
 
@@ -100,7 +99,7 @@ struct InsightsView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                if isExporting {
+                if exportState.isExporting {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -109,40 +108,12 @@ struct InsightsView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .disabled(model.data?.hasSeries != true || isExporting)
+        .disabled(model.data?.hasSeries != true || exportState.isExporting)
         .help(L10n.text("insights.export"))
     }
 
     private func export(_ format: HistoryExportFormat) {
-        guard !isExporting else {
-            return
-        }
-        let range = selectedRange
-        isExporting = true
-        Task {
-            defer { isExporting = false }
-            let snapshots = await store.exportSnapshots(for: range)
-            guard !snapshots.isEmpty else {
-                exportError = L10n.text("insights.export.noSamples")
-                return
-            }
-
-            guard let destination = HistoryExportService.destination(
-                suggestedName: "PowerLens-\(range.rawValue).\(format.fileExtension)"
-            ) else {
-                return
-            }
-
-            do {
-                try await HistoryExportWriter.shared.write(
-                    snapshots: snapshots,
-                    format: format,
-                    to: destination
-                )
-            } catch {
-                exportError = error.localizedDescription
-            }
-        }
+        exportState.export(format, range: selectedRange, loadSnapshots: store.exportSnapshots)
     }
 
     private func summaryGrid(_ summary: HistorySummary) -> some View {
@@ -310,14 +281,14 @@ private struct BatteryLevelChartCard: View {
                             x: .value(timeLabel, point.bucketStart),
                             y: .value(batteryLabel, level)
                         )
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(LensPalette.battery)
                         .interpolationMethod(.monotone)
 
                         AreaMark(
                             x: .value(timeLabel, point.bucketStart),
                             y: .value(batteryLabel, level)
                         )
-                        .foregroundStyle(.blue.opacity(0.12))
+                        .foregroundStyle(LensPalette.battery.opacity(0.14))
                         .interpolationMethod(.monotone)
                     }
                 }
@@ -404,9 +375,9 @@ private struct PowerFlowChartCard: View {
                 }
             }
             .chartForegroundStyleScale([
-                inputName: Color.green,
-                loadName: Color.orange,
-                batteryName: Color.purple,
+                inputName: LensPalette.charger,
+                loadName: LensPalette.mac,
+                batteryName: LensPalette.battery,
             ])
             .modifier(ChartXSelectionModifier(selection: $selectedDate))
             .accessibilityLabel(L10n.text("insights.chart.power.title"))

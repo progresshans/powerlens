@@ -43,10 +43,6 @@ struct ChargingPolicyAwarenessTests {
         #expect(managedFlow.routes == physicalFlow.routes)
         #expect(managedFlow.state == .underpowered)
         #expect(managedFlow.routes.map(\.role) == [.input, .battery])
-        #expect(
-            managedFlow.statusTitle
-                == L10n.text("ui.flow.batteryAssist")
-        )
     }
 
     @Test(arguments: [80, 87, 93])
@@ -94,10 +90,6 @@ struct ChargingPolicyAwarenessTests {
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .charging)
         #expect(flow.routes.map(\.role) == [.input, .charge])
-        #expect(
-            flow.statusTitle
-                == L10n.text("ui.flow.charging")
-        )
     }
 
     @Test
@@ -146,10 +138,6 @@ struct ChargingPolicyAwarenessTests {
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .holding)
         #expect(flow.routes.map(\.role) == [.input])
-        #expect(
-            flow.statusTitle
-                == L10n.text("ui.flow.holding")
-        )
     }
 
     @Test
@@ -235,10 +223,6 @@ struct ChargingPolicyAwarenessTests {
         #expect(flow.connectionStyle == .hidden)
         #expect(flow.routes.first?.source.value == L10n.text("common.none"))
         #expect(flow.routes.first?.target.value == L10n.text("common.none"))
-        #expect(
-            flow.statusTitle
-                == L10n.text("ui.flow.unknown")
-        )
     }
 
     @Test
@@ -367,8 +351,7 @@ struct ChargingPolicyAwarenessTests {
                 )
         )
         #expect(
-            PowerFlowPresentationModel(snapshot: snapshot).statusTitle
-                == L10n.text("ui.flow.batteryAssist")
+            PowerFlowPresentationModel(snapshot: snapshot).state == .underpowered
         )
     }
 
@@ -417,7 +400,6 @@ struct ChargingPolicyAwarenessTests {
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .charging)
         #expect(flow.routes.map(\.role) == [.input, .charge])
-        #expect(flow.statusTitle == L10n.text("ui.flow.charging"))
     }
 
     @Test
@@ -549,8 +531,7 @@ struct ChargingPolicyAwarenessTests {
                 == L10n.text("status.adapterBatteryAssist")
         )
         #expect(
-            PowerFlowPresentationModel(snapshot: snapshot).statusTitle
-                == L10n.text("ui.flow.batteryAssist")
+            PowerFlowPresentationModel(snapshot: snapshot).state == .underpowered
         )
     }
 
@@ -607,7 +588,6 @@ struct ChargingPolicyAwarenessTests {
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .discharging)
         #expect(flow.routes.map(\.role) == [.battery])
-        #expect(flow.statusTitle == L10n.text("ui.flow.batteryOnly"))
     }
 
     @Test
@@ -630,8 +610,7 @@ struct ChargingPolicyAwarenessTests {
                 == L10n.text("status.optimizedCharging.active")
         )
         #expect(
-            PowerFlowPresentationModel(snapshot: snapshot).statusTitle
-                == L10n.text("ui.flow.charging")
+            PowerFlowPresentationModel(snapshot: snapshot).state == .charging
         )
     }
 
@@ -656,10 +635,6 @@ struct ChargingPolicyAwarenessTests {
         let flow = PowerFlowPresentationModel(snapshot: snapshot)
         #expect(flow.state == .holding)
         #expect(flow.routes.map(\.role) == [.input])
-        #expect(
-            flow.statusTitle
-                == L10n.text("ui.flow.holding")
-        )
     }
 
     @Test
@@ -686,8 +661,7 @@ struct ChargingPolicyAwarenessTests {
                 == L10n.text("status.optimizedCharging.active")
         )
         #expect(
-            PowerFlowPresentationModel(snapshot: snapshot).statusTitle
-                == L10n.text("ui.flow.batteryAssist")
+            PowerFlowPresentationModel(snapshot: snapshot).state == .underpowered
         )
     }
 

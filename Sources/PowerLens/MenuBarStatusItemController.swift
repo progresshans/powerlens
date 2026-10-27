@@ -29,7 +29,9 @@ final class MenuBarStatusItemController: NSObject {
         snapshot: TelemetrySnapshot?,
         symbolName: String,
         batteryBadge: MenuBarStatusItemRenderer.Badge,
-        statusHeadline: String?
+        statusHeadline: String?,
+        lowPowerMode: Bool = false,
+        powerWarning: Bool = false
     ) {
         guard let button else {
             return
@@ -40,10 +42,11 @@ final class MenuBarStatusItemController: NSObject {
             for: style,
             snapshot: snapshot,
             symbolName: symbolName,
-            batteryBadge: batteryBadge
+            batteryBadge: batteryBadge,
+            tint: MenuBarStatusItemRenderer.Tint(lowPowerFill: lowPowerMode, warningBadge: powerWarning)
         )
         button.imagePosition = imagePosition(for: style)
-        button.attributedTitle = menuBarTitle(for: style, snapshot: snapshot)
+        button.attributedTitle = menuBarTitle(for: style, snapshot: snapshot, showsWarningDot: powerWarning)
         let tooltip = PowerFlowTooltip.menuBar(
             snapshot: snapshot,
             statusHeadline: statusHeadline
@@ -61,7 +64,8 @@ final class MenuBarStatusItemController: NSObject {
         for style: MenuBarDisplayStylePreference,
         snapshot: TelemetrySnapshot?,
         symbolName: String,
-        batteryBadge: MenuBarStatusItemRenderer.Badge
+        batteryBadge: MenuBarStatusItemRenderer.Badge,
+        tint: MenuBarStatusItemRenderer.Tint
     ) -> NSImage? {
         switch style {
         case .powerLens:
@@ -73,7 +77,8 @@ final class MenuBarStatusItemController: NSObject {
         case .nativeBattery, .nativeBatteryOnly:
             return MenuBarStatusItemRenderer.batteryImage(
                 level: snapshot?.batteryLevel,
-                badge: batteryBadge
+                badge: batteryBadge,
+                tint: tint
             )
         }
     }
@@ -93,7 +98,8 @@ final class MenuBarStatusItemController: NSObject {
 
     private func menuBarTitle(
         for style: MenuBarDisplayStylePreference,
-        snapshot: TelemetrySnapshot?
+        snapshot: TelemetrySnapshot?,
+        showsWarningDot: Bool
     ) -> NSAttributedString {
         let title: String
         switch style {
@@ -105,15 +111,23 @@ final class MenuBarStatusItemController: NSObject {
             title = ""
         }
 
-        return NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.monospacedDigitSystemFont(
-                    ofSize: menuBarFontSize(for: style),
-                    weight: menuBarFontWeight(for: style)
-                ),
-            ]
+        let font = NSFont.monospacedDigitSystemFont(
+            ofSize: menuBarFontSize(for: style),
+            weight: menuBarFontWeight(for: style)
         )
+        let attributed = NSMutableAttributedString(string: title, attributes: [.font: font])
+        // Text-only readouts have no badge to tint, so a warning gets a dot.
+        if showsWarningDot, style == .powerText {
+            attributed.append(NSAttributedString(
+                string: " \u{25CF}",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: font.pointSize * 0.6),
+                    .foregroundColor: NSColor.systemRed,
+                    .baselineOffset: font.pointSize * 0.12,
+                ]
+            ))
+        }
+        return attributed
     }
 
     private func menuBarFontSize(for style: MenuBarDisplayStylePreference) -> CGFloat {

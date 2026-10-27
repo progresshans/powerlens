@@ -39,12 +39,17 @@ final class DashboardSceneController {
 }
 
 struct DashboardSceneRootView: View {
+    @StateObject private var session = DashboardSession()
     @ObservedObject var store: PowerLensStore
     let openSettings: () -> Void
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
 
     var body: some View {
-        DashboardView(store: store, openSettings: openSettings)
+        VisibleWindowContent(onVisibilityChange: { visible in
+            if visible { store.presentationDidBecomeActive() }
+        }) {
+            DashboardView(store: store, openSettings: openSettings, session: session)
+        }
             .environment(\.locale, L10n.locale)
             .id(appLanguage)
             .background(
@@ -179,5 +184,133 @@ private struct WindowConfigurationView: NSViewRepresentable {
         var lastMinSize: NSSize?
         var lastIdentifier: String?
         var didApplyFrameAutosaveName = false
+    }
+}
+
+/// Mounts a window's content only while the window can be seen. SwiftUI keeps
+/// a closed `Window` scene's views alive, and they would otherwise redraw on
+/// every refresh, and on every tick of their timers, with nobody looking.
+struct VisibleWindowContent<Content: View>: View {
+    var onVisibilityChange: (Bool) -> Void = { _ in }
+    @ViewBuilder let content: Content
+    @State private var isVisible = true
+
+    var body: some View {
+        ZStack {
+            if isVisible {
+                content
+            } else {
+                Color.clear
+            }
+        }
+        .background(
+            WindowVisibilityObserver(isVisible: $isVisible)
+                .frame(width: 0, height: 0)
+        )
+        .onAppear { onVisibilityChange(isVisible) }
+        .onChange(of: isVisible) { onVisibilityChange(isVisible) }
+    }
+}
+
+struct WindowVisibilityObserver: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isVisible: $isVisible)
+    }
+
+    func makeNSView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.onWindowChange = { [coordinator = context.coordinator] window in
+            coordinator.observe(window)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: ObserverView, context: Context) {
+        context.coordinator.isVisible = $isVisible
+    }
+
+    static func dismantleNSView(_ view: ObserverView, coordinator: Coordinator) {
+        view.onWindowChange = nil
+        coordinator.observe(nil)
+    }
+
+    final class ObserverView: NSView {
+        var onWindowChange: ((NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onWindowChange?(window)
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
+        var isVisible: Binding<Bool>
+        private weak var window: NSWindow?
+        private var tokens: [NSObjectProtocol] = []
+
+        init(isVisible: Binding<Bool>) {
+            self.isVisible = isVisible
+        }
+
+        func observe(_ window: NSWindow?) {
+            guard window !== self.window else {
+                return
+            }
+            tokens.forEach(NotificationCenter.default.removeObserver)
+            tokens = []
+            self.window = window
+            guard let window else {
+                return
+            }
+
+            // Becoming key arrives before the first frame is drawn, so content
+            // is back in place when the window reappears.
+            let changes: [(Notification.Name, Rule)] = [
+                (NSWindow.didBecomeKeyNotification, .shown),
+                (NSWindow.didDeminiaturizeNotification, .shown),
+                (NSWindow.willCloseNotification, .hidden),
+                (NSWindow.didMiniaturizeNotification, .hidden),
+                (NSWindow.didChangeOcclusionStateNotification, .occlusion),
+            ]
+            tokens = changes.map { name, rule in
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let window = self.window else {
+                            return
+                        }
+                        self.set(rule.isVisible(window))
+                    }
+                }
+            }
+            set(WindowContentVisibility.isVisible(window))
+        }
+
+        private enum Rule: Sendable {
+            case shown
+            case hidden
+            case occlusion
+
+            @MainActor
+            func isVisible(_ window: NSWindow) -> Bool {
+                switch self {
+                case .shown: true
+                case .hidden: false
+                case .occlusion: WindowContentVisibility.isVisible(window)
+                }
+            }
+        }
+
+        private func set(_ value: Bool) {
+            if isVisible.wrappedValue != value {
+                isVisible.wrappedValue = value
+            }
+        }
+
+        isolated deinit {
+            tokens.forEach(NotificationCenter.default.removeObserver)
+        }
     }
 }

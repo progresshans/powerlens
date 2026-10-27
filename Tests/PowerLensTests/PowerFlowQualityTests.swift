@@ -334,7 +334,7 @@ struct PowerFlowQualityTests {
         #expect(tooltip.contains(L10n.tr("ui.flow.tooltip.rawInput", "16.9W")))
         #expect(tooltip.contains(L10n.tr("ui.flow.tooltip.rawBattery", L10n.tr("format.batteryPower.discharging", "0.4W"))))
         #expect(tooltip.contains(L10n.tr("ui.flow.tooltip.rawSystem", "19.5W")))
-        #expect(model.routes.allSatisfy { $0.source.tooltip == tooltip && $0.target.tooltip == tooltip })
+        #expect(LivePowerPresentation(snapshot: snapshot, resolvedState: nil, diagnostics: [], isAwaitingSource: false).tooltip == tooltip)
         #expect(model.routes.allSatisfy { !$0.source.value.contains("≈") && !$0.target.value.contains("≈") })
         #expect(snapshot.menuBarTitle == "80% · 19.5W")
 

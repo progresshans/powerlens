@@ -11,6 +11,15 @@ enum ManagedChargingState: Equatable, Sendable {
     case optimizedHold
     case optimizedActive
 
+    var targetPercent: Int? {
+        switch self {
+        case let .chargingToLimit(target), let .chargingBeyondLimit(target),
+             let .aboveConfiguredLimit(target), let .reducingToLimit(target),
+             let .holdingAtLimit(target), let .limitConfigured(target): target
+        case .optimizedCharging, .optimizedHold, .optimizedActive: nil
+        }
+    }
+
     var suppressesPowerDeliveryWarnings: Bool {
         switch self {
         case .reducingToLimit, .holdingAtLimit, .optimizedHold,

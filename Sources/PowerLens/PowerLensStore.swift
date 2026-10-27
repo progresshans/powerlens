@@ -27,24 +27,40 @@ final class PowerLensStore: ObservableObject {
         case running
     }
 
-    @Published private(set) var latest: TelemetrySnapshot?
-    @Published private(set) var telemetryHealth = TelemetryHealth.waiting
+    @Published private(set) var live = LiveTelemetryState()
     @Published private(set) var historyHealth = HistoryHealth.checking
-    @Published private(set) var diagnostics: [DiagnosticItem] = []
     @Published private(set) var topEnergyApps: [AppEnergyUsage] = []
-    @Published private(set) var menuBarPresentation = MenuBarPresentation.waiting
     @Published private(set) var historyRevision = 0
-    @Published private(set) var lastRefreshAt: Date?
-    @Published private(set) var lastRefreshAttemptAt: Date?
     @Published private(set) var requestedTelemetryEngine = TelemetryEnginePreference.current
-    @Published private(set) var activeTelemetryEngine: TelemetryEngineKind = .compatible
-    @Published private(set) var resolvedPowerState: ResolvedPowerState?
-    @Published private(set) var systemCompatibilityDiagnostics:
-        [SystemCompatibilityDiagnostic] = []
+    @Published private(set) var energyMode: EnergyMode?
+
+    var latest: TelemetrySnapshot? { live.snapshot }
+    var telemetryHealth: TelemetryHealth { live.health }
+    var diagnostics: [DiagnosticItem] { live.diagnostics }
+    var menuBarPresentation: MenuBarPresentation { live.menuBar }
+    var lastRefreshAt: Date? { live.snapshot?.timestamp }
+    var lastRefreshAttemptAt: Date? { live.lastAttemptAt }
+    var activeTelemetryEngine: TelemetryEngineKind { live.activeEngine }
+    var resolvedPowerState: ResolvedPowerState? { live.resolvedState }
+    var systemCompatibilityDiagnostics: [SystemCompatibilityDiagnostic] { live.compatibilityDiagnostics }
+
+    /// Stable diagnostic IDs belong to UI identity. Notification authorization
+    /// and cooldowns still need each newly accepted sample, even when its
+    /// diagnostics are unchanged. Source/health-only publications are excluded.
+    var diagnosticUpdates: AnyPublisher<[DiagnosticItem], Never> {
+        $live
+            .filter { $0.snapshot != nil && !$0.isAwaitingSource }
+            .removeDuplicates {
+                $0.snapshot?.id == $1.snapshot?.id && $0.diagnostics == $1.diagnostics
+            }
+            .map(\.diagnostics)
+            .eraseToAnyPublisher()
+    }
 
     private let telemetryReader: any TelemetryReading
     private let historyStore: any HistoryStoring
     private let energySampler: any ProcessEnergySampling
+    private let energyModeReader: any EnergyModeReading
     private let systemCompatibilityRecorder: any SystemCompatibilityRecording
     private let now: () -> Date
     private let powerSourceReader: @MainActor () -> PowerSourceObservation?
@@ -66,7 +82,10 @@ final class PowerLensStore: ObservableObject {
     private var energyResetTask: Task<Void, Never>?
     private var energySamplingTask: Task<Void, Never>?
     private var energySamplingGeneration = 0
-    private var powerSourceObservation: PowerSourceObservation?
+    private(set) var energyModeTask: Task<Void, Never>?
+    private var energyModeGeneration = 0
+    private var pendingEnergyModeRead: (generation: Int, lowPower: Bool)?
+    private var powerSourceObservation: PowerSourceObservation? { live.source }
     private var powerSourceGeneration = 0
     private var lastAppliedSourceGeneration: Int?
     private var automaticRefreshPhase = AutomaticRefreshPhase.disabled
@@ -78,6 +97,8 @@ final class PowerLensStore: ObservableObject {
     private let interactiveRefreshInterval: Duration
     private let backgroundRefreshInterval: Duration
     private var refreshCadence: RefreshCadence = .background
+    private var energySamplingEnabled = false
+    private var presentationActivity = PresentationActivity()
 
     var telemetryUnavailable: Bool {
         telemetryHealth.isUnavailable
@@ -92,6 +113,7 @@ final class PowerLensStore: ObservableObject {
         telemetryReader: any TelemetryReading = TelemetryReadService(),
         historyStore: any HistoryStoring = HistoryStore(),
         energySampler: any ProcessEnergySampling = ProcessEnergySampler(),
+        energyModeReader: any EnergyModeReading = PmsetEnergyModeReader(),
         systemCompatibilityRecorder: any SystemCompatibilityRecording =
             SystemCompatibilityRecorder.shared,
         startsAutomatically: Bool = true,
@@ -104,6 +126,7 @@ final class PowerLensStore: ObservableObject {
         self.telemetryReader = telemetryReader
         self.historyStore = historyStore
         self.energySampler = energySampler
+        self.energyModeReader = energyModeReader
         self.systemCompatibilityRecorder = systemCompatibilityRecorder
         self.interactiveRefreshInterval = interactiveRefreshInterval
         self.backgroundRefreshInterval = backgroundRefreshInterval
@@ -118,6 +141,7 @@ final class PowerLensStore: ObservableObject {
         }
 
         startRefreshTask()
+        refreshEnergyMode()
     }
 
     private func startRefreshTask() {
@@ -165,18 +189,26 @@ final class PowerLensStore: ObservableObject {
             return
         }
 
-        guard let window = RawHistoryWindow.current.seconds else {
-            return  // Full-detail history kept forever: nothing to prune.
-        }
-
         lastPurgeAt = current
+        let window = RawHistoryWindow.current.seconds
+        let bucketSeconds = LongTermResolution.current.bucketSeconds
         do {
-            try await historyStore.purge(
-                olderThan: current.addingTimeInterval(-window),
-                rollupBucketSeconds: LongTermResolution.current.bucketSeconds
+            // A nil window keeps full-detail history forever: nothing to prune.
+            if let window {
+                try await historyStore.purge(
+                    olderThan: current.addingTimeInterval(-window),
+                    rollupBucketSeconds: bucketSeconds
+                )
+            }
+            // Pre-upgrade copies expire on their own schedule in every mode.
+            try await historyStore.removeExpiredBackups(
+                now: current,
+                discardingAll: HistoryDatabaseBackup.discardsAll(rawWindow: window, rollupBucketSeconds: bucketSeconds)
             )
             recordHistorySuccess()
-            historyRevision += 1
+            if window != nil {
+                historyRevision += 1
+            }
         } catch {
             recordHistoryFailure(error, operation: "purge history")
         }
@@ -190,10 +222,12 @@ final class PowerLensStore: ObservableObject {
         sourceReconciliationTask?.cancel()
         energyResetTask?.cancel()
         energySamplingTask?.cancel()
+        energyModeTask?.cancel()
     }
 
     func refreshNow() {
         _ = enqueueRefresh(persistencePolicy: .immediately)
+        refreshEnergyMode()
     }
 
     func refreshOnce(persistImmediately: Bool = true) async {
@@ -202,13 +236,40 @@ final class PowerLensStore: ObservableObject {
         )
     }
 
-    func setRefreshCadence(_ cadence: RefreshCadence) {
-        guard refreshCadence != cadence else {
-            return
-        }
+    func updatePresentationActivity(popover: Bool, dashboard: Bool, settings: Bool) {
+        presentationActivity.popover = popover
+        presentationActivity.dashboard = dashboard
+        presentationActivity.settings = settings
+        applyPresentationActivity()
+    }
 
+    func setDashboardEnergyDemand(_ enabled: Bool) {
+        presentationActivity.dashboardShowsEnergyApps = enabled
+        applyPresentationActivity()
+    }
+
+    private func applyPresentationActivity() {
+        setRefreshCadence(presentationActivity.needsLiveReadings ? .interactive : .background,
+                          samplesEnergyApps: presentationActivity.needsEnergyApps, refreshMetadata: false)
+    }
+
+    /// Opening/focusing a surface is an event even if another surface is open.
+    func presentationDidBecomeActive() {
+        refreshEnergyMode()
+    }
+
+    func setRefreshCadence(_ cadence: RefreshCadence, samplesEnergyApps: Bool = true, refreshMetadata: Bool = true) {
+        let sampling = cadence == .interactive && samplesEnergyApps
+        let cadenceChanged = refreshCadence != cadence
+        if cadenceChanged || sampling != energySamplingEnabled {
+            energySamplingEnabled = sampling
+            resetEnergySampling()
+        }
+        guard cadenceChanged else { return }
         refreshCadence = cadence
-        resetEnergySampling()
+        if cadence == .interactive && refreshMetadata {
+            refreshEnergyMode()
+        }
         switch automaticRefreshPhase {
         case .preparingHistory:
             if cadence == .interactive {
@@ -228,7 +289,7 @@ final class PowerLensStore: ObservableObject {
         let previousSource = powerSourceObservation?.externalConnected
             ?? latest?.externalConnected
         let sourceChanged = previousSource != observation.externalConnected
-        powerSourceObservation = observation
+        live.observe(observation)
         guard sourceChanged || reason == .wake else {
             return
         }
@@ -237,12 +298,7 @@ final class PowerLensStore: ObservableObject {
         powerStateTracker.reset()
         resetEnergySampling()
         if sourceChanged {
-            if let latest, latest.externalConnected != observation.externalConnected {
-                // The cached sample is stale before a new read starts, but
-                // observing a source change is not a failed refresh attempt.
-                telemetryHealth = .delayed(failedAttempts: telemetryHealth.failedAttempts)
-            }
-            publishPowerSource(observation)
+            refreshEnergyMode()
         }
 
         let generation = powerSourceGeneration
@@ -269,32 +325,8 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
-    private func publishPowerSource(_ observation: PowerSourceObservation) {
-        let state: ExternalPowerState = observation.externalConnected
-            ? .connected : .onBattery
-        menuBarPresentation = MenuBarPresentation(
-            snapshot: latest,
-            symbolName: state.menuBarSymbolName,
-            batteryBadge: .resolved(for: state),
-            statusHeadline: L10n.text(
-                observation.externalConnected
-                    ? "status.externalPowerConnected" : "status.runningOnBattery"
-            )
-        )
-    }
-
     func refreshMenuBarLocalization() {
-        if let powerSourceObservation,
-           latest?.externalConnected != powerSourceObservation.externalConnected {
-            publishPowerSource(powerSourceObservation)
-        } else if let latest {
-            menuBarPresentation = MenuBarPresentation(
-                snapshot: latest,
-                symbolName: menuBarSymbolName,
-                batteryBadge: menuBarBatteryBadge,
-                statusHeadline: latest.statusHeadline(resolvedState: resolvedPowerState)
-            )
-        }
+        live.rebuildPresentation()
     }
 
     private func resetEnergySampling() {
@@ -312,7 +344,7 @@ final class PowerLensStore: ObservableObject {
     }
 
     private func scheduleEnergySamplingIfVisible() {
-        guard refreshCadence == .interactive, energySamplingTask == nil else { return }
+        guard energySamplingEnabled, energySamplingTask == nil else { return }
         let generation = energySamplingGeneration
         let reset = energyResetTask
         let sampler = energySampler
@@ -324,11 +356,11 @@ final class PowerLensStore: ObservableObject {
             await reset?.value
             guard !Task.isCancelled,
                   self?.energySamplingGeneration == generation,
-                  self?.refreshCadence == .interactive else { return }
+                  self?.energySamplingEnabled == true else { return }
             let apps = await sampler.sample(now: clock())
             guard !Task.isCancelled, let self,
                   self.energySamplingGeneration == generation,
-                  self.refreshCadence == .interactive else { return }
+                  self.energySamplingEnabled else { return }
             if self.topEnergyApps != apps {
                 self.topEnergyApps = apps
             }
@@ -345,7 +377,7 @@ final class PowerLensStore: ObservableObject {
     /// Loads aggregated series, summary statistics, and the long-term battery
     /// health trend for the Insights view. The health trend ignores the range
     /// because capacity changes slowly and is most useful over the full record.
-    func loadInsights(for range: HistoryRange) async -> InsightsData {
+    func loadInsights(for range: HistoryRange) async throws -> InsightsData {
         let currentDate = now()
         do {
             try Task.checkCancellation()
@@ -357,32 +389,37 @@ final class PowerLensStore: ObservableObject {
             if !Task.isCancelled, !(error is CancellationError) {
                 recordHistoryFailure(error, operation: "load insights")
             }
-            return .empty(range: range, now: currentDate)
+            throw error
         }
     }
 
     /// Loads raw snapshots within a range for export. Bounded by the on-disk
     /// retention window.
-    func exportSnapshots(for range: HistoryRange) async -> [TelemetrySnapshot] {
+    func exportSnapshots(for range: HistoryRange) async throws -> [TelemetrySnapshot] {
         let interval = range.interval(now: now())
         do {
+            try Task.checkCancellation()
             let loaded = try await historyStore.loadRecent(
                 since: interval.start
             )
+            try Task.checkCancellation()
             recordHistorySuccess()
             return loaded.filter { interval.contains($0.timestamp) }
         } catch {
-            recordHistoryFailure(error, operation: "export history")
-            return []
+            if !Task.isCancelled, !(error is CancellationError) {
+                recordHistoryFailure(error, operation: "export history")
+            }
+            throw error
         }
     }
 
     var telemetryStatusText: String {
+        if live.isAwaitingSource {
+            return L10n.text("telemetry.status.sourceTransition")
+        }
         switch telemetryHealth {
         case .waiting:
             return L10n.text("telemetry.status.waiting")
-        case .delayed(failedAttempts: 0):
-            return L10n.text("telemetry.status.sourceTransition")
         case let .delayed(failedAttempts):
             return L10n.tr(
                 "telemetry.status.delayed",
@@ -552,12 +589,11 @@ final class PowerLensStore: ObservableObject {
             // Reconfirm through IOPS so polling also recovers from a missed
             // notification. Never rewrite a raw sensor snapshot to match it.
             if let current = powerSourceReader() {
-                powerSourceObservation = current
+                live.observe(current)
                 if current.externalConnected != observation.externalConnected {
                     powerSourceGeneration += 1
                     powerStateTracker.reset()
                     resetEnergySampling()
-                    publishPowerSource(current)
                 }
             }
             guard powerSourceObservation?.externalConnected == snapshot.externalConnected else {
@@ -566,30 +602,15 @@ final class PowerLensStore: ObservableObject {
             }
         }
 
-        telemetryHealth = .live
-        lastRefreshAttemptAt = now()
-
+        let previous = latest
         let resolvedState = powerStateTracker.resolve(snapshot)
-        let resolvedDiagnostics = snapshot.diagnostics(
-            resolvedState: resolvedState
-        )
-        resolvedPowerState = resolvedState
-        latest = snapshot
-        diagnostics = resolvedDiagnostics
-        lastRefreshAt = snapshot.timestamp
-        activeTelemetryEngine = result.activeEngine
-        systemCompatibilityDiagnostics =
-            result.systemCompatibilityDiagnostics
+        live.accept(result, resolvedState: resolvedState, attemptedAt: now())
+        if let previous,
+           previous.externalConnected != snapshot.externalConnected
+            || previous.lowPowerModeEnabled != snapshot.lowPowerModeEnabled {
+            refreshEnergyMode()
+        }
         lastAppliedSourceGeneration = powerSourceGeneration
-        menuBarPresentation = MenuBarPresentation(
-            snapshot: snapshot,
-            symbolName: snapshot.menuBarSymbolName(
-                using: resolvedDiagnostics,
-                externalPowerState: resolvedState.externalPowerState
-            ),
-            batteryBadge: .resolved(for: resolvedState.externalPowerState),
-            statusHeadline: snapshot.statusHeadline(resolvedState: resolvedState)
-        )
 
         let shouldWriteHistory: Bool
         switch request.persistencePolicy {
@@ -627,12 +648,56 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
+    /// Reads the energy mode again. macOS keeps a separate mode for each power
+    /// source and announces no change, so this runs at launch, when the popover
+    /// or Dashboard opens, when the source or Low Power Mode changes, and on a
+    /// manual refresh, never on every telemetry tick.
+    private func refreshEnergyMode() {
+        energyModeGeneration += 1
+        pendingEnergyModeRead = (energyModeGeneration, latest?.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled)
+        guard energyModeTask == nil else { return }
+        let reader = energyModeReader
+        energyModeTask = Task { [weak self] in
+            while let request = self?.takeEnergyModeRequest(), !Task.isCancelled {
+                let mode = await reader.read(lowPowerFallback: request.lowPower)
+                guard !Task.isCancelled else { break }
+                self?.acceptEnergyMode(mode, generation: request.generation)
+            }
+            self?.energyModeTask = nil
+        }
+    }
+
+    private func takeEnergyModeRequest() -> (generation: Int, lowPower: Bool)? {
+        defer { pendingEnergyModeRead = nil }
+        return pendingEnergyModeRead
+    }
+
+    private func acceptEnergyMode(_ mode: EnergyMode, generation: Int) {
+        guard generation == energyModeGeneration else { return }
+        if energyMode != mode { energyMode = mode }
+    }
+
+    /// The last hour of saved history for the Dashboard chart. History is
+    /// written once a minute, so callers reload when `historyRevision` changes.
+    func recentPowerHistory() async throws -> [RecentPowerSample] {
+        let end = now()
+        let cutoff = end.addingTimeInterval(-RecentPowerSample.window)
+        do {
+            try Task.checkCancellation()
+            let records = try await historyStore.loadRecentRecords(since: cutoff)
+            try Task.checkCancellation()
+            recordHistorySuccess()
+            return records.filter { $0.snapshot.timestamp <= end }.map(RecentPowerSample.init(record:))
+        } catch {
+            if !Task.isCancelled, !(error is CancellationError) {
+                recordHistoryFailure(error, operation: "load recent power")
+            }
+            throw error
+        }
+    }
+
     private func recordTelemetryFailure() {
-        lastRefreshAttemptAt = now()
-        let failedAttempts = telemetryHealth.failedAttempts + 1
-        telemetryHealth = latest == nil
-            ? .unavailable(failedAttempts: failedAttempts)
-            : .delayed(failedAttempts: failedAttempts)
+        live.fail(at: now())
     }
 
     private func shouldPersist(snapshot: TelemetrySnapshot) -> Bool {

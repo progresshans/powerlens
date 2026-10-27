@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// The menu bar popover. Reads top to bottom as answer → evidence →
+/// interpretation → action: status sentence, proportional flow, tiles, an
+/// optional notice, the heaviest app, the energy mode, then details on demand.
 struct MenuBarRootView: View {
     @ObservedObject var store: PowerLensStore
     let openDashboard: () -> Void
@@ -7,237 +10,262 @@ struct MenuBarRootView: View {
     let quitApplication: () -> Void
     let maxContentHeight: CGFloat?
 
-    static let loadingSize = CGSize(width: 320, height: 260)
-    static let contentWidth: CGFloat = 420
+    @AppStorage("popover.showsDetails") private var showsDetails = false
+
+    static let loadingSize = CGSize(width: 360, height: 300)
+    static let contentWidth: CGFloat = 360
 
     var body: some View {
         Group {
-            if let snapshot = store.latest {
-                popoverContent(snapshot)
+            if let snapshot = store.latest, let presentation = store.live.presentation {
+                popoverContent(snapshot, presentation: presentation)
                     .modifier(PopoverContainerStyle(maxContentHeight: maxContentHeight))
                     .frame(width: Self.contentWidth, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: maxContentHeight == nil)
             } else {
-                VStack(spacing: 0) {
-                    Group {
-                        if store.telemetryUnavailable {
-                            VStack(spacing: 10) {
-                                Image(systemName: "bolt.slash")
-                                    .font(.title)
-                                    .foregroundStyle(.secondary)
-                                Text(L10n.text("ui.telemetryUnavailable.title"))
-                                    .font(.headline)
-                                    .multilineTextAlignment(.center)
-                                Text(L10n.text("ui.telemetryUnavailable.message"))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .padding(24)
-                        } else {
-                            ProgressView(L10n.text("ui.readingPowerData"))
-                                .padding(24)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    Divider()
-                    HStack {
-                        Spacer()
-                        toolbarActions
-                    }
-                    .padding(12)
-                }
-                .frame(width: Self.loadingSize.width, height: Self.loadingSize.height)
+                placeholderContent
+                    .frame(width: Self.loadingSize.width, height: Self.loadingSize.height, alignment: .top)
             }
         }
     }
 
-    private func popoverContent(_ snapshot: TelemetrySnapshot) -> some View {
-        let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
-            store.diagnostics,
-            resolvedState: store.resolvedPowerState
-        )
+    // MARK: - Live content
 
-        return VStack(alignment: .leading, spacing: 12) {
-            popoverHeader(snapshot)
+    private func popoverContent(_ snapshot: TelemetrySnapshot, presentation: LivePowerPresentation) -> some View {
+        let isAwaitingNewSource = presentation.isAwaitingSource
+        let status = presentation.status
+        let notice = presentation.notice
 
-            PowerFlowCard(snapshot: snapshot, density: .compact)
+        return VStack(alignment: .leading, spacing: 10) {
+            header(capsule: StatusCapsule(title: status.capsuleTitle, systemImage: status.capsuleSymbol, tone: status.tone))
 
-            if !diagnostics.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L10n.text("ui.section.diagnostics"))
-                        .font(.subheadline.weight(.semibold))
+            hero(title: status.title, subtitle: status.subtitle)
 
-                    ForEach(diagnostics.prefix(2)) { item in
-                        DiagnosticRow(item: item)
-                    }
-                }
+            PowerFlowRibbonDiagram(
+                graph: presentation.graph,
+                style: .compact,
+                batteryLevel: snapshot.batteryLevel,
+                tooltip: presentation.tooltip
+            )
+            .padding(14)
+            .glassCardSurface(cornerRadius: 16)
+            .opacity(isAwaitingNewSource ? 0.4 : 1)
+
+            HStack(spacing: 8) {
+                MetricTile(
+                    tile: presentation.battery,
+                    symbolTint: snapshot.lowPowerModeEnabled ? LensPalette.lowPower : nil
+                )
+                MetricTile(tile: presentation.health)
+                MetricTile(tile: presentation.temperature)
+            }
+            .opacity(isAwaitingNewSource ? 0.4 : 1)
+
+            if let notice {
+                NoticeCard(notice: notice)
             }
 
             if !store.topEnergyApps.isEmpty {
-                EnergyUsageCard(apps: store.topEnergyApps)
+                TopEnergyAppsCard(apps: store.topEnergyApps)
             }
 
-            CompactDetailCard(
-                title: L10n.text("ui.section.batterySnapshot"),
-                rows: TelemetryDetailRows.batterySnapshot(snapshot)
-            )
+            if let energyMode = store.energyMode {
+                EnergyModeRow(mode: energyMode)
+            }
 
-            CompactDetailCard(
-                title: L10n.text("ui.section.powerSnapshot"),
-                rows: TelemetryDetailRows.powerSnapshot(snapshot)
-            )
+            if showsDetails {
+                details(snapshot)
+            }
+
+            footer
         }
         .padding(12)
     }
 
-    private func popoverHeader(_ snapshot: TelemetrySnapshot) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(
-                    snapshot.statusHeadline(
-                        resolvedState: store.resolvedPowerState
-                    )
-                )
-                    .font(.headline)
-                    .lineLimit(2)
-
-                Text(
-                    snapshot.statusSubheadline(
-                        resolvedState: store.resolvedPowerState
-                    )
-                )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .lineLimit(2)
-            }
-
+    private func header(capsule: StatusCapsule) -> some View {
+        HStack(spacing: 6) {
+            capsule
             Spacer(minLength: 8)
+            toolbar
+        }
+    }
 
-            VStack(alignment: .trailing, spacing: 8) {
-                CompactLiveStatusChip(
-                    refreshDate: store.lastRefreshAt ?? snapshot.timestamp,
-                    health: store.telemetryHealth
+    private var toolbar: some View {
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 6) {
+                GlassCircleButton(
+                    systemImage: "arrow.clockwise",
+                    title: L10n.text("ui.refreshNow"),
+                    action: store.refreshNow
                 )
-
-                toolbarActions
+                GlassCircleButton(
+                    systemImage: "macwindow",
+                    title: L10n.text("ui.openDashboard"),
+                    action: openDashboard
+                )
+                Menu {
+                    Button(L10n.text("menu.settings"), action: openSettings)
+                        .keyboardShortcut(",")
+                    Divider()
+                    Button(L10n.text("menu.quit"), action: quitApplication)
+                        .keyboardShortcut("q")
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 16, height: 16)
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .fixedSize()
+                .help(L10n.text("ui.more"))
+                .accessibilityLabel(L10n.text("ui.more"))
             }
         }
     }
 
-    private var toolbarActions: some View {
-        HStack(spacing: 5) {
-            PopoverToolbarButton(
-                systemImage: "arrow.clockwise",
-                title: L10n.text("ui.refreshNow"),
-                action: store.refreshNow
-            )
+    private func hero(title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+    }
 
-            PopoverToolbarButton(
-                systemImage: "gearshape",
-                title: L10n.text("ui.section.settings"),
-                action: openSettings
-            )
+    private func details(_ snapshot: TelemetrySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            DetailGroupCard(title: L10n.text("flow.node.battery"), rows: TelemetryDetailRows.popoverBattery(snapshot))
 
-            PopoverToolbarButton(
-                systemImage: "square.grid.2x2",
-                title: L10n.text("ui.openDashboard"),
-                action: openDashboard
-            )
+            if snapshot.externalConnected {
+                DetailGroupCard(title: L10n.text("flow.node.charger"), rows: TelemetryDetailRows.popoverCharger(snapshot))
+            }
 
-            PopoverToolbarButton(
-                systemImage: "power",
-                title: L10n.text("common.quit"),
-                action: quitApplication
+            if snapshot.batteryPowerIsDerived {
+                Text(L10n.text("ui.detail.approximateFootnote"))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 4) {
+            Button {
+                showsDetails.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Text(L10n.text(showsDetails ? "ui.details.hide" : "ui.details.show"))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .rotationEffect(.degrees(showsDetails ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+
+            Spacer(minLength: 8)
+
+            FreshnessLabel(
+                refreshDate: store.lastRefreshAt ?? store.latest?.timestamp,
+                health: store.telemetryHealth
             )
+        }
+        .padding(.horizontal, 4)
+    }
+
+    // MARK: - Waiting and unavailable
+
+    @ViewBuilder
+    private var placeholderContent: some View {
+        if store.telemetryUnavailable {
+            VStack(alignment: .leading, spacing: 10) {
+                header(capsule: StatusCapsule(
+                    title: L10n.text("capsule.unavailable"),
+                    systemImage: "exclamationmark.circle",
+                    tone: .neutral
+                ))
+                hero(
+                    title: L10n.text("ui.telemetryUnavailable.title"),
+                    subtitle: L10n.text("ui.telemetryUnavailable.message")
+                )
+                NoticeCard(notice: PowerNotice(
+                    tone: .charger,
+                    symbol: "gearshape.fill",
+                    title: L10n.text("notice.unavailable.title"),
+                    message: L10n.text("notice.unavailable.message")
+                ))
+                HStack(spacing: 8) {
+                    Button(action: openSettings) {
+                        Text(L10n.text("notice.unavailable.openSettings")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+                    Button(action: store.refreshNow) {
+                        Text(L10n.text("notice.unavailable.retry")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+                }
+                .controlSize(.large)
+            }
+            .padding(12)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                header(capsule: StatusCapsule(
+                    title: L10n.text("capsule.reading"),
+                    systemImage: "ellipsis",
+                    tone: .neutral
+                ))
+                hero(title: L10n.text("ui.readingPowerData"), subtitle: L10n.text("ui.readingPowerData.hint"))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(height: 120)
+                HStack(spacing: 8) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: CornerRadius.medium, style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                            .frame(height: 62)
+                    }
+                }
+            }
+            .padding(12)
         }
     }
 }
 
-private struct CompactLiveStatusChip: View {
+/// "방금 업데이트" while values are live, "12초 전 값" in orange when stale.
+private struct FreshnessLabel: View {
     let refreshDate: Date?
     let health: TelemetryHealth
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            content(now: context.date)
-        }
-    }
-
-    private func content(now: Date) -> some View {
-        let freshness = TelemetryFreshness(
-            refreshDate: refreshDate,
-            health: health,
-            now: now
-        )
-
-        return HStack(spacing: 5) {
-            Circle()
-                .fill(dotColor(freshness))
-                .frame(width: 7, height: 7)
-                .shadow(
-                    color: dotColor(freshness).opacity(0.35),
-                    radius: 2
-                )
-
-            Text(detailText(freshness, now: now))
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+            let freshness = TelemetryFreshness(refreshDate: refreshDate, health: health, now: context.date)
+            Text(freshness.updatedText)
+                .font(.caption)
                 .monospacedDigit()
+                .foregroundStyle(style(freshness))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.quaternary.opacity(0.24), in: Capsule())
     }
 
-    private func detailText(
-        _ freshness: TelemetryFreshness,
-        now: Date
-    ) -> String {
-        guard let refreshDate else {
-            return "\(freshness.title) · \(L10n.text("telemetry.live.waiting"))"
-        }
-
-        return "\(freshness.title) · \(Formatters.relativeAge(since: refreshDate, now: now))"
-    }
-
-    private func dotColor(_ freshness: TelemetryFreshness) -> Color {
+    private func style(_ freshness: TelemetryFreshness) -> AnyShapeStyle {
         switch freshness.state {
-        case .waiting:
-            return .gray
-        case .unavailable:
-            return .red
+        case .waiting, .live:
+            AnyShapeStyle(.tertiary)
         case .delayed:
-            return freshness.isCriticallyDelayed ? .red : .orange
-        case .live:
-            return .green
+            AnyShapeStyle(freshness.isCriticallyDelayed ? LensPalette.warning : LensPalette.caution)
+        case .unavailable:
+            AnyShapeStyle(LensPalette.warning)
         }
-    }
-}
-
-private struct PopoverToolbarButton: View {
-    let systemImage: String
-    let title: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 27, height: 27)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .background(.quaternary.opacity(0.26), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(.quaternary.opacity(0.48), lineWidth: 0.8)
-        }
-        .help(title)
-        .accessibilityLabel(title)
     }
 }
 

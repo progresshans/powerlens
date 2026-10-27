@@ -27,8 +27,14 @@ the hardware expose:
 - battery serial number or hardware battery identifier
 - adapter description, negotiated input power, voltage, current, and rated power
 - estimated system load and low power mode state
+- the current energy mode (Automatic, Low Power, or High Power) read with
+  `pmset -g`, shown in the popover and not stored
 - thermal state
-- the frontmost app name and bundle identifier for the high energy usage badge
+- the frontmost app name and bundle identifier, saved with history samples
+- CPU time and idle wakeups of running apps and their helper processes, with
+  each app's name and location, to list the apps using the most energy in the
+  popover and Dashboard; this is sampled only while one of them is open and is
+  not stored
 
 ## Data Stored Locally
 
@@ -58,9 +64,24 @@ compatibility classification are deduplicated even when bounded diagnostic
 details change, and their stored observation time is refreshed at most hourly.
 
 The history database may include battery identifiers, adapter information,
-telemetry samples, and the frontmost high energy usage app name/bundle
-identifier. This data stays on the Mac unless you manually share, back up, or
+telemetry samples, and the frontmost app name and bundle identifier. This data
+stays on the Mac unless you manually share, back up, or
 sync that directory.
+
+New telemetry samples also preserve the original timestamp, numeric measurement
+precision, and measurement-set source so saved power charts use the same inputs
+as the live display. This payload does not add app or hardware identifiers or
+store charging-policy or energy-mode metadata.
+
+Before upgrading an older history schema, PowerLens creates a local recovery
+copy in the same folder, named after the schema it holds, such as
+`history.sqlite3.schema-v4.sqlite3`. Each copy contains the pre-upgrade
+database, including its existing identifiers, and is readable only by the file
+owner. It lets you go back to the previous version soon after an update. A copy
+is kept for 14 days, even if some of its samples are older than your retention
+window, and the next daily cleanup after that deletes it, including with
+**Forever**. With **Don't keep**, copies are deleted at the next cleanup instead
+of after 14 days. They are not uploaded.
 
 The History settings control retention:
 

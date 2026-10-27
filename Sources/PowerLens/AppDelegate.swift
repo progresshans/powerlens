@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observeChanges() {
-        store.$latest
+        store.$live.map(\.snapshot).removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] snapshot in
                 guard let self else {
@@ -112,14 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        store.$menuBarPresentation
+        store.$live.map(\.menuBar)
             .removeDuplicates()
             .sink { [weak self] presentation in
                 self?.updateStatusItem(using: presentation)
             }
             .store(in: &cancellables)
 
-        store.$diagnostics
+        store.diagnosticUpdates
             .receive(on: RunLoop.main)
             .sink { [weak self] diagnostics in
                 self?.diagnosticsNotifier.process(diagnostics: diagnostics)
@@ -145,9 +145,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.store.presentationDidBecomeActive() }
+            .store(in: &cancellables)
+
         Publishers.MergeMany(
             NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification),
             NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification),
+            NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification),
             NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification),
             NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification),
             NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
@@ -182,7 +188,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             snapshot: presentation.snapshot,
             symbolName: presentation.symbolName,
             batteryBadge: presentation.batteryBadge,
-            statusHeadline: presentation.statusHeadline
+            statusHeadline: presentation.statusHeadline,
+            lowPowerMode: presentation.lowPowerMode,
+            powerWarning: presentation.powerWarning
         )
     }
 
@@ -198,8 +206,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateRefreshCadence() {
-        let hasVisibleWindow = managedWindowController.hasManagedWindow(includeMiniaturized: false)
-        store.setRefreshCadence((popoverPresenter.isShown || hasVisibleWindow) ? .interactive : .background)
+        store.updatePresentationActivity(
+            popover: popoverPresenter.isShown,
+            dashboard: managedWindowController.hasVisibleContent(identifier: PowerLensWindowIdentifier.dashboard),
+            settings: managedWindowController.hasVisibleContent(identifier: PowerLensWindowIdentifier.settings)
+        )
     }
 
     private func updateWindowDrivenPresentation() {
