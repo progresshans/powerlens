@@ -312,7 +312,8 @@
 "notifications.description" = "들어오는 전력이 모자라거나 배터리가 뜨거우면 알려드려요";
 "insights.export" = "내보내기";
 "insights.export.failed.title" = "기록을 내보내지 못했어요";
-"insights.export.noSamples" = "내보낼 기록을 불러오지 못했어요.";
+"insights.export.noSamples" = "이 기간에는 내보낼 기록이 없어요.";
+"insights.export.loadFailed" = "기록을 불러오지 못해서 내보내지 못했어요.";
 
 "ui.telemetryUnavailable.title" = "전력 정보를 읽지 못했어요";
 "ui.telemetryUnavailable.message" = "지금도 계속 다시 시도하고 있어요";
@@ -324,7 +325,7 @@
 "history.status.degraded" = "저장 문제";
 "history.status.checking.detail" = "기록 저장소를 확인하고 있어요.";
 "history.status.available.detail" = "기록을 쓸 수 있어요.";
-"history.status.degraded.detail" = "지금은 기록을 저장할 수 없어요. 실시간 측정은 계속돼요.";
+"history.status.degraded.detail" = "지금은 기록을 이용할 수 없어요. 실시간 측정은 계속돼요.";
 "history.rawWindow.title" = "자세한 기록 남기기";
 "history.rawWindow.detail" = "1분 단위 기록을 얼마나 남길지 정해요";
 "history.window.days30" = "30일";
@@ -379,6 +380,7 @@
 "tile.battery.limit" = "충전 한도 %@";
 "tile.mac.average" = "지난 1시간 평균 %@";
 "tile.mac.collecting" = "최근 기록을 모으고 있어요";
+"tile.mac.historyUnavailable" = "최근 기록을 불러오지 못했어요";
 "sidebar.status.detail" = "배터리 %1$@ · Mac %2$@";
 "flow.node.charger" = "충전기";
 "flow.node.battery" = "배터리";

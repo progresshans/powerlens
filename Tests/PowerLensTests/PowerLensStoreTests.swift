@@ -49,6 +49,16 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
+    func failedHistoryReadsArePropagatedToEveryConsumer() async {
+        let store = PowerLensStore(historyStore: StubHistoryStore(failRead: true), startsAutomatically: false)
+        await #expect(throws: (any Error).self) { _ = try await store.recentPowerHistory() }
+        await #expect(throws: (any Error).self) { _ = try await store.loadInsights(for: .all) }
+        await #expect(throws: (any Error).self) { _ = try await store.exportSnapshots(for: .all) }
+        #expect(store.historyHealth == .degraded)
+    }
+
+    @Test
+    @MainActor
     func reopeningAnotherSurfaceRefreshesMetadataWithoutChangingCadence() async {
         let modes = StubEnergyModeReader([.highPower, .automatic])
         let store = PowerLensStore(telemetryReader: CountingTelemetryReader(snapshot: makeTelemetrySnapshot()),
@@ -171,7 +181,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func recentPowerHistoryReadsSavedHistoryAsBalancedReadings() async {
+    func recentPowerHistoryReadsSavedHistoryAsBalancedReadings() async throws {
         let now = Date(timeIntervalSince1970: 1_775_000_000)
         let charging = makeTelemetrySnapshot(
             timestamp: now.addingTimeInterval(-120),
@@ -200,7 +210,7 @@ struct PowerLensStoreTests {
             now: { now }
         )
 
-        let samples = await store.recentPowerHistory()
+        let samples = try await store.recentPowerHistory()
 
         #expect(samples.map(\.date) == [charging.timestamp, onBattery.timestamp])
         #expect(abs((samples.first?.inputW ?? 0) - 53.6) < 0.05)
@@ -212,7 +222,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func insightsAreInvalidatedAfterPersistenceCompletesButNotAfterReads() async {
+    func insightsAreInvalidatedAfterPersistenceCompletesButNotAfterReads() async throws {
         let snapshot = makeTelemetrySnapshot()
         let gate = HistoryAppendGate()
         var appends = gate.arrivals.makeAsyncIterator()
@@ -234,7 +244,7 @@ struct PowerLensStoreTests {
         await refresh.value
         #expect(store.historyRevision == 1)
 
-        _ = await store.loadInsights(for: .all)
+        _ = try await store.loadInsights(for: .all)
         await store.refreshOnce(persistImmediately: false)
         #expect(store.historyRevision == 1)
     }
@@ -255,9 +265,9 @@ struct PowerLensStoreTests {
 
         let read = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            return await store.loadInsights(for: .all)
+            return try await store.loadInsights(for: .all)
         }
-        _ = await read.value
+        _ = try? await read.value
 
         #expect(store.historyHealth == .available)
         #expect(store.historyRevision == revision)
@@ -265,7 +275,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func insightsQueriesAllStoredDataRegardlessOfRetentionPreferences() async {
+    func insightsQueriesAllStoredDataRegardlessOfRetentionPreferences() async throws {
         let historyStore = StubHistoryStore()
         let now = Date(timeIntervalSince1970: 2_000_000_000)
         let store = PowerLensStore(
@@ -274,7 +284,7 @@ struct PowerLensStoreTests {
             now: { now }
         )
 
-        _ = await store.loadInsights(for: .all)
+        _ = try await store.loadInsights(for: .all)
 
         let interval = HistoryRange.all.interval(now: now)
         #expect(await historyStore.aggregatedRanges() == [interval])
@@ -1686,6 +1696,7 @@ private actor StubHistoryStore: HistoryStoring {
     private var requestedAggregatedRanges: [DateInterval] = []
     private var requestedRollupRanges: [DateInterval] = []
     private let failAppend: Bool
+    private let failRead: Bool
     private let loadedSnapshots: [TelemetrySnapshot]
     private let blocksLoad: Bool
     private let appendGate: HistoryAppendGate?
@@ -1695,11 +1706,13 @@ private actor StubHistoryStore: HistoryStoring {
 
     init(
         failAppend: Bool = false,
+        failRead: Bool = false,
         loadedSnapshots: [TelemetrySnapshot] = [],
         blocksLoad: Bool = false,
         appendGate: HistoryAppendGate? = nil
     ) {
         self.failAppend = failAppend
+        self.failRead = failRead
         self.loadedSnapshots = loadedSnapshots
         self.blocksLoad = blocksLoad
         self.appendGate = appendGate
@@ -1719,6 +1732,7 @@ private actor StubHistoryStore: HistoryStoring {
 
     func loadRecent(since cutoffDate: Date) async throws -> [TelemetrySnapshot] {
         recentLoadCount += 1
+        if failRead { throw StubHistoryError.writeFailed }
         return loadedSnapshots
     }
 
@@ -1753,6 +1767,7 @@ private actor StubHistoryStore: HistoryStoring {
         for range: DateInterval,
         bucketSeconds: Int
     ) async throws -> [AggregatedTelemetryPoint] {
+        if failRead { throw StubHistoryError.writeFailed }
         requestedAggregatedRanges.append(range)
         return []
     }

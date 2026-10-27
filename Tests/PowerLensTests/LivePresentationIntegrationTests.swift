@@ -73,6 +73,17 @@ struct LivePresentationIntegrationTests {
         #expect(diagnostics.map(\.id) == snapshot.diagnostics(resolvedState: resolved).map(\.id))
     }
 
+    @Test(arguments: [Double?.none, 0, -1])
+    func theActualGaugeDrawsNoFillForMissingOrEmptyValues(fraction: Double?) throws {
+        let renderer = ImageRenderer(content: BarGauge(fraction: fraction, tint: .green).frame(width: 320, height: 8))
+        let image = try #require(renderer.cgImage)
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        for x in 0..<bitmap.pixelsWide {
+            let color = try #require(bitmap.colorAt(x: x, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+            #expect(color.greenComponent - color.redComponent < 0.2)
+        }
+    }
+
     @Test
     func workDemandMatchesConsumersRatherThanAnyOpenWindow() {
         var activity = PresentationActivity(settings: true)

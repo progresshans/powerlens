@@ -214,23 +214,7 @@ struct DetailGroupCard: View {
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
 
-            VStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(row.0)
-                        Spacer(minLength: 10)
-                        Text(row.1)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .multilineTextAlignment(.trailing)
-                    }
-                    .padding(.vertical, 6)
-
-                    if index < rows.count - 1 {
-                        Divider()
-                    }
-                }
-            }
+            DetailRows(rows: rows, style: .popover)
             .padding(.horizontal, 12)
             .padding(.vertical, 2)
             .glassCardSurface()
@@ -249,12 +233,13 @@ struct BarGauge: View {
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
+            let fillWidth = GaugeLayout.fillWidth(fraction: fraction, trackWidth: width)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.08))
-                if let fraction {
+                if fillWidth > 0 {
                     Capsule()
                         .fill(tint)
-                        .frame(width: max(8, width * min(max(fraction, 0), 1)))
+                        .frame(width: fillWidth)
                 }
                 if let marker {
                     RoundedRectangle(cornerRadius: 1)

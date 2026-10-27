@@ -39,6 +39,7 @@ final class DashboardSceneController {
 }
 
 struct DashboardSceneRootView: View {
+    @StateObject private var session = DashboardSession()
     @ObservedObject var store: PowerLensStore
     let openSettings: () -> Void
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
@@ -47,7 +48,7 @@ struct DashboardSceneRootView: View {
         VisibleWindowContent(onVisibilityChange: { visible in
             if visible { store.presentationDidBecomeActive() }
         }) {
-            DashboardView(store: store, openSettings: openSettings)
+            DashboardView(store: store, openSettings: openSettings, session: session)
         }
             .environment(\.locale, L10n.locale)
             .id(appLanguage)

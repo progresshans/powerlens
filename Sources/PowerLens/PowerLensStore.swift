@@ -377,7 +377,7 @@ final class PowerLensStore: ObservableObject {
     /// Loads aggregated series, summary statistics, and the long-term battery
     /// health trend for the Insights view. The health trend ignores the range
     /// because capacity changes slowly and is most useful over the full record.
-    func loadInsights(for range: HistoryRange) async -> InsightsData {
+    func loadInsights(for range: HistoryRange) async throws -> InsightsData {
         let currentDate = now()
         do {
             try Task.checkCancellation()
@@ -389,23 +389,27 @@ final class PowerLensStore: ObservableObject {
             if !Task.isCancelled, !(error is CancellationError) {
                 recordHistoryFailure(error, operation: "load insights")
             }
-            return .empty(range: range, now: currentDate)
+            throw error
         }
     }
 
     /// Loads raw snapshots within a range for export. Bounded by the on-disk
     /// retention window.
-    func exportSnapshots(for range: HistoryRange) async -> [TelemetrySnapshot] {
+    func exportSnapshots(for range: HistoryRange) async throws -> [TelemetrySnapshot] {
         let interval = range.interval(now: now())
         do {
+            try Task.checkCancellation()
             let loaded = try await historyStore.loadRecent(
                 since: interval.start
             )
+            try Task.checkCancellation()
             recordHistorySuccess()
             return loaded.filter { interval.contains($0.timestamp) }
         } catch {
-            recordHistoryFailure(error, operation: "export history")
-            return []
+            if !Task.isCancelled, !(error is CancellationError) {
+                recordHistoryFailure(error, operation: "export history")
+            }
+            throw error
         }
     }
 
@@ -675,15 +679,20 @@ final class PowerLensStore: ObservableObject {
 
     /// The last hour of saved history for the Dashboard chart. History is
     /// written once a minute, so callers reload when `historyRevision` changes.
-    func recentPowerHistory() async -> [RecentPowerSample] {
+    func recentPowerHistory() async throws -> [RecentPowerSample] {
         let end = now()
         let cutoff = end.addingTimeInterval(-RecentPowerSample.window)
         do {
+            try Task.checkCancellation()
             let records = try await historyStore.loadRecentRecords(since: cutoff)
+            try Task.checkCancellation()
+            recordHistorySuccess()
             return records.filter { $0.snapshot.timestamp <= end }.map(RecentPowerSample.init(record:))
         } catch {
-            recordHistoryFailure(error, operation: "load recent power")
-            return []
+            if !Task.isCancelled, !(error is CancellationError) {
+                recordHistoryFailure(error, operation: "load recent power")
+            }
+            throw error
         }
     }
 

@@ -312,7 +312,8 @@
 "notifications.description" = "Get notified when not enough power is coming in or the battery gets hot";
 "insights.export" = "Export";
 "insights.export.failed.title" = "Could Not Export History";
-"insights.export.noSamples" = "No retained history samples could be loaded for this export.";
+"insights.export.noSamples" = "There’s no saved history in this range to export.";
+"insights.export.loadFailed" = "PowerLens couldn’t read the history for this export.";
 
 "ui.telemetryUnavailable.title" = "Couldn’t read power data";
 "ui.telemetryUnavailable.message" = "PowerLens keeps trying in the background";
@@ -379,6 +380,7 @@
 "tile.battery.limit" = "Charge limit %@";
 "tile.mac.average" = "Last hour average %@";
 "tile.mac.collecting" = "Collecting recent readings";
+"tile.mac.historyUnavailable" = "Recent history isn’t available";
 "sidebar.status.detail" = "Battery %1$@ · Mac %2$@";
 "flow.node.charger" = "Charger";
 "flow.node.battery" = "Battery";
