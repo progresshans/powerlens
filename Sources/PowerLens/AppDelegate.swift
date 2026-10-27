@@ -145,9 +145,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.store.presentationDidBecomeActive() }
+            .store(in: &cancellables)
+
         Publishers.MergeMany(
             NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification),
             NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification),
+            NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification),
             NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification),
             NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification),
             NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)
@@ -200,8 +206,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateRefreshCadence() {
-        let hasVisibleWindow = managedWindowController.hasManagedWindow(includeMiniaturized: false)
-        store.setRefreshCadence((popoverPresenter.isShown || hasVisibleWindow) ? .interactive : .background)
+        store.updatePresentationActivity(
+            popover: popoverPresenter.isShown,
+            dashboard: managedWindowController.hasVisibleContent(identifier: PowerLensWindowIdentifier.dashboard),
+            settings: managedWindowController.hasVisibleContent(identifier: PowerLensWindowIdentifier.settings)
+        )
     }
 
     private func updateWindowDrivenPresentation() {

@@ -44,7 +44,9 @@ struct DashboardSceneRootView: View {
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
 
     var body: some View {
-        VisibleWindowContent {
+        VisibleWindowContent(onVisibilityChange: { visible in
+            if visible { store.presentationDidBecomeActive() }
+        }) {
             DashboardView(store: store, openSettings: openSettings)
         }
             .environment(\.locale, L10n.locale)
@@ -188,6 +190,7 @@ private struct WindowConfigurationView: NSViewRepresentable {
 /// a closed `Window` scene's views alive, and they would otherwise redraw on
 /// every refresh, and on every tick of their timers, with nobody looking.
 struct VisibleWindowContent<Content: View>: View {
+    var onVisibilityChange: (Bool) -> Void = { _ in }
     @ViewBuilder let content: Content
     @State private var isVisible = true
 
@@ -203,10 +206,12 @@ struct VisibleWindowContent<Content: View>: View {
             WindowVisibilityObserver(isVisible: $isVisible)
                 .frame(width: 0, height: 0)
         )
+        .onAppear { onVisibilityChange(isVisible) }
+        .onChange(of: isVisible) { onVisibilityChange(isVisible) }
     }
 }
 
-private struct WindowVisibilityObserver: NSViewRepresentable {
+struct WindowVisibilityObserver: NSViewRepresentable {
     @Binding var isVisible: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -223,6 +228,11 @@ private struct WindowVisibilityObserver: NSViewRepresentable {
 
     func updateNSView(_ view: ObserverView, context: Context) {
         context.coordinator.isVisible = $isVisible
+    }
+
+    static func dismantleNSView(_ view: ObserverView, coordinator: Coordinator) {
+        view.onWindowChange = nil
+        coordinator.observe(nil)
     }
 
     final class ObserverView: NSView {
@@ -274,7 +284,7 @@ private struct WindowVisibilityObserver: NSViewRepresentable {
                     }
                 }
             }
-            set(window.isVisible && !window.isMiniaturized)
+            set(WindowContentVisibility.isVisible(window))
         }
 
         private enum Rule: Sendable {
@@ -287,7 +297,7 @@ private struct WindowVisibilityObserver: NSViewRepresentable {
                 switch self {
                 case .shown: true
                 case .hidden: false
-                case .occlusion: window.occlusionState.contains(.visible)
+                case .occlusion: WindowContentVisibility.isVisible(window)
                 }
             }
         }
@@ -296,6 +306,10 @@ private struct WindowVisibilityObserver: NSViewRepresentable {
             if isVisible.wrappedValue != value {
                 isVisible.wrappedValue = value
             }
+        }
+
+        isolated deinit {
+            tokens.forEach(NotificationCenter.default.removeObserver)
         }
     }
 }

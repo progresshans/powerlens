@@ -51,6 +51,7 @@ struct RollingNumberText: View {
     let text: String
     let font: NSFont
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.flowLightIsActive) private var isVisible
 
     /// System font with tabular digits, like `.system(size:weight:)` plus
     /// `.monospacedDigit()`.
@@ -61,7 +62,7 @@ struct RollingNumberText: View {
 
     var body: some View {
         let baseline = RollingNumberView.baseline(for: font)
-        RollingNumberRepresentable(text: text, font: font, animates: !reduceMotion)
+        RollingNumberRepresentable(text: text, font: font, animates: isVisible && !reduceMotion)
             .alignmentGuide(.firstTextBaseline) { _ in baseline }
             .alignmentGuide(.lastTextBaseline) { _ in baseline }
             .accessibilityElement()

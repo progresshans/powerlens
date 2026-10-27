@@ -4,6 +4,69 @@ import Testing
 @testable import PowerLens
 
 struct PowerLensStoreTests {
+
+    @Test
+    @MainActor
+    func repeatedMetadataEventsCoalesceAndCannotPublishAnOlderMode() async {
+        let reader = ControlledEnergyModeReader()
+        var starts = reader.starts.makeAsyncIterator()
+        let store = PowerLensStore(historyStore: StubHistoryStore(), energyModeReader: reader,
+                                   startsAutomatically: false)
+        store.presentationDidBecomeActive()
+        _ = await starts.next()
+        for _ in 0..<12 { store.presentationDidBecomeActive() }
+        #expect(await reader.readCount == 1)
+        await reader.finish(.highPower)
+        _ = await starts.next()
+        #expect(store.energyMode == nil)
+        await reader.finish(.automatic)
+        await store.energyModeTask?.value
+        #expect(store.energyMode == .automatic)
+        #expect(await reader.readCount == 2)
+        #expect(await reader.maximumConcurrentReads == 1)
+    }
+
+    @Test
+    @MainActor
+    func reopeningAnotherSurfaceRefreshesMetadataWithoutChangingCadence() async {
+        let modes = StubEnergyModeReader([.highPower, .automatic])
+        let store = PowerLensStore(telemetryReader: CountingTelemetryReader(snapshot: makeTelemetrySnapshot()),
+            historyStore: StubHistoryStore(), energySampler: EmptyEnergySampler(),
+            energyModeReader: modes, startsAutomatically: false)
+        store.updatePresentationActivity(popover: false, dashboard: true, settings: false)
+        store.presentationDidBecomeActive()
+        await store.energyModeTask?.value
+        #expect(store.energyMode == .highPower)
+        store.updatePresentationActivity(popover: true, dashboard: true, settings: false)
+        store.presentationDidBecomeActive()
+        await store.energyModeTask?.value
+        #expect(store.energyMode == .automatic)
+        #expect(await modes.readCount == 2)
+    }
+
+    @Test
+    @MainActor
+    func settingsAndHistoryDoNotStartProcessEnergySampling() async {
+        let sampler = CountingEnergySampler()
+        let store = PowerLensStore(telemetryReader: CountingTelemetryReader(snapshot: makeTelemetrySnapshot()),
+            historyStore: StubHistoryStore(), energySampler: sampler,
+            energyModeReader: StubEnergyModeReader([.standard]), startsAutomatically: false)
+        store.updatePresentationActivity(popover: false, dashboard: false, settings: true)
+        await store.refreshOnce()
+        #expect(await sampler.sampleCount == 0)
+        store.setDashboardEnergyDemand(false)
+        store.updatePresentationActivity(popover: false, dashboard: true, settings: true)
+        await store.refreshOnce()
+        #expect(await sampler.sampleCount == 0)
+        store.updatePresentationActivity(popover: true, dashboard: true, settings: true)
+        await store.refreshOnce()
+        await waitForEnergyApps(in: store)
+        #expect(await sampler.sampleCount == 1)
+        store.updatePresentationActivity(popover: false, dashboard: true, settings: true)
+        #expect(store.topEnergyApps.isEmpty)
+        await store.refreshOnce()
+        #expect(await sampler.sampleCount == 1)
+    }
     @Test
     @MainActor
     func energyModeIsReadAgainWhenThePowerSourceChanges() async {
@@ -1514,6 +1577,33 @@ private actor StubEnergyModeReader: EnergyModeReading {
     func read(lowPowerFallback: Bool) async -> EnergyMode {
         readCount += 1
         return modes.count > 1 ? modes.removeFirst() : modes.first ?? .standard
+    }
+}
+
+private actor ControlledEnergyModeReader: EnergyModeReading {
+    let starts: AsyncStream<Void>
+    private let arrivals: AsyncStream<Void>.Continuation
+    private var pending: CheckedContinuation<EnergyMode, Never>?
+    private var activeReads = 0
+    private(set) var readCount = 0
+    private(set) var maximumConcurrentReads = 0
+
+    init() { (starts, arrivals) = AsyncStream.makeStream(of: Void.self) }
+
+    func read(lowPowerFallback: Bool) async -> EnergyMode {
+        readCount += 1
+        activeReads += 1
+        maximumConcurrentReads = max(maximumConcurrentReads, activeReads)
+        defer { activeReads -= 1 }
+        return await withCheckedContinuation {
+            pending = $0
+            arrivals.yield(())
+        }
+    }
+
+    func finish(_ mode: EnergyMode) {
+        pending?.resume(returning: mode)
+        pending = nil
     }
 }
 

@@ -78,6 +78,7 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
 
     func popoverDidShow(_ notification: Notification) {
         visibility.isShown = true
+        store.presentationDidBecomeActive()
         onVisibilityChange()
     }
 

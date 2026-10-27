@@ -71,6 +71,7 @@ final class PowerLensStore: ObservableObject {
     private var energySamplingGeneration = 0
     private(set) var energyModeTask: Task<Void, Never>?
     private var energyModeGeneration = 0
+    private var pendingEnergyModeRead: (generation: Int, lowPower: Bool)?
     private var powerSourceObservation: PowerSourceObservation?
     private var powerSourceGeneration = 0
     private var lastAppliedSourceGeneration: Int?
@@ -83,6 +84,8 @@ final class PowerLensStore: ObservableObject {
     private let interactiveRefreshInterval: Duration
     private let backgroundRefreshInterval: Duration
     private var refreshCadence: RefreshCadence = .background
+    private var energySamplingEnabled = false
+    private var presentationActivity = PresentationActivity()
 
     var telemetryUnavailable: Bool {
         telemetryHealth.isUnavailable
@@ -220,14 +223,38 @@ final class PowerLensStore: ObservableObject {
         )
     }
 
-    func setRefreshCadence(_ cadence: RefreshCadence) {
-        guard refreshCadence != cadence else {
-            return
-        }
+    func updatePresentationActivity(popover: Bool, dashboard: Bool, settings: Bool) {
+        presentationActivity.popover = popover
+        presentationActivity.dashboard = dashboard
+        presentationActivity.settings = settings
+        applyPresentationActivity()
+    }
 
+    func setDashboardEnergyDemand(_ enabled: Bool) {
+        presentationActivity.dashboardShowsEnergyApps = enabled
+        applyPresentationActivity()
+    }
+
+    private func applyPresentationActivity() {
+        setRefreshCadence(presentationActivity.needsLiveReadings ? .interactive : .background,
+                          samplesEnergyApps: presentationActivity.needsEnergyApps, refreshMetadata: false)
+    }
+
+    /// Opening/focusing a surface is an event even if another surface is open.
+    func presentationDidBecomeActive() {
+        refreshEnergyMode()
+    }
+
+    func setRefreshCadence(_ cadence: RefreshCadence, samplesEnergyApps: Bool = true, refreshMetadata: Bool = true) {
+        let sampling = cadence == .interactive && samplesEnergyApps
+        let cadenceChanged = refreshCadence != cadence
+        if cadenceChanged || sampling != energySamplingEnabled {
+            energySamplingEnabled = sampling
+            resetEnergySampling()
+        }
+        guard cadenceChanged else { return }
         refreshCadence = cadence
-        resetEnergySampling()
-        if cadence == .interactive {
+        if cadence == .interactive && refreshMetadata {
             refreshEnergyMode()
         }
         switch automaticRefreshPhase {
@@ -337,7 +364,7 @@ final class PowerLensStore: ObservableObject {
     }
 
     private func scheduleEnergySamplingIfVisible() {
-        guard refreshCadence == .interactive, energySamplingTask == nil else { return }
+        guard energySamplingEnabled, energySamplingTask == nil else { return }
         let generation = energySamplingGeneration
         let reset = energyResetTask
         let sampler = energySampler
@@ -349,11 +376,11 @@ final class PowerLensStore: ObservableObject {
             await reset?.value
             guard !Task.isCancelled,
                   self?.energySamplingGeneration == generation,
-                  self?.refreshCadence == .interactive else { return }
+                  self?.energySamplingEnabled == true else { return }
             let apps = await sampler.sample(now: clock())
             guard !Task.isCancelled, let self,
                   self.energySamplingGeneration == generation,
-                  self.refreshCadence == .interactive else { return }
+                  self.energySamplingEnabled else { return }
             if self.topEnergyApps != apps {
                 self.topEnergyApps = apps
             }
@@ -666,19 +693,27 @@ final class PowerLensStore: ObservableObject {
     /// manual refresh, never on every telemetry tick.
     private func refreshEnergyMode() {
         energyModeGeneration += 1
-        let generation = energyModeGeneration
+        pendingEnergyModeRead = (energyModeGeneration, latest?.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled)
+        guard energyModeTask == nil else { return }
         let reader = energyModeReader
-        let lowPower = latest?.lowPowerModeEnabled ?? ProcessInfo.processInfo.isLowPowerModeEnabled
-        energyModeTask?.cancel()
         energyModeTask = Task { [weak self] in
-            let mode = await reader.read(lowPowerFallback: lowPower)
-            guard !Task.isCancelled, let self, self.energyModeGeneration == generation else {
-                return
+            while let request = self?.takeEnergyModeRequest(), !Task.isCancelled {
+                let mode = await reader.read(lowPowerFallback: request.lowPower)
+                guard !Task.isCancelled else { break }
+                self?.acceptEnergyMode(mode, generation: request.generation)
             }
-            if self.energyMode != mode {
-                self.energyMode = mode
-            }
+            self?.energyModeTask = nil
         }
+    }
+
+    private func takeEnergyModeRequest() -> (generation: Int, lowPower: Bool)? {
+        defer { pendingEnergyModeRead = nil }
+        return pendingEnergyModeRead
+    }
+
+    private func acceptEnergyMode(_ mode: EnergyMode, generation: Int) {
+        guard generation == energyModeGeneration else { return }
+        if energyMode != mode { energyMode = mode }
     }
 
     /// The last hour of saved history for the Dashboard chart. History is
