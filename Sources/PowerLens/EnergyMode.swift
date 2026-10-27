@@ -13,13 +13,6 @@ enum EnergyMode: Equatable, Sendable {
     /// Low Power Mode is off on a Mac without High Power Mode.
     case standard
 
-    var supportsHighPower: Bool {
-        switch self {
-        case .automatic, .highPower: true
-        case .lowPower, .standard: false
-        }
-    }
-
     var rowTitle: String {
         switch self {
         case .standard, .lowPower:
@@ -55,7 +48,8 @@ enum EnergyModeReader {
             switch value {
             case 1: return .lowPower
             case 2: return .highPower
-            default: return lowPowerFallback ? .lowPower : .automatic
+            case 0: return lowPowerFallback ? .lowPower : .automatic
+            default: return lowPowerFallback ? .lowPower : .standard
             }
         }
 
@@ -64,25 +58,7 @@ enum EnergyModeReader {
 
     /// Reads the current settings without elevated privileges.
     static func readPmset() async -> String? {
-        await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-            process.arguments = ["-g"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-            do {
-                try process.run()
-            } catch {
-                return nil
-            }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else {
-                return nil
-            }
-            return String(data: data, encoding: .utf8)
-        }.value
+        await BoundedProcessOutput.read(executable: URL(fileURLWithPath: "/usr/bin/pmset"), arguments: ["-g"])
     }
 }
 
