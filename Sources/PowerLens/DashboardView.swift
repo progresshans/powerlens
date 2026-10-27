@@ -7,6 +7,11 @@ struct DashboardView: View {
     @SceneStorage("dashboard.sidebar.selection") private var selectedDestinationRaw = DashboardSidebarDestination.dashboard.rawValue
     let session: DashboardSession
 
+    /// With the sidebar shown the window is at least 1120pt wide; the
+    /// floating sidebar sits 8pt in from the window edge.
+    static let sidebarMinWidth: CGFloat = 220
+    static let detailMinWidth: CGFloat = 1120 - sidebarMinWidth - 8
+
     private var selectedDestination: DashboardSidebarDestination {
         DashboardSidebarDestination(rawValue: selectedDestinationRaw) ?? .dashboard
     }
@@ -27,9 +32,13 @@ struct DashboardView: View {
             detailSurface
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.lensWindowBackground)
+                // The window minimum belongs to the columns, not the whole
+                // split view: while the sidebar slides in, the detail sits
+                // beside it, and a 1120pt minimum pushed it off the right edge.
+                .navigationSplitViewColumnWidth(min: Self.detailMinWidth, ideal: Self.detailMinWidth)
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1120, minHeight: 760)
+        .frame(minHeight: 760)
         .onAppear { store.setDashboardEnergyDemand(selectedDestination == .dashboard) }
         .onChange(of: selectedDestinationRaw) { store.setDashboardEnergyDemand(selectedDestination == .dashboard) }
     }
@@ -71,7 +80,7 @@ struct DashboardView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 12)
         }
-        .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 260)
+        .navigationSplitViewColumnWidth(min: Self.sidebarMinWidth, ideal: Self.sidebarMinWidth, max: 260)
     }
 
     private func sidebarStatus(_ snapshot: TelemetrySnapshot, presentation: LivePowerPresentation) -> some View {
