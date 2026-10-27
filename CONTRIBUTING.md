@@ -9,7 +9,8 @@ Development requires an Apple silicon Mac, Swift 6.2, and the Xcode command-line
 tools or Xcode.
 
 For a bug, include the PowerLens version, macOS version, Mac model, power source,
-and whether the Compatible or Live Precision telemetry engine was active. Do
+and which measurement method was active (Reliable or More Precise, shown as
+**Active Path** in Settings). Do
 not post battery serial numbers, signing credentials, Sparkle keys, or other
 private machine data.
 
@@ -120,6 +121,34 @@ account and no personal data or release credentials.
   identifier explicitly in the pull request and update `PRIVACY.md`.
 - Never commit certificates, notarization credentials, `.env` files, Sparkle
   private keys, exported user history, or battery identifiers.
+
+## Telemetry and Presentation Contracts
+
+`PowerLensStore.live` publishes the accepted raw snapshot, its resolved state,
+diagnostics, source observation, and cached presentation together. Views consume
+that presentation instead of independently reinterpreting the same readings.
+Source reconciliation is independent of read failures: a new source observation
+does not rewrite the cached snapshot, and a failed read does not end the pending
+transition. `PowerStateTracker` stabilizes diagnostics by sample time;
+`PowerFlowReadings` resolves immediate physical flow and display balance.
+
+Battery temperature is assessed separately from system thermal pressure. A
+missing or nonfinite measurement is unknown, and an empty gauge has no filled
+segment. Charger capacity utilization cannot override a confirmed delivery
+shortfall or establish which piece of hardware caused it.
+
+`PresentationActivity` separates live-read demand from process-energy sampling.
+Only visible consumers request app-energy samples. Opening or focusing a
+surface refreshes energy-mode metadata even if another surface already keeps
+the store interactive. Metadata reads are coalesced and bounded; superseded
+responses cannot publish. Window-owned history and export models outlive the
+temporary removal of occluded Dashboard content.
+
+History queries distinguish loading, successful empty results, and failures.
+Cancellation is not a storage failure. A failed reload may retain previous
+data, but it must still expose the failure. Regressions should exercise the
+actual store, SQLite round trip, or rendering component rather than a parallel
+helper that production no longer calls.
 
 ## History Schema Upgrades and Recovery
 

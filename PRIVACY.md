@@ -30,7 +30,11 @@ the hardware expose:
 - the current energy mode (Automatic, Low Power, or High Power) read with
   `pmset -g`, shown in the popover and not stored
 - thermal state
-- the frontmost app name and bundle identifier for the high energy usage badge
+- the frontmost app name and bundle identifier, saved with history samples
+- CPU time and idle wakeups of running apps and their helper processes, with
+  each app's name and location, to list the apps using the most energy in the
+  popover and Dashboard; this is sampled only while one of them is open and is
+  not stored
 
 ## Data Stored Locally
 
@@ -60,8 +64,8 @@ compatibility classification are deduplicated even when bounded diagnostic
 details change, and their stored observation time is refreshed at most hourly.
 
 The history database may include battery identifiers, adapter information,
-telemetry samples, and the frontmost high energy usage app name/bundle
-identifier. This data stays on the Mac unless you manually share, back up, or
+telemetry samples, and the frontmost app name and bundle identifier. This data
+stays on the Mac unless you manually share, back up, or
 sync that directory.
 
 New telemetry samples also preserve the original timestamp, numeric measurement
