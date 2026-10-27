@@ -242,22 +242,15 @@ struct MetricTilePresentation: Equatable, Sendable {
     }
 
     static func temperature(snapshot: TelemetrySnapshot) -> Self {
-        let tone: StatusTone
-        switch snapshot.thermalState.lowercased() {
-        case "fair":
-            tone = .caution
-        case "serious", "critical":
-            tone = .warning
-        default:
-            tone = .neutral
-        }
+        let assessment = BatteryTemperatureAssessment(snapshot.batteryTemperatureC)
 
         return Self(
             label: L10n.text("ui.metric.batteryTemp"),
             symbol: "thermometer.medium",
-            value: snapshot.batteryTemperatureC.map(Formatters.wholeTemperature) ?? L10n.text("common.none"),
-            caption: L10n.localizedThermalState(snapshot.thermalState),
-            captionTone: tone
+            value: assessment == .unknown ? L10n.text("common.none")
+                : snapshot.batteryTemperatureC.map(Formatters.wholeTemperature) ?? L10n.text("common.none"),
+            caption: assessment.caption,
+            captionTone: assessment.tone
         )
     }
 }

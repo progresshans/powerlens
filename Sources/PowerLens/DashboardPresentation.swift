@@ -70,9 +70,9 @@ enum DashboardGauge {
 }
 
 enum DashboardInsight {
-    /// "Temperature is fine" only when macOS reports a thermal state.
+    /// Assess the battery sensor independently of system thermal pressure.
     static func temperatureTitle(snapshot: TelemetrySnapshot) -> String {
-        guard L10n.isKnownThermalState(snapshot.thermalState) else {
+        guard BatteryTemperatureAssessment(snapshot.batteryTemperatureC) != .unknown else {
             return L10n.text("insight.temperature.unknown")
         }
         return L10n.tr("insight.temperature", MetricTilePresentation.temperature(snapshot: snapshot).caption)

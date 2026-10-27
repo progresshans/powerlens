@@ -37,7 +37,11 @@ struct DashboardBatteryPage: View {
                     systemImage: "thermometer.medium",
                     iconTint: .secondary,
                     value: temperature.map(Formatters.temperature) ?? L10n.text("common.none"),
-                    caption: L10n.tr("battery.temperature.caption", L10n.localizedThermalState(snapshot.thermalState))
+                    caption: L10n.tr(
+                        "battery.temperature.caption",
+                        BatteryTemperatureAssessment(temperature).caption,
+                        Formatters.wholeTemperature(BatteryTemperatureAssessment.elevatedThreshold)
+                    )
                 ) {
                     TemperatureZones(temperature: temperature)
                 }
@@ -134,15 +138,15 @@ struct DashboardBatteryPage: View {
 /// Cool / warm / hot bands with the current temperature marked.
 private struct TemperatureZones: View {
     let temperature: Double?
-    private let scale = 45.0
+    private let scale = BatteryTemperatureAssessment.chartMaximum
 
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             ZStack(alignment: .leading) {
                 HStack(spacing: 3) {
-                    Capsule().fill(LensPalette.battery.opacity(0.35)).frame(width: width * 35 / scale - 3)
-                    Capsule().fill(LensPalette.caution.opacity(0.35)).frame(width: width * 5 / scale - 3)
+                    Capsule().fill(LensPalette.battery.opacity(0.35)).frame(width: width * BatteryTemperatureAssessment.elevatedThreshold / scale - 3)
+                    Capsule().fill(LensPalette.caution.opacity(0.35)).frame(width: width * (BatteryTemperatureAssessment.hotThreshold - BatteryTemperatureAssessment.elevatedThreshold) / scale - 3)
                     Capsule().fill(LensPalette.warning.opacity(0.35))
                 }
                 if let temperature {

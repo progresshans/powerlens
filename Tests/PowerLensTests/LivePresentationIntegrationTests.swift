@@ -55,6 +55,41 @@ struct LivePresentationIntegrationTests {
         #expect(live.presentation?.graph.state == .discharging)
     }
 
+    @Test(arguments: ["Nominal", "Critical"])
+    func batteryTemperatureDoesNotBorrowSystemThermalPressure(thermal: String) {
+        let missing = makeTelemetrySnapshot(thermalState: thermal, batteryTemperatureC: nil)
+        #expect(MetricTilePresentation.temperature(snapshot: missing).caption == L10n.text("thermal.unknown"))
+        #expect(DashboardInsight.temperatureTitle(snapshot: missing) == L10n.text("insight.temperature.unknown"))
+        let warm = makeTelemetrySnapshot(thermalState: thermal, batteryTemperatureC: 37)
+        #expect(MetricTilePresentation.temperature(snapshot: warm).caption == L10n.text("thermal.fair"))
+        #expect(MetricTilePresentation.temperature(snapshot: warm).captionTone == .caution)
+        #expect(warm.diagnostics.first { $0.kind == .temperatureHigh }?.title == L10n.text("diag.temperatureWarm.title"))
+        #expect(!DashboardInsight.temperatureTitle(snapshot: warm).contains(L10n.text("thermal.nominal")))
+        let hot = makeTelemetrySnapshot(thermalState: thermal, batteryTemperatureC: 40)
+        #expect(MetricTilePresentation.temperature(snapshot: hot).caption == L10n.text("thermal.serious"))
+        #expect(MetricTilePresentation.temperature(snapshot: hot).captionTone == .warning)
+        #expect(hot.diagnostics.first { $0.kind == .temperatureHigh }?.title == L10n.text("diag.temperatureHigh.title"))
+        #expect(!DashboardInsight.temperatureTitle(snapshot: hot).contains(L10n.text("thermal.nominal")))
+        let normal = makeTelemetrySnapshot(thermalState: thermal, batteryTemperatureC: 30)
+        #expect(MetricTilePresentation.temperature(snapshot: normal).caption == L10n.text("thermal.nominal"))
+        #expect(!normal.diagnostics.contains { $0.kind == .temperatureHigh })
+    }
+
+    @Test(arguments: [
+        (35.9, BatteryTemperatureAssessment.normal), (36, .elevated),
+        (39.9, .elevated), (40, .hot), (.nan, .unknown),
+    ])
+    func batteryTemperatureBandsMatchTheChart(celsius: Double, expected: BatteryTemperatureAssessment) {
+        #expect(BatteryTemperatureAssessment(celsius) == expected)
+    }
+
+    @Test
+    func batteryTemperatureCaptionNamesTheWarmThreshold() {
+        let threshold = Formatters.wholeTemperature(BatteryTemperatureAssessment.elevatedThreshold)
+        #expect(threshold == "36°C")
+        #expect(L10n.tr("battery.temperature.caption", "", threshold).contains(threshold))
+    }
+
     @Test
     func confirmedShortfallHasOneInterpretationAndDoesNotAssignAHardwareCause() {
         let snapshot = makeTelemetrySnapshot(timeToEmptyMinutes: 84, batteryVoltageV: 12.38,

@@ -28,6 +28,7 @@ struct LocalizationTests {
             "diag.manualLimit.chargingBeyond.message",
             "diag.manualLimit.above.message",
             "charger.usage.shortfall",
+            "diag.temperatureWarm.title",
             "insights.export.loadFailed",
             "tile.mac.historyUnavailable",
             "ui.metric.systemLoad",

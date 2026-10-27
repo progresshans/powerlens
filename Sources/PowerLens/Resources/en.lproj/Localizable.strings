@@ -144,6 +144,7 @@
 "diag.powerDeliveryShortfall.message" = "Coming in: %@. Your Mac is using %@.";
 "diag.temperatureHigh.title" = "Battery is hot";
 "diag.temperatureHigh.message" = "It’s %@ right now. Charging may slow down for a while.";
+"diag.temperatureWarm.title" = "Battery is warm";
 "diag.healthWear.title" = "Battery is somewhat worn";
 "diag.healthWear.message" = "Maximum capacity is down to %@. Avoiding heat and long full charges helps.";
 "diag.lowPowerMode.title" = "Low Power Mode is on";
@@ -433,7 +434,7 @@
 "battery.capsule.unknown" = "Unknown";
 "battery.meta.cycles" = "%d charge cycles so far";
 "battery.subtitle.capacity" = "It holds %@ of what a new battery does";
-"battery.temperature.caption" = "%@ · Charging may slow above 35°C";
+"battery.temperature.caption" = "%@ · Charging may slow above %@";
 "battery.capacity.serviceMark" = "Service is recommended below 80%";
 "battery.charging.title" = "Charging";
 "battery.charging.limitCaption" = "macOS charges only up to %@";

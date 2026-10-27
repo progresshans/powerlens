@@ -144,6 +144,7 @@
 "diag.powerDeliveryShortfall.message" = "들어오는 전력은 %@, Mac이 쓰는 전력은 %@예요.";
 "diag.temperatureHigh.title" = "배터리가 뜨거워요";
 "diag.temperatureHigh.message" = "지금 %@예요. 충전이 잠시 느려질 수 있어요.";
+"diag.temperatureWarm.title" = "배터리가 따뜻해요";
 "diag.healthWear.title" = "배터리가 조금 지쳤어요";
 "diag.healthWear.message" = "최대 용량이 %@까지 내려왔어요. 뜨거운 곳이나 오래 꽉 채워두는 걸 피하면 좋아요.";
 "diag.lowPowerMode.title" = "저전력 모드가 켜져 있어요";
@@ -433,7 +434,7 @@
 "battery.capsule.unknown" = "알 수 없음";
 "battery.meta.cycles" = "이 배터리로 %d번 충전했어요";
 "battery.subtitle.capacity" = "새 배터리와 비교해 %@만큼 담을 수 있어요";
-"battery.temperature.caption" = "%@ · 35°C를 넘으면 충전이 느려질 수 있어요";
+"battery.temperature.caption" = "%@ · %@를 넘으면 충전이 느려질 수 있어요";
 "battery.capacity.serviceMark" = "80% 아래로 내려가면 교체를 권해요";
 "battery.charging.title" = "충전 방식";
 "battery.charging.limitCaption" = "macOS 설정에 따라 %@까지만 채워요";
