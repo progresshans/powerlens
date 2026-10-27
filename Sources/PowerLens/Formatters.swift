@@ -101,7 +101,11 @@ enum Formatters {
     }
 
     static func relativeAge(since date: Date, now: Date = .now) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(date).rounded()))
+        relativeAge(seconds: now.timeIntervalSince(date))
+    }
+
+    static func relativeAge(seconds age: TimeInterval) -> String {
+        let seconds = max(0, Int(age.rounded()))
 
         if seconds < 5 {
             return L10n.text("format.justNow")

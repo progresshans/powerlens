@@ -24,7 +24,8 @@ func makeTelemetrySnapshot(
     batteryHealthText: String? = "Normal",
     batteryHealthCondition: String? = nil,
     thermalState: String = "Nominal",
-    lowPowerModeEnabled: Bool = false
+    lowPowerModeEnabled: Bool = false,
+    batteryTemperatureC: Double? = 30.2
 ) -> TelemetrySnapshot {
     TelemetrySnapshot(
         timestamp: timestamp,
@@ -42,7 +43,7 @@ func makeTelemetrySnapshot(
         designCycleCount: 1000,
         batteryHealthText: batteryHealthText,
         batteryHealthCondition: batteryHealthCondition,
-        batteryTemperatureC: 30.2,
+        batteryTemperatureC: batteryTemperatureC,
         batteryVoltageV: batteryVoltageV,
         batteryCurrentA: batteryCurrentA,
         batteryPowerW: batteryPowerW,

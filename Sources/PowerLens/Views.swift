@@ -17,8 +17,8 @@ struct MenuBarRootView: View {
 
     var body: some View {
         Group {
-            if let snapshot = store.latest {
-                popoverContent(snapshot)
+            if let snapshot = store.latest, let presentation = store.live.presentation {
+                popoverContent(snapshot, presentation: presentation)
                     .modifier(PopoverContainerStyle(maxContentHeight: maxContentHeight))
                     .frame(width: Self.contentWidth, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: maxContentHeight == nil)
@@ -31,21 +31,10 @@ struct MenuBarRootView: View {
 
     // MARK: - Live content
 
-    private func popoverContent(_ snapshot: TelemetrySnapshot) -> some View {
-        let isAwaitingNewSource = store.telemetryHealth == .delayed(failedAttempts: 0)
-        let status = isAwaitingNewSource
-            ? PowerStatusPresentation.sourceTransition
-            : PowerStatusPresentation(snapshot: snapshot, resolvedState: store.resolvedPowerState)
-        let readings = PowerFlowReadings(snapshot: snapshot)
-        let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
-            store.diagnostics,
-            resolvedState: store.resolvedPowerState
-        )
-        let notice = isAwaitingNewSource ? nil : PowerNotice.current(
-            snapshot: snapshot,
-            resolvedState: store.resolvedPowerState,
-            diagnostics: diagnostics
-        )
+    private func popoverContent(_ snapshot: TelemetrySnapshot, presentation: LivePowerPresentation) -> some View {
+        let isAwaitingNewSource = presentation.isAwaitingSource
+        let status = presentation.status
+        let notice = presentation.notice
 
         return VStack(alignment: .leading, spacing: 10) {
             header(capsule: StatusCapsule(title: status.capsuleTitle, systemImage: status.capsuleSymbol, tone: status.tone))
@@ -53,10 +42,10 @@ struct MenuBarRootView: View {
             hero(title: status.title, subtitle: status.subtitle)
 
             PowerFlowRibbonDiagram(
-                graph: PowerFlowGraph(model: PowerFlowPresentationModel(snapshot: snapshot)),
+                graph: presentation.graph,
                 style: .compact,
                 batteryLevel: snapshot.batteryLevel,
-                tooltip: PowerFlowTooltip.text(snapshot: snapshot, readings: readings)
+                tooltip: presentation.tooltip
             )
             .padding(14)
             .glassCardSurface(cornerRadius: 16)
@@ -64,11 +53,11 @@ struct MenuBarRootView: View {
 
             HStack(spacing: 8) {
                 MetricTile(
-                    tile: .battery(snapshot: snapshot, resolvedState: store.resolvedPowerState),
+                    tile: presentation.battery,
                     symbolTint: snapshot.lowPowerModeEnabled ? LensPalette.lowPower : nil
                 )
-                MetricTile(tile: .health(snapshot: snapshot))
-                MetricTile(tile: .temperature(snapshot: snapshot))
+                MetricTile(tile: presentation.health)
+                MetricTile(tile: presentation.temperature)
             }
             .opacity(isAwaitingNewSource ? 0.4 : 1)
 
@@ -253,20 +242,6 @@ struct MenuBarRootView: View {
     }
 }
 
-extension PowerStatusPresentation {
-    /// Shown for a few seconds after the charger is plugged in or removed,
-    /// while the previous values are kept dimmed.
-    static var sourceTransition: PowerStatusPresentation {
-        PowerStatusPresentation(
-            tone: .neutral,
-            capsuleTitle: L10n.text("capsule.remeasuring"),
-            capsuleSymbol: "arrow.triangle.2.circlepath",
-            title: L10n.text("status.title.sourceTransition"),
-            subtitle: L10n.text("status.subtitle.sourceTransition")
-        )
-    }
-}
-
 /// "방금 업데이트" while values are live, "12초 전 값" in orange when stale.
 private struct FreshnessLabel: View {
     let refreshDate: Date?
@@ -275,24 +250,10 @@ private struct FreshnessLabel: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let freshness = TelemetryFreshness(refreshDate: refreshDate, health: health, now: context.date)
-            Text(text(freshness, now: context.date))
+            Text(freshness.updatedText)
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(style(freshness))
-        }
-    }
-
-    private func text(_ freshness: TelemetryFreshness, now: Date) -> String {
-        switch freshness.state {
-        case .waiting:
-            L10n.text("telemetry.live.waiting")
-        case .live:
-            L10n.text("ui.updated.justNow")
-        case .delayed:
-            refreshDate.map { L10n.tr("ui.updated.stale", Formatters.relativeAge(since: $0, now: now)) }
-                ?? L10n.text("telemetry.delayed")
-        case .unavailable:
-            L10n.text("telemetry.unavailable")
         }
     }
 

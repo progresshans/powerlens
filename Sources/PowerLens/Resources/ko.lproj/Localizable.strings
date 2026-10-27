@@ -161,7 +161,6 @@
 "ui.window.settings" = "PowerLens 설정";
 
 "ui.metric.battery" = "배터리";
-"ui.metric.input" = "충전기 전력";
 "ui.metric.load" = "Mac 사용 전력";
 "ui.metric.portablePower" = "배터리 전원";
 "ui.metric.powerIn" = "충전기 전력";
@@ -190,16 +189,10 @@
 "ui.sidebar.diagnostics" = "진단";
 "ui.sidebar.history" = "기록";
 
-"ui.flow.batteryAssist" = "배터리 보조";
-"ui.flow.charging" = "배터리 충전";
 "ui.flow.chargeHeadroom" = "충전 여유";
 "ui.flow.cover" = "커버";
 "ui.flow.assist" = "보조";
 "ui.flow.charge" = "충전";
-"ui.flow.holding" = "유지";
-"ui.flow.directPower" = "충전기 사용";
-"ui.flow.batteryOnly" = "배터리 사용";
-"ui.flow.unknown" = "흐름 확인 중";
 "ui.flow.batteryAssistDetail" = "어댑터 연결 중에도 배터리가 순간 부하를 함께 보조합니다.";
 "ui.flow.chargingDetail" = "어댑터가 시스템 부하를 맡고 남은 전력이 배터리로 갑니다.";
 "ui.flow.directPowerDetail" = "어댑터가 현재 시스템 부하를 직접 커버하고 있습니다.";

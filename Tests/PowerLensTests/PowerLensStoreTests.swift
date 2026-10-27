@@ -7,6 +7,27 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
+    func stableDiagnosticIdentityStillDeliversEachAcceptedSampleToNotifications() async {
+        let first = makeTelemetrySnapshot(batteryTemperatureC: 40)
+        let second = makeTelemetrySnapshot(batteryTemperatureC: 40)
+        let store = PowerLensStore(telemetryReader: SequenceTelemetryReader(snapshots: [first, second]),
+                                  historyStore: StubHistoryStore(), startsAutomatically: false)
+        var events: [[DiagnosticItem]] = []
+        let subscription = store.diagnosticUpdates.sink { events.append($0) }
+        await store.refreshOnce()
+        await store.refreshOnce()
+        #expect(events.count == 2)
+        #expect(events.first == events.last)
+        store.refreshMenuBarLocalization()
+        #expect(events.count == 2)
+        store.receivePowerSourceObservation(.init(externalConnected: false, observedAt: .now), reason: .powerSourceChanged)
+        await store.refreshOnce()
+        #expect(events.count == 2)
+        withExtendedLifetime(subscription) {}
+    }
+
+    @Test
+    @MainActor
     func repeatedMetadataEventsCoalesceAndCannotPublishAnOlderMode() async {
         let reader = ControlledEnergyModeReader()
         var starts = reader.starts.makeAsyncIterator()
@@ -66,6 +87,25 @@ struct PowerLensStoreTests {
         #expect(store.topEnergyApps.isEmpty)
         await store.refreshOnce()
         #expect(await sampler.sampleCount == 1)
+    }
+
+    @Test
+    @MainActor
+    func sampleAndInterpretationArePublishedInTheSameState() async {
+        let snapshot = makeTelemetrySnapshot(isCharging: true, batteryCurrentA: 1, batteryPowerW: -12)
+        let store = PowerLensStore(telemetryReader: CountingTelemetryReader(snapshot: snapshot),
+            historyStore: StubHistoryStore(), energySampler: EmptyEnergySampler(), startsAutomatically: false)
+        var frames: [LiveTelemetryState] = []
+        let subscription = store.$live.sink { frames.append($0) }
+        await store.refreshOnce()
+        for frame in frames where frame.snapshot != nil {
+            #expect(frame.resolvedState?.externalPowerState == .charging)
+            #expect(frame.health == .live)
+            #expect(frame.presentation?.status.tone == .charging)
+            #expect(frame.menuBar.batteryBadge == .chargingBolt)
+        }
+        #expect(frames.filter { $0.snapshot != nil }.count == 1)
+        withExtendedLifetime(subscription) {}
     }
     @Test
     @MainActor
@@ -933,7 +973,7 @@ struct PowerLensStoreTests {
         let oldResolvedState = store.resolvedPowerState
         let oldRefreshAttempt = store.lastRefreshAttemptAt
         var presentations: [MenuBarPresentation] = []
-        let subscription = store.$menuBarPresentation.sink { presentations.append($0) }
+        let subscription = store.$live.map(\.menuBar).removeDuplicates().sink { presentations.append($0) }
 
         store.receivePowerSourceObservation(
             .init(externalConnected: true, observedAt: start.addingTimeInterval(1)),

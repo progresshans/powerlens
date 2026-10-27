@@ -192,7 +192,7 @@ struct PowerFlowRibbonDiagram: View {
 
     /// A gentle S-curve: leaves the source level, eases across, and arrives
     /// level at the destination.
-    static func path(from start: CGPoint, to end: CGPoint) -> Path {
+    nonisolated static func path(from start: CGPoint, to end: CGPoint) -> Path {
         let reach = max(12, (end.x - start.x) * 0.5)
         var path = Path()
         path.move(to: start)

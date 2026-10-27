@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observeChanges() {
-        store.$latest
+        store.$live.map(\.snapshot).removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] snapshot in
                 guard let self else {
@@ -112,14 +112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        store.$menuBarPresentation
+        store.$live.map(\.menuBar)
             .removeDuplicates()
             .sink { [weak self] presentation in
                 self?.updateStatusItem(using: presentation)
             }
             .store(in: &cancellables)
 
-        store.$diagnostics
+        store.diagnosticUpdates
             .receive(on: RunLoop.main)
             .sink { [weak self] diagnostics in
                 self?.diagnosticsNotifier.process(diagnostics: diagnostics)

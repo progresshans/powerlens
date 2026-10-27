@@ -27,8 +27,8 @@ struct PowerStatusPresentation: Equatable, Sendable {
         self.subtitle = subtitle
     }
 
-    init(snapshot: TelemetrySnapshot, resolvedState: ResolvedPowerState?) {
-        let readings = PowerFlowReadings(snapshot: snapshot)
+    init(snapshot: TelemetrySnapshot, resolvedState: ResolvedPowerState?, readings suppliedReadings: PowerFlowReadings? = nil) {
+        let readings = suppliedReadings ?? PowerFlowReadings(snapshot: snapshot)
 
         if !snapshot.externalConnected {
             tone = .neutral
@@ -315,5 +315,19 @@ enum BatterySymbol {
         default:
             return "battery.100percent"
         }
+    }
+}
+
+extension PowerStatusPresentation {
+    /// Shown until a sample matches the observed power source, while the
+    /// previous values are kept dimmed even if reconciliation reads fail.
+    static var sourceTransition: PowerStatusPresentation {
+        PowerStatusPresentation(
+            tone: .neutral,
+            capsuleTitle: L10n.text("capsule.remeasuring"),
+            capsuleSymbol: "arrow.triangle.2.circlepath",
+            title: L10n.text("status.title.sourceTransition"),
+            subtitle: L10n.text("status.subtitle.sourceTransition")
+        )
     }
 }

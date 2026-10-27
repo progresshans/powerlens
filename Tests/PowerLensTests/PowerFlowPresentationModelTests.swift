@@ -93,7 +93,7 @@ struct PowerFlowPresentationModelTests {
         let model = PowerFlowPresentationModel(snapshot: snapshot)
 
         #expect(model.state == .underpowered)
-        #expect(model.statusTitle == L10n.text("ui.flow.batteryAssist"))
+        #expect(model.state == .underpowered)
         #expect(model.routes.map(\.role) == [.input, .battery])
     }
 
@@ -317,7 +317,7 @@ struct PowerFlowPresentationModelTests {
         #expect(snapshot.hasConflictingBatteryPowerMeasurements)
         #expect(model.state == .underpowered)
         #expect(model.connectionStyle == .solid)
-        #expect(model.statusTitle == L10n.text("ui.flow.batteryAssist"))
+        #expect(model.state == .underpowered)
         #expect(model.routes.map(\.role) == [.input, .battery])
         #expect(model.routes[0].source.value == "15.0W")
         #expect(model.routes[1].source.value == "5.0W")

@@ -27,7 +27,6 @@ struct LocalizationTests {
             "status.subheadline.optimizedCharging.transientAssist",
             "diag.manualLimit.chargingBeyond.message",
             "diag.manualLimit.above.message",
-            "ui.flow.unknown",
             "ui.metric.systemLoad",
             "ui.flow.tooltip.displayedSystem",
             "ui.flow.tooltip.noCalculation",

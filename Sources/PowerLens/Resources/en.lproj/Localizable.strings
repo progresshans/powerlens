@@ -161,7 +161,6 @@
 "ui.window.settings" = "PowerLens Settings";
 
 "ui.metric.battery" = "Battery";
-"ui.metric.input" = "Charger";
 "ui.metric.load" = "Load";
 "ui.metric.portablePower" = "Portable power";
 "ui.metric.powerIn" = "Charger";
@@ -190,16 +189,10 @@
 "ui.sidebar.diagnostics" = "Diagnostics";
 "ui.sidebar.history" = "History";
 
-"ui.flow.batteryAssist" = "Battery Assist";
-"ui.flow.charging" = "Battery Charge";
 "ui.flow.chargeHeadroom" = "Charge Headroom";
 "ui.flow.cover" = "cover";
 "ui.flow.assist" = "assist";
 "ui.flow.charge" = "charge";
-"ui.flow.holding" = "Holding";
-"ui.flow.directPower" = "System Covered";
-"ui.flow.batteryOnly" = "Battery Power";
-"ui.flow.unknown" = "Flow Updating";
 "ui.flow.batteryAssistDetail" = "The battery can assist transient load even while an adapter is connected.";
 "ui.flow.chargingDetail" = "The adapter is covering system load and sending remaining power into the battery.";
 "ui.flow.directPowerDetail" = "The adapter is directly covering current system load.";
