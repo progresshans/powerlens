@@ -18,6 +18,18 @@
       {
         "key": "PSTR",
         "state": "notAttempted"
+      },
+      {
+        "key": "TB0T",
+        "state": "notAttempted"
+      },
+      {
+        "key": "TB1T",
+        "state": "notAttempted"
+      },
+      {
+        "key": "TB2T",
+        "state": "notAttempted"
       }
     ],
     "serviceAvailable": false
@@ -85,6 +97,10 @@
         "state": "notAttempted"
       },
       {
+        "path": "BatteryData",
+        "state": "notAttempted"
+      },
+      {
         "path": "PowerTelemetryData.BatteryPower",
         "state": "notAttempted"
       },
@@ -102,6 +118,18 @@
       },
       {
         "path": "PowerTelemetryData.SystemCurrentIn",
+        "state": "notAttempted"
+      },
+      {
+        "path": "BatteryData.DesignCapacity",
+        "state": "notAttempted"
+      },
+      {
+        "path": "BatteryData.AppleRawMaxCapacity",
+        "state": "notAttempted"
+      },
+      {
+        "path": "BatteryData.NominalChargeCapacity",
         "state": "notAttempted"
       }
     ],
