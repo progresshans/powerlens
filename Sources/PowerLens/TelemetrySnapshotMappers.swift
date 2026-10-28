@@ -147,14 +147,14 @@ struct LivePrecisionTelemetrySnapshotMapper {
                     powerSourceInfo[key(.timeToFullCharge)]
                 )
             ),
-            designCapacityMah: TelemetryValueParser.intValue(
-                batteryRegistry[batteryKey(.designCapacity)]
+            designCapacityMah: TelemetryValueParser.batteryCapacity(
+                .designCapacity, in: batteryRegistry
             ),
-            fullChargeCapacityMah: TelemetryValueParser.intValue(
-                batteryRegistry[batteryKey(.rawMaxCapacity)]
+            fullChargeCapacityMah: TelemetryValueParser.batteryCapacity(
+                .rawMaxCapacity, in: batteryRegistry
             ),
-            nominalCapacityMah: TelemetryValueParser.intValue(
-                batteryRegistry[batteryKey(.nominalChargeCapacity)]
+            nominalCapacityMah: TelemetryValueParser.batteryCapacity(
+                .nominalChargeCapacity, in: batteryRegistry
             ),
             cycleCount: TelemetryValueParser.intValue(
                 batteryRegistry[batteryKey(.cycleCount)]
@@ -171,7 +171,7 @@ struct LivePrecisionTelemetrySnapshotMapper {
             ),
             batteryTemperatureC: TelemetryValueParser.doubleValue(
                 batteryRegistry[batteryKey(.temperature)]
-            ).map { $0 / 100 },
+            ).map { $0 / 100 } ?? smcPower?.batteryTemperatureC,
             batteryVoltageV: batteryVoltageV,
             batteryCurrentA: batteryCurrentA,
             batteryPowerW: powerMeasurements.batteryPowerW,

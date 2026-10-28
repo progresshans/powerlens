@@ -57,6 +57,15 @@ enum TelemetrySystemContract {
         case deviceName = "DeviceName"
         case serial = "Serial"
         case permanentFailureStatus = "PermanentFailureStatus"
+        case batteryData = "BatteryData"
+    }
+
+    /// macOS 27.2 publishes capacities only inside `BatteryData`; earlier
+    /// releases also publish them at the top level, which takes precedence.
+    enum BatteryDataKey: String, CaseIterable, Sendable {
+        case designCapacity = "DesignCapacity"
+        case rawMaxCapacity = "AppleRawMaxCapacity"
+        case nominalChargeCapacity = "NominalChargeCapacity"
     }
 
     enum PowerTelemetryKey: String, CaseIterable, Sendable {
@@ -71,6 +80,15 @@ enum TelemetrySystemContract {
         case batteryPower = "SBAP"
         case externalPower = "PDTR"
         case systemPower = "PSTR"
+        /// Battery temperature sensors in °C. macOS 27.2 no longer publishes
+        /// the AppleSmartBattery `Temperature` key.
+        case batteryTemperature0 = "TB0T"
+        case batteryTemperature1 = "TB1T"
+        case batteryTemperature2 = "TB2T"
+
+        static let batteryTemperatures: [Self] = [
+            .batteryTemperature0, .batteryTemperature1, .batteryTemperature2,
+        ]
     }
 
     static let smcFloatDataType = "flt "
@@ -91,6 +109,11 @@ enum TelemetrySystemContract {
         } + PowerTelemetryKey.allCases.map {
             TelemetrySystemKeyPath(
                 parent: AppleSmartBatteryKey.powerTelemetryData.rawValue,
+                child: $0.rawValue
+            )
+        } + BatteryDataKey.allCases.map {
+            TelemetrySystemKeyPath(
+                parent: AppleSmartBatteryKey.batteryData.rawValue,
                 child: $0.rawValue
             )
         }
