@@ -24,8 +24,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         let monitor = PowerSourceMonitor()
         powerSourceMonitor = monitor
-        store = PowerLensStore(powerSourceReader: { monitor.readCurrent() })
+        store = Self.makeStore(monitor: monitor)
         super.init()
+    }
+
+    private static func makeStore(monitor: PowerSourceMonitor) -> PowerLensStore {
+        #if DEBUG
+        if DemoMode.isRequested {
+            return DemoMode.makeStore()
+        }
+        #endif
+        return PowerLensStore(powerSourceReader: { monitor.readCurrent() })
     }
 
     private lazy var statusItemController = MenuBarStatusItemController { [weak self] sender in
@@ -53,8 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = statusItemController
         _ = popoverPresenter
         observeChanges()
-        powerSourceMonitor.start { [weak self] observation, reason in
-            self?.store.receivePowerSourceObservation(observation, reason: reason)
+        // Demo readings would conflict with the real power source.
+        if !DemoMode.isRequested {
+            powerSourceMonitor.start { [weak self] observation, reason in
+                self?.store.receivePowerSourceObservation(observation, reason: reason)
+            }
         }
         softwareUpdateController.startIfConfigured()
         updateStatusItem(using: store.menuBarPresentation)
