@@ -6,6 +6,24 @@ import Testing
 struct PowerLensStoreTests {
 
     @Test
+    func aReadThatNeverStartsReportsATimeout() async {
+        let reader = CountingTelemetryReader(snapshot: makeTelemetrySnapshot())
+        await #expect(throws: StoreTestWaitError.timedOut("telemetry read count >= 1")) {
+            try await reader.waitForReadCount(1, timeout: .milliseconds(20))
+        }
+        #expect(await reader.readCount() == 0)
+    }
+
+    @Test
+    func anAlreadyObservedReadCanBeAwaitedAgain() async throws {
+        let reader = CountingTelemetryReader(snapshot: makeTelemetrySnapshot())
+        _ = try await reader.readSnapshot(preference: .compatible)
+        try await waitForReadCount(1, in: reader)
+        try await waitForReadCount(1, in: reader)
+        #expect(await reader.readCount() == 1)
+    }
+
+    @Test
     @MainActor
     func stableDiagnosticIdentityStillDeliversEachAcceptedSampleToNotifications() async {
         let first = makeTelemetrySnapshot(batteryTemperatureC: 40)
@@ -293,7 +311,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func manualRefreshDuringHistoryPreparationDoesNotPersist() async {
+    func manualRefreshDuringHistoryPreparationDoesNotPersist() async throws {
         let snapshot = makeTelemetrySnapshot()
         let reader = CountingTelemetryReader(snapshot: snapshot)
         let historyStore = StubHistoryStore(blocksLoad: true)
@@ -312,7 +330,7 @@ struct PowerLensStoreTests {
         let earlyAppends = await historyStore.appendedSnapshots()
 
         await historyStore.finishLoading()
-        await waitForAppendCount(1, in: historyStore)
+        try await waitForAppendCount(1, in: historyStore)
 
         #expect(earlyAppends.isEmpty)
         #expect(store.latest == snapshot)
@@ -629,7 +647,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func becomingInteractiveRefreshesImmediatelyAndRestartsTheLoop() async {
+    func becomingInteractiveRefreshesImmediatelyAndRestartsTheLoop() async throws {
         let snapshot = makeTelemetrySnapshot()
         let reader = CountingTelemetryReader(snapshot: snapshot)
         let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
@@ -644,11 +662,11 @@ struct PowerLensStoreTests {
             backgroundRefreshInterval: .seconds(60)
         )
 
-        await waitForSuccessfulRefresh(in: store)
+        try await waitForSuccessfulRefresh(in: store)
         #expect(await reader.readCount() == 1)
 
         store.setRefreshCadence(.interactive)
-        await waitForReadCount(2, in: reader)
+        try await waitForReadCount(2, in: reader)
         #expect(await reader.readCount() == 2)
 
         store.setRefreshCadence(.interactive)
@@ -657,12 +675,12 @@ struct PowerLensStoreTests {
         withExtendedLifetime(store) {}
     }
 
-    @Test
+    @Test(arguments: [Duration.zero, .seconds(1)])
     @MainActor
-    func becomingInteractiveDuringStartupRefreshesBeforeHistoryIsReady() async {
+    func becomingInteractiveDuringStartupRefreshesBeforeHistoryIsReady(readDelay: Duration) async throws {
         let snapshot = makeTelemetrySnapshot()
         let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
-        let reader = CountingTelemetryReader(snapshot: snapshot)
+        let reader = CountingTelemetryReader(snapshot: snapshot, readDelay: readDelay)
         let historyStore = StubHistoryStore(blocksLoad: true)
         let store = PowerLensStore(
             telemetryReader: reader,
@@ -676,18 +694,20 @@ struct PowerLensStoreTests {
 
         await historyStore.waitUntilLoadStarts()
         store.setRefreshCadence(.interactive)
-        await waitForReadCount(1, in: reader)
-
-        let readsBeforeHistoryWasReady = await reader.readCount()
-        let appendsBeforeHistoryWasReady =
-            await historyStore.appendedSnapshots()
+        do {
+            try await waitForReadCount(1, in: reader)
+            #expect(await reader.readCount() == 1)
+            #expect(await historyStore.appendedSnapshots().isEmpty)
+        } catch {
+            // Always release the startup task, including when the read times out.
+            await historyStore.finishLoading()
+            throw error
+        }
 
         await historyStore.finishLoading()
-        await waitForReadCount(2, in: reader)
-        await waitForAppendCount(1, in: historyStore)
+        try await waitForReadCount(2, in: reader)
+        try await waitForAppendCount(1, in: historyStore)
 
-        #expect(readsBeforeHistoryWasReady == 1)
-        #expect(appendsBeforeHistoryWasReady.isEmpty)
         #expect(await reader.readCount() == 2)
         #expect(
             await historyStore.appendedSnapshots()
@@ -698,7 +718,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func becomingInteractiveDoesNotSupersedeAStartupReadInFlight() async {
+    func becomingInteractiveDoesNotSupersedeAStartupReadInFlight() async throws {
         let snapshot = makeTelemetrySnapshot()
         let historicalSnapshot = snapshot.withChargingPolicyStatus(nil)
         let reader = ControlledTelemetryReader()
@@ -726,7 +746,7 @@ struct PowerLensStoreTests {
             await reader.resumeLast(with: result)
         }
         await reader.resumeFirst(with: result)
-        await waitForAppendCount(1, in: historyStore)
+        try await waitForAppendCount(1, in: historyStore)
 
         #expect(pendingReadCount == 1)
         #expect(
@@ -1226,7 +1246,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func wakeRefreshesEvenWhenThePowerSourceIsUnchanged() async {
+    func wakeRefreshesEvenWhenThePowerSourceIsUnchanged() async throws {
         let snapshot = makeTelemetrySnapshot()
         let reader = CountingTelemetryReader(snapshot: snapshot)
         let store = PowerLensStore(
@@ -1237,7 +1257,7 @@ struct PowerLensStoreTests {
         store.receivePowerSourceObservation(
             .init(externalConnected: true, observedAt: snapshot.timestamp), reason: .wake
         )
-        await waitForReadCount(2, in: reader)
+        try await waitForReadCount(2, in: reader)
         #expect(await reader.readCount() == 2)
     }
 
@@ -1343,7 +1363,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func blockedEnergyScanDoesNotBlockManualReadsOrStartOverlappingScans() async {
+    func blockedEnergyScanDoesNotBlockManualReadsOrStartOverlappingScans() async throws {
         let snapshot = makeTelemetrySnapshot()
         let gate = HistoryAppendGate()
         var arrivals = gate.arrivals.makeAsyncIterator()
@@ -1359,7 +1379,7 @@ struct PowerLensStoreTests {
 
         for expectedReads in 2...4 {
             store.refreshNow()
-            await waitForReadCount(expectedReads, in: reader)
+            try await waitForReadCount(expectedReads, in: reader)
             #expect(await reader.readCount() == expectedReads)
         }
         #expect(await sampler.sampleCount == 1)
@@ -1373,7 +1393,7 @@ struct PowerLensStoreTests {
 
     @Test
     @MainActor
-    func wakeDiscardsAnOldEnergyScanBeforePublishingTheNextScan() async {
+    func wakeDiscardsAnOldEnergyScanBeforePublishingTheNextScan() async throws {
         let snapshot = makeTelemetrySnapshot()
         let gate = HistoryAppendGate()
         var arrivals = gate.arrivals.makeAsyncIterator()
@@ -1393,7 +1413,7 @@ struct PowerLensStoreTests {
         store.receivePowerSourceObservation(
             .init(externalConnected: true, observedAt: snapshot.timestamp), reason: .wake
         )
-        await waitForReadCount(2, in: reader)
+        try await waitForReadCount(2, in: reader)
         #expect(await reader.readCount() == 2)
         #expect(await sampler.sampleCount == 1)
 
@@ -1523,39 +1543,85 @@ private func waitForPendingReads(_ expectedCount: Int, in reader: ControlledTele
 }
 
 @MainActor
-private func waitForSuccessfulRefresh(in store: PowerLensStore) async {
-    for _ in 0..<200 {
-        if store.telemetryHealth == .live {
-            return
-        }
-
-        try? await Task.sleep(for: .milliseconds(1))
+private func waitForSuccessfulRefresh(in store: PowerLensStore) async throws {
+    let (values, continuation) = AsyncStream.makeStream(of: TelemetryHealth.self, bufferingPolicy: .bufferingNewest(1))
+    let subscription = store.$live.sink { continuation.yield($0.health) }
+    defer {
+        subscription.cancel()
+        continuation.finish()
     }
+    try await waitForTestEvent(values, matching: { $0 == .live }, description: "live telemetry")
 }
 
 private func waitForReadCount(
     _ expectedCount: Int,
     in reader: CountingTelemetryReader
-) async {
-    for _ in 0..<200 {
-        if await reader.readCount() >= expectedCount {
-            return
-        }
-
-        try? await Task.sleep(for: .milliseconds(1))
-    }
+) async throws {
+    try await reader.waitForReadCount(expectedCount)
 }
 
 private func waitForAppendCount(
     _ expectedCount: Int,
     in historyStore: StubHistoryStore
-) async {
-    for _ in 0..<200 {
-        if await historyStore.appendedSnapshots().count >= expectedCount {
-            return
-        }
+) async throws {
+    try await historyStore.waitForAppendCount(expectedCount)
+}
 
-        try? await Task.sleep(for: .milliseconds(1))
+private enum StoreTestWaitError: Error, Equatable {
+    case timedOut(String)
+    case streamEnded(String)
+}
+
+/// Each subscriber receives the current value and future updates. Its owner
+/// keeps this value actor-isolated, so observing cannot miss an intervening event.
+private struct ObservedTestValue<Value: Sendable> {
+    private(set) var value: Value
+    private var observers: [UUID: AsyncStream<Value>.Continuation] = [:]
+
+    init(_ value: Value) { self.value = value }
+
+    mutating func update(_ value: Value) {
+        self.value = value
+        for observer in observers.values { observer.yield(value) }
+    }
+
+    mutating func observe() -> (id: UUID, values: AsyncStream<Value>) {
+        let id = UUID()
+        let (values, continuation) = AsyncStream.makeStream(of: Value.self, bufferingPolicy: .bufferingNewest(1))
+        observers[id] = continuation
+        continuation.yield(value)
+        return (id, values)
+    }
+
+    mutating func removeObserver(_ id: UUID) {
+        observers.removeValue(forKey: id)?.finish()
+    }
+}
+
+/// Await the event rather than assuming a number of executor turns is enough.
+/// AsyncStream iteration is cancellable, so a timeout also drains the losing
+/// task; a successful event cancels the timeout instead of leaving a timer alive.
+private func waitForTestEvent<Value: Sendable>(
+    _ values: AsyncStream<Value>,
+    matching predicate: @escaping @Sendable (Value) -> Bool,
+    description: String,
+    timeout: Duration = .seconds(5)
+) async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask {
+            for await value in values {
+                try Task.checkCancellation()
+                if predicate(value) { return }
+            }
+            try Task.checkCancellation()
+            throw StoreTestWaitError.streamEnded(description)
+        }
+        group.addTask {
+            try await Task.sleep(for: timeout)
+            throw StoreTestWaitError.timedOut(description)
+        }
+        defer { group.cancelAll() }
+        _ = try await group.next()
     }
 }
 
@@ -1588,16 +1654,19 @@ private actor StubTelemetryReader: TelemetryReading {
 
 private actor CountingTelemetryReader: TelemetryReading {
     private let snapshot: TelemetrySnapshot
-    private var count = 0
+    private let readDelay: Duration
+    private var reads = ObservedTestValue(0)
 
-    init(snapshot: TelemetrySnapshot) {
+    init(snapshot: TelemetrySnapshot, readDelay: Duration = .zero) {
         self.snapshot = snapshot
+        self.readDelay = readDelay
     }
 
     func readSnapshot(
         preference: TelemetryEnginePreference
     ) async throws -> TelemetryReadResult {
-        count += 1
+        if readDelay > .zero { try await Task.sleep(for: readDelay) }
+        reads.update(reads.value + 1)
         return TelemetryReadResult(
             snapshot: snapshot,
             activeEngine: .livePrecision
@@ -1605,7 +1674,14 @@ private actor CountingTelemetryReader: TelemetryReading {
     }
 
     func readCount() -> Int {
-        count
+        reads.value
+    }
+
+    func waitForReadCount(_ expectedCount: Int, timeout: Duration = .seconds(5)) async throws {
+        let observation = reads.observe()
+        defer { reads.removeObserver(observation.id) }
+        try await waitForTestEvent(observation.values, matching: { $0 >= expectedCount },
+                                   description: "telemetry read count >= \(expectedCount)", timeout: timeout)
     }
 }
 
@@ -1691,6 +1767,7 @@ private actor ControlledTelemetryReader: TelemetryReading {
 
 private actor StubHistoryStore: HistoryStoring {
     private var appended: [TelemetrySnapshot] = []
+    private var appendCount = ObservedTestValue(0)
     private var purgedCutoffs: [Date] = []
     private var backupCleanups = 0
     private var requestedAggregatedRanges: [DateInterval] = []
@@ -1746,6 +1823,7 @@ private actor StubHistoryStore: HistoryStoring {
             throw StubHistoryError.writeFailed
         }
         appended.append(snapshot)
+        appendCount.update(appended.count)
     }
 
     func purge(
@@ -1787,6 +1865,13 @@ private actor StubHistoryStore: HistoryStoring {
 
     func appendedSnapshots() -> [TelemetrySnapshot] {
         appended
+    }
+
+    func waitForAppendCount(_ expectedCount: Int) async throws {
+        let observation = appendCount.observe()
+        defer { appendCount.removeObserver(observation.id) }
+        try await waitForTestEvent(observation.values, matching: { $0 >= expectedCount },
+                                   description: "history append count >= \(expectedCount)")
     }
 
     func purgedCutoffDates() -> [Date] {
