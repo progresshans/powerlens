@@ -104,19 +104,29 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
         guard popover.isShown, store.latest != nil, resize == nil else {
             return
         }
-        guard (height > maximumPopoverHeight()) == (currentMaxContentHeight != nil) else {
-            // Starting or stopping scrolling is not animated.
-            updateLayout(using: store.latest)
-            return
-        }
-        guard currentMaxContentHeight == nil else {
-            return
-        }
-        if let start, CACurrentMediaTime() - start < 0.25 {
+        let decision = PopoverHeightDecision(
+            contentHeight: height,
+            maximumHeight: maximumPopoverHeight(),
+            isScrolling: currentMaxContentHeight != nil
+        )
+        if case .resize = decision, let start, CACurrentMediaTime() - start < 0.25 {
             beginResize(to: height, start: start)
         } else {
-            setContentHeight(height)
+            apply(decision)
             detailsState.save()
+        }
+    }
+
+    /// Sizes the popover at once. Starting or stopping scrolling is never
+    /// animated.
+    private func apply(_ decision: PopoverHeightDecision) {
+        switch decision {
+        case let .resize(height):
+            setContentHeight(height)
+        case .relayout:
+            updateLayout(using: store.latest)
+        case .keepScrolling:
+            break
         }
     }
 
@@ -138,8 +148,15 @@ final class MenuBarPopoverPresenter: NSObject, NSPopoverDelegate {
             return
         }
         cancelResize()
-        // Catch up with content that changed during the animation.
-        setContentHeight(lastContentHeight)
+        // Catch up with content that changed during the animation. It may
+        // no longer fit on screen, so it goes through the same check.
+        if popover.isShown {
+            apply(PopoverHeightDecision(
+                contentHeight: lastContentHeight,
+                maximumHeight: maximumPopoverHeight(),
+                isScrolling: currentMaxContentHeight != nil
+            ))
+        }
         detailsState.save()
     }
 
@@ -302,6 +319,28 @@ private struct PopoverVisibilityReader<Content: View>: View {
 extension EnvironmentValues {
     /// True only inside a popover that is on screen.
     @Entry var flowLightIsActive = false
+}
+
+/// How the popover answers a new content height. Content taller than the
+/// screen allows scrolls inside a popover held at the maximum height.
+enum PopoverHeightDecision: Equatable {
+    /// The content fits; size the popover to it.
+    case resize(CGFloat)
+    /// Scrolling starts or stops, which needs a new layout.
+    case relayout
+    /// Still too tall; the popover stays at the maximum and scrolls.
+    case keepScrolling
+
+    init(contentHeight: CGFloat, maximumHeight: CGFloat, isScrolling: Bool) {
+        let needsScrolling = contentHeight > maximumHeight
+        if needsScrolling != isScrolling {
+            self = .relayout
+        } else if needsScrolling {
+            self = .keepScrolling
+        } else {
+            self = .resize(contentHeight)
+        }
+    }
 }
 
 private struct PopoverResize {

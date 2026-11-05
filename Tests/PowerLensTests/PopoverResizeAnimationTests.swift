@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PowerLens
 
@@ -23,5 +24,17 @@ struct PopoverResizeAnimationTests {
     func curveNeverMovesBackward() {
         let samples = stride(from: 0.0, through: 1.0, by: 0.01).map(ease.value(at:))
         #expect(zip(samples, samples.dropFirst()).allSatisfy { $0 <= $1 })
+    }
+}
+
+struct PopoverHeightDecisionTests {
+    @Test(arguments: [
+        (500.0, false, PopoverHeightDecision.resize(500)),
+        (1_200, false, .relayout),
+        (500, true, .relayout),
+        (1_200, true, .keepScrolling),
+    ])
+    func contentTallerThanTheScreenScrolls(height: CGFloat, isScrolling: Bool, expected: PopoverHeightDecision) {
+        #expect(PopoverHeightDecision(contentHeight: height, maximumHeight: 1_000, isScrolling: isScrolling) == expected)
     }
 }
