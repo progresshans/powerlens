@@ -120,18 +120,8 @@ enum TelemetryValueParser {
             return "Service Recommended"
         }
 
-        if let design = intValue(
-            batteryRegistry[
-                TelemetrySystemContract.AppleSmartBatteryKey
-                    .designCapacity.rawValue
-            ]
-        ),
-           let max = intValue(
-               batteryRegistry[
-                   TelemetrySystemContract.AppleSmartBatteryKey
-                       .rawMaxCapacity.rawValue
-               ]
-           ),
+        if let design = batteryCapacity(.designCapacity, in: batteryRegistry),
+           let max = batteryCapacity(.rawMaxCapacity, in: batteryRegistry),
            design > 0 {
             let ratio = Double(max) / Double(design) * 100
             if ratio >= 85 {
@@ -141,6 +131,18 @@ enum TelemetryValueParser {
         }
 
         return nil
+    }
+
+    /// Reads a top-level capacity first, then the copy inside `BatteryData`.
+    static func batteryCapacity(
+        _ key: TelemetrySystemContract.BatteryDataKey,
+        in batteryRegistry: [String: Any]
+    ) -> Int? {
+        let batteryData = batteryRegistry[
+            TelemetrySystemContract.AppleSmartBatteryKey.batteryData.rawValue
+        ] as? [String: Any]
+        return intValue(batteryRegistry[key.rawValue])
+            ?? intValue(batteryData?[key.rawValue])
     }
 
     static func describe(_ state: ProcessInfo.ThermalState) -> String {

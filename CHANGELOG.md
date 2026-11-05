@@ -36,6 +36,13 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 - Adapter ratings and battery capacities use whole numbers with digit
   grouping, such as 97W and 6,249 mAh.
 
+### Fixed
+
+- On macOS 27.2, maximum capacity, original capacity, battery health, and
+  battery temperature appear again with the More Precise measurement method.
+  macOS 27.2 moved the capacities and removed the temperature reading that
+  PowerLens used; temperature now comes from the battery's own sensors.
+
 ## [0.9.5] - 2026-10-20
 
 ### Changed
