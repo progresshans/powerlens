@@ -4,7 +4,7 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
-## [Unreleased]
+## [0.9.6] - 2026-11-05
 
 ### Added
 
@@ -17,7 +17,6 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 - Settings previews each menu bar style and describes each telemetry engine.
 - A Percent Inside menu bar style draws the rounder macOS 27 battery with the
   level and the charging bolt or plug inside the icon, on macOS 26 as well.
-- In Low Power Mode, the Detailed style's menu bar symbol turns yellow too.
 
 ### Changed
 
@@ -34,13 +33,24 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 - Show Details and Hide Details in the popover now slide the popover open and
   closed, uncovering the details in place, instead of jumping to the new
   size. With Reduce Motion on, the popover still changes size at once.
-- In Low Power Mode, the menu bar battery icon fills yellow, matching the macOS
-  battery icon. A sustained charger shortfall adds a red badge instead of
-  changing the fill.
-- The Dashboard and popover no longer draw while hidden, which lowers
+- In Low Power Mode, the menu bar battery icons fill yellow, matching the macOS
+  battery icon, and the Detailed style's symbol turns yellow. A sustained
+  charger shortfall adds a red badge instead of changing the fill.
+- A power shortfall now reads "Not enough power coming in" instead of blaming
+  the charger, since a cable, hub, or USB-C power negotiation can cause it too.
+- Battery temperature is rated from the battery's own sensor instead of the
+  Mac's overall thermal state: warm from 36°C and hot from 40°C. The popover,
+  Dashboard, and alerts use the same bands.
+- History saves readings at full precision, so charts rebuilt from history
+  match the live display. Before upgrading saved history to a new format,
+  PowerLens keeps a backup of the old database for up to 14 days, so going
+  back to the previous version stays possible.
+- The Dashboard and popover no longer draw while hidden, and app energy is
+  sampled only while the popover or Dashboard shows the list. This lowers
   PowerLens's energy use when only its menu bar icon is visible.
 - Adapter ratings and battery capacities use whole numbers with digit
   grouping, such as 97W and 6,249 mAh.
+- Updated Sparkle to 2.10.1.
 
 ### Fixed
 
@@ -48,6 +58,8 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   battery temperature appear again with the More Precise measurement method.
   macOS 27.2 moved the capacities and removed the temperature reading that
   PowerLens used; temperature now comes from the battery's own sensors.
+- Missing readings show as unavailable instead of as 0 W, an empty gauge, or a
+  battery in good shape.
 
 ## [0.9.5] - 2026-10-20
 
