@@ -9,8 +9,15 @@ struct MenuBarRootView: View {
     let openSettings: () -> Void
     let quitApplication: () -> Void
     let maxContentHeight: CGFloat?
+    @ObservedObject var detailsState: PopoverDetailsState
+    /// Runs a layout change while the popover animates to the new height.
+    var animateResize: (() -> Void) -> Void = { change in change() }
+    /// Receives the content's full height, which sizes the popover.
+    var onContentHeightChange: (CGFloat) -> Void = { _ in }
 
-    @AppStorage("popover.showsDetails") private var showsDetails = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let sectionSpacing: CGFloat = 10
 
     static let loadingSize = CGSize(width: 360, height: 300)
     static let contentWidth: CGFloat = 360
@@ -18,15 +25,25 @@ struct MenuBarRootView: View {
     var body: some View {
         Group {
             if let snapshot = store.latest, let presentation = store.live.presentation {
-                popoverContent(snapshot, presentation: presentation)
-                    .modifier(PopoverContainerStyle(maxContentHeight: maxContentHeight))
-                    .frame(width: Self.contentWidth, alignment: .topLeading)
-                    .fixedSize(horizontal: false, vertical: maxContentHeight == nil)
+                Group {
+                    if maxContentHeight != nil {
+                        ScrollView {
+                            popoverContent(snapshot, presentation: presentation)
+                        }
+                    } else {
+                        popoverContent(snapshot, presentation: presentation)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(width: Self.contentWidth)
             } else {
                 placeholderContent
                     .frame(width: Self.loadingSize.width, height: Self.loadingSize.height, alignment: .top)
             }
         }
+        // Pinned to the top so the content never shifts while the popover
+        // height is between sizes.
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Live content
@@ -36,7 +53,7 @@ struct MenuBarRootView: View {
         let status = presentation.status
         let notice = presentation.notice
 
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: Self.sectionSpacing) {
             header(capsule: StatusCapsule(title: status.capsuleTitle, systemImage: status.capsuleSymbol, tone: status.tone))
 
             hero(title: status.title, subtitle: status.subtitle)
@@ -73,13 +90,26 @@ struct MenuBarRootView: View {
                 EnergyModeRow(mode: energyMode)
             }
 
-            if showsDetails {
-                details(snapshot)
+            // One block, so the drawer's spacing closes along with it.
+            VStack(alignment: .leading, spacing: 0) {
+                detailsDrawer(snapshot)
+                footer
             }
-
-            footer
         }
         .padding(12)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onContentHeightChange($0) }
+    }
+
+    /// Always laid out. Opening animates its height up from zero, so the
+    /// details are uncovered in place while the footer moves with the edge.
+    private func detailsDrawer(_ snapshot: TelemetrySnapshot) -> some View {
+        details(snapshot)
+            .padding(.bottom, Self.sectionSpacing)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxHeight: detailsState.isExpanded ? nil : 0, alignment: .top)
+            .clipped()
+            .opacity(detailsState.isExpanded ? 1 : 0)
+            .accessibilityHidden(!detailsState.isExpanded)
     }
 
     private func header(capsule: StatusCapsule) -> some View {
@@ -159,14 +189,15 @@ struct MenuBarRootView: View {
 
     private var footer: some View {
         HStack(spacing: 4) {
-            Button {
-                showsDetails.toggle()
-            } label: {
+            Button(action: toggleDetails) {
                 HStack(spacing: 4) {
-                    Text(L10n.text(showsDetails ? "ui.details.hide" : "ui.details.show"))
+                    // Swapped in place: a crossfade would draw the new title at
+                    // the footer's final position while the footer moves.
+                    Text(L10n.text(detailsState.isExpanded ? "ui.details.hide" : "ui.details.show"))
+                        .contentTransition(.identity)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
-                        .rotationEffect(.degrees(showsDetails ? 180 : 0))
+                        .rotationEffect(.degrees(detailsState.isExpanded ? 180 : 0))
                 }
                 .contentShape(Rectangle())
             }
@@ -182,6 +213,14 @@ struct MenuBarRootView: View {
             )
         }
         .padding(.horizontal, 4)
+    }
+
+    private func toggleDetails() {
+        if reduceMotion {
+            detailsState.isExpanded.toggle()
+        } else {
+            animateResize { detailsState.isExpanded.toggle() }
+        }
     }
 
     // MARK: - Waiting and unavailable
@@ -265,22 +304,6 @@ private struct FreshnessLabel: View {
             AnyShapeStyle(freshness.isCriticallyDelayed ? LensPalette.warning : LensPalette.caution)
         case .unavailable:
             AnyShapeStyle(LensPalette.warning)
-        }
-    }
-}
-
-private struct PopoverContainerStyle: ViewModifier {
-    let maxContentHeight: CGFloat?
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let maxContentHeight {
-            ScrollView {
-                content
-            }
-            .frame(maxHeight: maxContentHeight)
-        } else {
-            content
         }
     }
 }

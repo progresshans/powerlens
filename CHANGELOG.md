@@ -28,6 +28,9 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   place; both run in Core Animation and stop when Reduce Motion is on.
 - The Dashboard now has Now, Battery, and History pages. Power flow and up to
   two current diagnostics appear on the Now page.
+- Show Details and Hide Details in the popover now slide the popover open and
+  closed, uncovering the details in place, instead of jumping to the new
+  size. With Reduce Motion on, the popover still changes size at once.
 - In Low Power Mode, the menu bar battery icon fills yellow, matching the macOS
   battery icon. A sustained charger shortfall adds a red badge instead of
   changing the fill.
