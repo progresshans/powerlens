@@ -15,6 +15,9 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 - The Dashboard charts charger and Mac power for the last hour from saved
   history.
 - Settings previews each menu bar style and describes each telemetry engine.
+- A Percent Inside menu bar style draws the rounder macOS 27 battery with the
+  level and the charging bolt or plug inside the icon, on macOS 26 as well.
+- In Low Power Mode, the Detailed style's menu bar symbol turns yellow too.
 
 ### Changed
 

@@ -100,6 +100,10 @@ struct MenuBarStylePicker: View {
             VStack(spacing: 8) {
                 preview(style)
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    // Five previews share the row; shrink a long readout
+                    // rather than wrap it.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .frame(maxWidth: .infinity, minHeight: 26)
                     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 Text(style.title)
@@ -140,6 +144,9 @@ struct MenuBarStylePicker: View {
                 Text("64%")
                 glyph
             }
+        case .percentInside:
+            Image(nsImage: MenuBarStatusItemRenderer.percentInsideImage(level: 64, badge: .chargingBolt))
+                .renderingMode(.template)
         case .nativeBatteryOnly:
             glyph
         }

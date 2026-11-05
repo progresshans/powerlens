@@ -16,6 +16,8 @@
 "menuBarStyle.powerText.detail" = "잔량과 지금 쓰는 전력만 보여줘요";
 "menuBarStyle.nativeBattery.title" = "배터리 아이콘";
 "menuBarStyle.nativeBattery.detail" = "잔량과 macOS와 같은 배터리 아이콘을 보여줘요";
+"menuBarStyle.percentInside.title" = "아이콘 안에";
+"menuBarStyle.percentInside.detail" = "잔량과 충전 표시를 macOS 27처럼 배터리 아이콘 안에 보여줘요";
 "menuBarStyle.nativeBatteryOnly.title" = "아이콘만";
 "menuBarStyle.nativeBatteryOnly.detail" = "배터리 아이콘만 보여줘요. 공간을 가장 적게 써요";
 

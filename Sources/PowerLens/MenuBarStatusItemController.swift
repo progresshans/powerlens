@@ -69,9 +69,7 @@ final class MenuBarStatusItemController: NSObject {
     ) -> NSImage? {
         switch style {
         case .powerLens:
-            let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "PowerLens")
-            image?.isTemplate = true
-            return image
+            return powerLensSymbol(named: symbolName, lowPowerMode: tint.lowPowerFill)
         case .powerText:
             return nil
         case .nativeBattery, .nativeBatteryOnly:
@@ -80,6 +78,44 @@ final class MenuBarStatusItemController: NSObject {
                 badge: batteryBadge,
                 tint: tint
             )
+        case .percentInside:
+            return MenuBarStatusItemRenderer.percentInsideImage(
+                level: snapshot?.batteryLevel,
+                badge: batteryBadge,
+                tint: tint
+            )
+        }
+    }
+
+    /// The Detailed style's symbol turns yellow in Low Power Mode, like the
+    /// battery icons and the macOS battery fill.
+    private func powerLensSymbol(named symbolName: String, lowPowerMode: Bool) -> NSImage? {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "PowerLens")
+        guard lowPowerMode,
+              let palette = Self.lowPowerPalette(forSymbolNamed: symbolName),
+              let tinted = image?.withSymbolConfiguration(.init(paletteColors: palette))
+        else {
+            image?.isTemplate = true
+            return image
+        }
+
+        tinted.isTemplate = false
+        return tinted
+    }
+
+    /// Palette for a menu bar symbol in Low Power Mode, or nil to keep it
+    /// as is. Two-layer symbols keep their outline (or pause bars) in the
+    /// text color and fill yellow; single-layer glyphs are all fill. The
+    /// warning triangle keeps its own look so it is never read as Low Power
+    /// Mode.
+    static func lowPowerPalette(forSymbolNamed symbolName: String) -> [NSColor]? {
+        switch symbolName {
+        case "exclamationmark.triangle.fill":
+            nil
+        case "battery.75", "pause.circle.fill":
+            [.textColor, .systemYellow]
+        default:
+            [.systemYellow]
         }
     }
 
@@ -91,7 +127,7 @@ final class MenuBarStatusItemController: NSObject {
             return .noImage
         case .nativeBattery:
             return .imageTrailing
-        case .nativeBatteryOnly:
+        case .nativeBatteryOnly, .percentInside:
             return .imageOnly
         }
     }
@@ -107,7 +143,7 @@ final class MenuBarStatusItemController: NSObject {
             title = snapshot?.menuBarTitle ?? "PowerLens"
         case .nativeBattery:
             title = snapshot?.batteryLevel.map(Formatters.percent) ?? "--"
-        case .nativeBatteryOnly:
+        case .nativeBatteryOnly, .percentInside:
             title = ""
         }
 
@@ -134,7 +170,7 @@ final class MenuBarStatusItemController: NSObject {
         let systemSize = NSFont.menuBarFont(ofSize: 0).pointSize
 
         switch style {
-        case .nativeBattery, .nativeBatteryOnly:
+        case .nativeBattery, .nativeBatteryOnly, .percentInside:
             return max(10, systemSize - 2)
         case .powerLens, .powerText:
             return systemSize
@@ -143,7 +179,7 @@ final class MenuBarStatusItemController: NSObject {
 
     private func menuBarFontWeight(for style: MenuBarDisplayStylePreference) -> NSFont.Weight {
         switch style {
-        case .nativeBattery, .nativeBatteryOnly:
+        case .nativeBattery, .nativeBatteryOnly, .percentInside:
             return .regular
         case .powerLens, .powerText:
             return .medium

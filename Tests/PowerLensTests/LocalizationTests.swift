@@ -73,6 +73,8 @@ struct LocalizationTests {
             "settings.pane.data",
             "settings.pane.updates",
             "settings.section.menuBarAndDock",
+            "menuBarStyle.percentInside.title",
+            "menuBarStyle.percentInside.detail",
             "settings.section.system",
             "settings.section.telemetry",
             "settings.section.history",

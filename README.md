@@ -44,9 +44,11 @@ Click the menu bar item for a quick check:
 - **Details** on demand: capacities, cycles, voltage and current, and charger
   output.
 
-The menu bar item itself comes in four styles: Detailed, Simple, Battery Icon,
-and Icon Only. In Low Power Mode the battery icon fills yellow, as it does in
-macOS, and a red badge appears when not enough power is coming in.
+The menu bar item itself comes in five styles: Detailed, Simple, Battery Icon,
+Percent Inside (the macOS 27 battery, with the level and charging state inside
+the icon), and Icon Only. In Low Power Mode the battery and the Detailed
+style's symbol turn yellow, as the battery does in macOS, and a red badge
+appears when not enough power is coming in.
 
 <br clear="right">
 
