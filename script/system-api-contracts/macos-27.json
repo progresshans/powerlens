@@ -308,6 +308,13 @@
           "presence": "optional"
         },
         {
+          "path": "BatteryData",
+          "allowedTypes": [
+            "dictionary"
+          ],
+          "presence": "optional"
+        },
+        {
           "path": "PowerTelemetryData.BatteryPower",
           "allowedTypes": [
             "number"
@@ -341,6 +348,27 @@
             "number"
           ],
           "presence": "optional"
+        },
+        {
+          "path": "BatteryData.DesignCapacity",
+          "allowedTypes": [
+            "number"
+          ],
+          "presence": "optional"
+        },
+        {
+          "path": "BatteryData.AppleRawMaxCapacity",
+          "allowedTypes": [
+            "number"
+          ],
+          "presence": "optional"
+        },
+        {
+          "path": "BatteryData.NominalChargeCapacity",
+          "allowedTypes": [
+            "number"
+          ],
+          "presence": "optional"
         }
       ]
     },
@@ -361,6 +389,24 @@
         },
         {
           "key": "PSTR",
+          "expectedDataType": "flt ",
+          "expectedDataSize": 4,
+          "presence": "optional"
+        },
+        {
+          "key": "TB0T",
+          "expectedDataType": "flt ",
+          "expectedDataSize": 4,
+          "presence": "optional"
+        },
+        {
+          "key": "TB1T",
+          "expectedDataType": "flt ",
+          "expectedDataSize": 4,
+          "presence": "optional"
+        },
+        {
+          "key": "TB2T",
           "expectedDataType": "flt ",
           "expectedDataSize": 4,
           "presence": "optional"

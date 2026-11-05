@@ -1,15 +1,16 @@
+import Charts
 import SwiftUI
 
 struct DashboardView: View {
     @ObservedObject var store: PowerLensStore
     let openSettings: () -> Void
     @SceneStorage("dashboard.sidebar.selection") private var selectedDestinationRaw = DashboardSidebarDestination.dashboard.rawValue
+    let session: DashboardSession
 
-    private let columns = [
-        GridItem(.flexible(minimum: 190), spacing: 16, alignment: .top),
-        GridItem(.flexible(minimum: 190), spacing: 16, alignment: .top),
-        GridItem(.flexible(minimum: 190), spacing: 16, alignment: .top),
-    ]
+    /// With the sidebar shown the window is at least 1120pt wide; the
+    /// floating sidebar sits 8pt in from the window edge.
+    static let sidebarMinWidth: CGFloat = 220
+    static let detailMinWidth: CGFloat = 1120 - sidebarMinWidth - 8
 
     private var selectedDestination: DashboardSidebarDestination {
         DashboardSidebarDestination(rawValue: selectedDestinationRaw) ?? .dashboard
@@ -17,7 +18,7 @@ struct DashboardView: View {
 
     private var sidebarSelection: Binding<String?> {
         Binding(
-            get: { selectedDestinationRaw },
+            get: { selectedDestination.rawValue },
             set: { newValue in
                 selectedDestinationRaw = newValue ?? DashboardSidebarDestination.dashboard.rawValue
             }
@@ -29,20 +30,33 @@ struct DashboardView: View {
             sidebar
         } detail: {
             detailSurface
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.lensWindowBackground)
+                // The window minimum belongs to the columns, not the whole
+                // split view: while the sidebar slides in, the detail sits
+                // beside it, and a 1120pt minimum pushed it off the right edge.
+                .navigationSplitViewColumnWidth(min: Self.detailMinWidth, ideal: Self.detailMinWidth)
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1120, minHeight: 760)
+        .frame(minHeight: 760)
+        .onAppear { store.setDashboardEnergyDemand(selectedDestination == .dashboard) }
+        .onChange(of: selectedDestinationRaw) { store.setDashboardEnergyDemand(selectedDestination == .dashboard) }
     }
+
+    // MARK: - Sidebar
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 24, height: 24)
                 Text(L10n.text("ui.dashboardTitle"))
-                    .font(.title2.weight(.bold))
+                    .font(.headline)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 20)
-            .padding(.bottom, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 10)
 
             List(selection: sidebarSelection) {
                 ForEach(DashboardSidebarDestination.allCases) { destination in
@@ -52,44 +66,65 @@ struct DashboardView: View {
             }
             .listStyle(.sidebar)
 
-            Divider()
+            if let snapshot = store.latest, let presentation = store.live.presentation {
+                sidebarStatus(snapshot, presentation: presentation)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            }
 
             SidebarFooterAction(
                 title: L10n.text("ui.section.settings"),
                 systemImage: "gearshape",
                 action: openSettings
             )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
         }
-        .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 260)
+        .navigationSplitViewColumnWidth(min: Self.sidebarMinWidth, ideal: Self.sidebarMinWidth, max: 260)
     }
+
+    private func sidebarStatus(_ snapshot: TelemetrySnapshot, presentation: LivePowerPresentation) -> some View {
+        let status = presentation.status
+        let battery = presentation.battery
+        let mac = presentation.readings.systemPower?.formatted ?? L10n.text("common.none")
+
+        return VStack(alignment: .leading, spacing: 6) {
+            StatusCapsule(title: status.capsuleTitle, systemImage: status.capsuleSymbol, tone: status.tone)
+            Text(L10n.tr("sidebar.status.detail", battery.value, mac))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCardSurface(cornerRadius: 12)
+    }
+
+    // MARK: - Detail
 
     @ViewBuilder
     private var detailSurface: some View {
         if selectedDestination == .history || store.latest != nil {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    detailHeader(store.latest)
-
-                    if selectedDestination == .history {
-                        InsightsView(store: store)
-                    } else if let snapshot = store.latest {
-                        switch selectedDestination {
-                        case .dashboard:
-                            dashboardSection(snapshot)
-                        case .power:
-                            powerSection(snapshot)
-                        case .battery:
-                            batterySection(snapshot)
-                        case .diagnostics:
-                            diagnosticsSection(snapshot)
-                        case .history:
-                            EmptyView()
+                VStack(alignment: .leading, spacing: 20) {
+                    switch selectedDestination {
+                    case .dashboard:
+                        if let snapshot = store.latest, let presentation = store.live.presentation {
+                            DashboardNowPage(snapshot: snapshot, presentation: presentation,
+                                live: store.live, energyApps: store.topEnergyApps,
+                                historyRevision: store.historyRevision, refresh: store.refreshNow,
+                                loadRecent: store.recentPowerHistory, recentHistory: session.recentHistory)
                         }
+                    case .battery:
+                        if let snapshot = store.latest {
+                            DashboardBatteryPage(snapshot: snapshot)
+                        }
+                    case .history:
+                        historyPage
                     }
                 }
-                .padding(28)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 28)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if store.telemetryUnavailable {
@@ -100,7 +135,6 @@ struct DashboardView: View {
                 Text(L10n.text("ui.telemetryUnavailable.title"))
                     .font(.title3.weight(.semibold))
                 Text(L10n.text("ui.telemetryUnavailable.message"))
-                    .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -113,261 +147,19 @@ struct DashboardView: View {
         }
     }
 
-    private func detailHeader(_ snapshot: TelemetrySnapshot?) -> some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(selectedDestination.detailTitle)
-                    .font(.largeTitle.weight(.bold))
+    // MARK: - 기록
 
-                if let snapshot {
-                    Text(
-                        snapshot.statusHeadline(
-                            resolvedState: store.resolvedPowerState
-                        )
-                    )
-                        .font(.title3.weight(.semibold))
-
-                    Text(
-                        snapshot.statusSubheadline(
-                            resolvedState: store.resolvedPowerState
-                        )
-                    )
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 12) {
-                LiveIndicatorView(
-                    refreshDate: store.lastRefreshAt ?? snapshot?.timestamp,
-                    activeEngineName: store.activeTelemetryEngine.displayName,
-                    health: store.telemetryHealth
-                )
-
-                DashboardHeaderAction(
-                    systemImage: "arrow.clockwise",
-                    title: L10n.text("ui.refreshNow"),
-                    action: store.refreshNow
-                )
-            }
-        }
-    }
-
-    private func dashboardSection(_ snapshot: TelemetrySnapshot) -> some View {
-        let powerReadings = PowerFlowReadings(snapshot: snapshot)
-        let powerTooltip = PowerFlowTooltip.text(snapshot: snapshot, readings: powerReadings)
-        let diagnostics = snapshot.diagnosticsExcludingPrimaryStatus(
-            store.diagnostics,
-            resolvedState: store.resolvedPowerState
-        )
-
-        return VStack(alignment: .leading, spacing: 20) {
-            LazyVGrid(columns: columns, spacing: 16) {
-                metricCard(
-                    L10n.text("ui.metric.battery"),
-                    snapshot.batteryLevel.map(Formatters.percent) ?? L10n.text("common.none"),
-                    detail: snapshot.externalConnected
-                        ? snapshot.statusHeadline(
-                            resolvedState: store.resolvedPowerState
-                        )
-                        : L10n.text("ui.metric.portablePower"),
-                    systemImage: "battery.100"
-                )
-                metricCard(
-                    L10n.text("ui.metric.powerIn"),
-                    powerReadings.inputPower?.formatted ?? L10n.text("common.none"),
-                    detail: snapshot.adapterMaxPowerW.map { L10n.tr("ui.metric.ratedPowerDetail", Formatters.power($0)) } ?? L10n.text("ui.metric.adapterNotConnected"),
-                    systemImage: "powerplug.fill",
-                    help: powerTooltip
-                )
-                metricCard(
-                    L10n.text("ui.metric.systemLoad"),
-                    powerReadings.systemPower?.formatted ?? L10n.text("common.none"),
-                    detail: snapshot.frontmostAppName ?? L10n.text("ui.metric.noForegroundApp"),
-                    systemImage: "waveform.path.ecg",
-                    help: powerTooltip
-                )
-                metricCard(
-                    L10n.text("ui.metric.batteryTemp"),
-                    snapshot.batteryTemperatureC.map(Formatters.temperature) ?? L10n.text("common.none"),
-                    detail: L10n.tr("ui.metric.thermalStateDetail", L10n.localizedThermalState(snapshot.thermalState)),
-                    systemImage: "thermometer.medium"
-                )
-                metricCard(
-                    L10n.text("ui.metric.health"),
-                    snapshot.chargeHealthPercent.map(Formatters.percent) ?? L10n.text("common.none"),
-                    detail: snapshot.batteryHealthSummary,
-                    systemImage: "heart.fill"
-                )
-                metricCard(
-                    L10n.text("ui.metric.cycles"),
-                    snapshot.cycleCount.map(String.init) ?? L10n.text("common.none"),
-                    detail: snapshot.designCycleCount.map { L10n.tr("ui.metric.designTarget", $0) } ?? L10n.text("ui.metric.cycleTargetUnknown"),
-                    systemImage: "repeat"
-                )
-            }
-
-            PowerFlowCard(snapshot: snapshot)
-
-            if !store.topEnergyApps.isEmpty {
-                EnergyUsageCard(apps: store.topEnergyApps)
-            }
-
-            if !diagnostics.isEmpty {
-                diagnosticsBlock(diagnostics)
-            }
-        }
-    }
-
-    private func powerSection(_ snapshot: TelemetrySnapshot) -> some View {
+    private var historyPage: some View {
         VStack(alignment: .leading, spacing: 20) {
-            PowerFlowCard(snapshot: snapshot)
-
-            if !store.topEnergyApps.isEmpty {
-                EnergyUsageCard(apps: store.topEnergyApps)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.text("ui.sidebar.history"))
+                    .font(.title.weight(.bold))
+                Text(L10n.text("history.subtitle"))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
             }
-
-            LazyVGrid(columns: columns, spacing: 16) {
-                detailCard(title: L10n.text("ui.detail.adapter"), rows: TelemetryDetailRows.adapter(snapshot))
-                detailCard(title: L10n.text("ui.detail.system"), rows: TelemetryDetailRows.system(snapshot, lastRefreshAt: store.lastRefreshAt))
-                detailCard(title: L10n.text("ui.section.powerSnapshot"), rows: TelemetryDetailRows.powerSnapshot(snapshot))
-            }
+            InsightsView(store: store, model: session.insights, exportState: session.exportState)
         }
     }
 
-    private func batterySection(_ snapshot: TelemetrySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            LazyVGrid(columns: columns, spacing: 16) {
-                metricCard(
-                    L10n.text("ui.metric.battery"),
-                    snapshot.batteryLevel.map(Formatters.percent) ?? L10n.text("common.none"),
-                    detail: L10n.text("ui.detail.batteryPack"),
-                    systemImage: "battery.100"
-                )
-                metricCard(
-                    L10n.text("ui.metric.health"),
-                    snapshot.chargeHealthPercent.map(Formatters.percent) ?? L10n.text("common.none"),
-                    detail: snapshot.batteryHealthSummary,
-                    systemImage: "heart.fill"
-                )
-                metricCard(
-                    L10n.text("ui.metric.cycles"),
-                    snapshot.cycleCount.map(String.init) ?? L10n.text("common.none"),
-                    detail: snapshot.designCycleCount.map { L10n.tr("ui.metric.designTarget", $0) } ?? L10n.text("ui.metric.cycleTargetUnknown"),
-                    systemImage: "repeat"
-                )
-                metricCard(
-                    L10n.text("ui.metric.batteryTemp"),
-                    snapshot.batteryTemperatureC.map(Formatters.temperature) ?? L10n.text("common.none"),
-                    detail: L10n.tr("ui.metric.thermalStateDetail", L10n.localizedThermalState(snapshot.thermalState)),
-                    systemImage: "thermometer.medium"
-                )
-            }
-
-            LazyVGrid(columns: columns, spacing: 16) {
-                detailCard(title: L10n.text("ui.detail.batteryPack"), rows: TelemetryDetailRows.batteryPack(snapshot))
-                detailCard(title: L10n.text("ui.detail.batteryFlow"), rows: TelemetryDetailRows.batteryFlow(snapshot))
-                detailCard(title: L10n.text("ui.section.batterySnapshot"), rows: TelemetryDetailRows.batterySnapshot(snapshot))
-            }
-        }
-    }
-
-    private func diagnosticsSection(_ snapshot: TelemetrySnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            diagnosticsBlock(store.diagnostics)
-
-            if !store.topEnergyApps.isEmpty {
-                EnergyUsageCard(apps: store.topEnergyApps)
-            }
-
-            LazyVGrid(columns: columns, spacing: 16) {
-                detailCard(title: L10n.text("ui.section.batterySnapshot"), rows: TelemetryDetailRows.batterySnapshot(snapshot))
-                detailCard(title: L10n.text("ui.section.powerSnapshot"), rows: TelemetryDetailRows.powerSnapshot(snapshot))
-            }
-        }
-    }
-
-    private func diagnosticsBlock(
-        _ diagnostics: [DiagnosticItem]
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.text("ui.section.diagnostics"))
-                .font(.title2.weight(.semibold))
-
-            ForEach(diagnostics) { item in
-                DiagnosticRow(item: item)
-            }
-        }
-    }
-
-    private func metricCard(
-        _ title: String,
-        _ value: String,
-        detail: String,
-        systemImage: String,
-        help: String? = nil
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-            Text(detail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
-        .padding(18)
-        // Attach the tooltip under the card surface: applied outside the
-        // macOS 26 glass effect, `.help` never appeared on hover.
-        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xLarge, style: .continuous))
-        .modifier(OptionalHelp(text: help))
-        .cardSurface(cornerRadius: CornerRadius.xLarge)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title): \(value). \(detail)")
-    }
-
-    private func detailCard(title: String, rows: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                VStack(spacing: 0) {
-                    HStack {
-                        Text(row.0)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(row.1)
-                            .monospacedDigit()
-                            .multilineTextAlignment(.trailing)
-                    }
-
-                    if index < rows.count - 1 {
-                        Divider()
-                            .padding(.top, 12)
-                    }
-                }
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .cardSurface(cornerRadius: CornerRadius.xLarge)
-    }
-}
-
-private struct OptionalHelp: ViewModifier {
-    let text: String?
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let text {
-            content.help(text)
-        } else {
-            content
-        }
-    }
 }

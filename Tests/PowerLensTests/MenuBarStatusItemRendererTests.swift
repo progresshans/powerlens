@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import PowerLens
 
@@ -42,5 +43,40 @@ struct MenuBarStatusItemRendererTests {
             #expect(MenuBarStatusItemRenderer.canLoadAsset(level: Double(level), badge: .chargingBolt))
             #expect(MenuBarStatusItemRenderer.canLoadAsset(level: Double(level), badge: .pluggedHolding))
         }
+    }
+}
+
+@MainActor
+struct MenuBarBatteryTintTests {
+    @Test
+    func untintedRequestsKeepTheTemplateImage() {
+        let image = MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: .none)
+
+        #expect(image.isTemplate)
+        #expect(image === MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt))
+    }
+
+    @Test
+    func detailedStyleSymbolsTurnYellowInLowPowerModeExceptTheWarning() {
+        let states: [ExternalPowerState] = [.onBattery, .charging, .holding, .connected]
+
+        for state in states {
+            let symbol = state.menuBarSymbolName
+            let palette = MenuBarStatusItemController.lowPowerPalette(forSymbolNamed: symbol)
+            #expect(palette?.last == .systemYellow, "\(symbol) does not turn yellow")
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil)
+        }
+        #expect(MenuBarStatusItemController.lowPowerPalette(forSymbolNamed: "exclamationmark.triangle.fill") == nil)
+    }
+
+    @Test
+    func tintedImagesAreColoredAndCachedPerTint() {
+        let lowPower = MenuBarStatusItemRenderer.Tint(lowPowerFill: true)
+        let warning = MenuBarStatusItemRenderer.Tint(warningBadge: true)
+        let first = MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: lowPower)
+
+        #expect(!first.isTemplate)
+        #expect(first === MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: lowPower))
+        #expect(first !== MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt, tint: warning))
     }
 }

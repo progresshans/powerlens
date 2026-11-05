@@ -78,7 +78,7 @@ enum PowerMeasurementSetSource: String, Codable, Sendable {
 }
 
 struct DiagnosticItem: Identifiable, Equatable, Sendable {
-    let id = UUID()
+    var id: DiagnosticKind { kind }
     let kind: DiagnosticKind
     let severity: DiagnosticSeverity
     let title: String

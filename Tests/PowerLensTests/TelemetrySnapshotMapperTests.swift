@@ -305,6 +305,110 @@ struct TelemetrySnapshotMapperTests {
         #expect(flow.routes.last?.target.value == "9.8W")
         #expect(snapshot.primaryDisplayedPower?.watts == 7.4)
     }
+
+    /// macOS 27.2 dropped the top-level capacity and `Temperature` keys.
+    @Test
+    func livePrecisionMapperReadsMacOS27BatteryDataAndSMCTemperature() throws {
+        let snapshot = try LivePrecisionTelemetrySnapshotMapper(
+            powerSourceInfo: [
+                kIOPSPowerSourceStateKey: kIOPMBatteryPowerKey,
+                kIOPSCurrentCapacityKey: 84
+            ],
+            batteryRegistry: [
+                "ExternalConnected": false,
+                "Voltage": 12_339,
+                "Amperage": -1_084,
+                "CycleCount": 122,
+                "BatteryData": [
+                    "DesignCapacity": 6_249,
+                    "AppleRawMaxCapacity": 5_750,
+                    "NominalChargeCapacity": 5_902
+                ]
+            ],
+            adapterDetails: [:],
+            smcPower: SMCPowerSnapshot(
+                batteryPowerW: 13.4,
+                externalPowerW: 0,
+                systemPowerW: 13.4,
+                batteryTemperatureC: 32
+            ),
+            environment: makeEnvironment()
+        ).snapshot()
+
+        #expect(snapshot.designCapacityMah == 6_249)
+        #expect(snapshot.fullChargeCapacityMah == 5_750)
+        #expect(snapshot.nominalCapacityMah == 5_902)
+        #expect(snapshot.batteryHealthText == "Normal")
+        #expect(snapshot.batteryTemperatureC == 32)
+    }
+
+    @Test
+    func topLevelBatteryReadingsTakePrecedenceOverFallbacks() throws {
+        let snapshot = try LivePrecisionTelemetrySnapshotMapper(
+            powerSourceInfo: [
+                kIOPSPowerSourceStateKey: kIOPMBatteryPowerKey,
+                kIOPSCurrentCapacityKey: 84
+            ],
+            batteryRegistry: [
+                "Voltage": 12_339,
+                "Amperage": -1_084,
+                "DesignCapacity": 6_249,
+                "AppleRawMaxCapacity": 5_000,
+                "Temperature": 3_050,
+                "BatteryData": [
+                    "DesignCapacity": 1,
+                    "AppleRawMaxCapacity": 1
+                ]
+            ],
+            adapterDetails: [:],
+            smcPower: SMCPowerSnapshot(
+                batteryPowerW: nil,
+                externalPowerW: nil,
+                systemPowerW: nil,
+                batteryTemperatureC: 41
+            ),
+            environment: makeEnvironment()
+        ).snapshot()
+
+        #expect(snapshot.designCapacityMah == 6_249)
+        #expect(snapshot.fullChargeCapacityMah == 5_000)
+        #expect(snapshot.batteryHealthText == "Aged")
+        #expect(snapshot.batteryTemperatureC == 30.5)
+    }
+
+    @Test
+    func missingCapacitiesAndTemperatureStayUnknown() throws {
+        let snapshot = try LivePrecisionTelemetrySnapshotMapper(
+            powerSourceInfo: [
+                kIOPSPowerSourceStateKey: kIOPMBatteryPowerKey,
+                kIOPSCurrentCapacityKey: 84
+            ],
+            batteryRegistry: [
+                "Voltage": 12_339,
+                "Amperage": -1_084,
+                "BatteryData": ["CurrentCapacity": 84]
+            ],
+            adapterDetails: [:],
+            smcPower: nil,
+            environment: makeEnvironment()
+        ).snapshot()
+
+        #expect(snapshot.designCapacityMah == nil)
+        #expect(snapshot.fullChargeCapacityMah == nil)
+        #expect(snapshot.batteryHealthText == nil)
+        #expect(snapshot.batteryTemperatureC == nil)
+    }
+
+    @Test(arguments: [
+        ([32.0, 32.0, 31.9], 32.0 as Double?),
+        ([0, 31.2], 31.2),
+        ([.nan, 150, -5, 30.4], 30.4),
+        ([0, 0, 0], nil),
+        ([], nil),
+    ])
+    func smcBatteryTemperatureUsesTheWarmestPlausibleSensor(readings: [Double], expected: Double?) {
+        #expect(SMCPowerReader.batteryTemperature(from: readings) == expected)
+    }
 }
 
 private func makeEnvironment() -> TelemetryReadEnvironment {

@@ -5,6 +5,7 @@ struct SMCPowerSnapshot {
     let batteryPowerW: Double?
     let externalPowerW: Double?
     let systemPowerW: Double?
+    var batteryTemperatureC: Double? = nil
 }
 
 protocol SMCPowerSnapshotReading {
@@ -16,15 +17,42 @@ struct SMCPowerReader: SMCPowerSnapshotReading {
         let connection = try SMCKit.openConnection()
         defer { _ = SMCKit.close(connection) }
 
-        let batteryPower = try readFloat(connection: connection, key: .batteryPower)
-        let externalPower = try readFloat(connection: connection, key: .externalPower)
-        let systemPower = try readFloat(connection: connection, key: .systemPower)
-
-        return SMCPowerSnapshot(
-            batteryPowerW: sanitize(power: batteryPower),
-            externalPowerW: sanitize(power: externalPower),
-            systemPowerW: sanitize(power: systemPower)
+        // Temperature is read apart from the power set, so a missing sensor
+        // on either side never discards the other.
+        let temperature = Self.batteryTemperature(
+            from: TelemetrySystemContract.AppleSMCKey.batteryTemperatures.compactMap {
+                try? readFloat(connection: connection, key: SMCKey($0))
+            }
         )
+        do {
+            let batteryPower = try readFloat(connection: connection, key: .batteryPower)
+            let externalPower = try readFloat(connection: connection, key: .externalPower)
+            let systemPower = try readFloat(connection: connection, key: .systemPower)
+
+            return SMCPowerSnapshot(
+                batteryPowerW: sanitize(power: batteryPower),
+                externalPowerW: sanitize(power: externalPower),
+                systemPowerW: sanitize(power: systemPower),
+                batteryTemperatureC: temperature
+            )
+        } catch {
+            guard let temperature else {
+                throw error
+            }
+            return SMCPowerSnapshot(
+                batteryPowerW: nil,
+                externalPowerW: nil,
+                systemPowerW: nil,
+                batteryTemperatureC: temperature
+            )
+        }
+    }
+
+    /// The warmest plausible sensor, so heat warnings are never understated.
+    /// Absent sensors commonly read 0, so that and anything outside a
+    /// battery's range is ignored rather than reported.
+    static func batteryTemperature(from readings: [Double]) -> Double? {
+        readings.filter { $0.isFinite && $0 > 0 && $0 < 100 }.max()
     }
 
     private func readFloat(connection: io_connect_t, key: SMCKey) throws -> Double {
@@ -65,20 +93,9 @@ struct SMCPowerReader: SMCPowerSnapshotReading {
             _ = SMCKit.close(connection)
         }
 
-        let keys: [(String, SMCKey)] = [
-            (
-                TelemetrySystemContract.AppleSMCKey.batteryPower.rawValue,
-                .batteryPower
-            ),
-            (
-                TelemetrySystemContract.AppleSMCKey.externalPower.rawValue,
-                .externalPower
-            ),
-            (
-                TelemetrySystemContract.AppleSMCKey.systemPower.rawValue,
-                .systemPower
-            ),
-        ]
+        let keys = TelemetrySystemContract.AppleSMCKey.allCases.map {
+            ($0.rawValue, SMCKey($0))
+        }
         return SMCProbeReport(
             serviceAvailable: true,
             connectionState: .available,
@@ -200,27 +217,15 @@ private struct SMCKey {
     let code: FourCharCode
     let info: SMCDataType
 
-    static let batteryPower = Self(
-        code: .init(
-            fourCharacterString:
-                TelemetrySystemContract.AppleSMCKey.batteryPower.rawValue
-        ),
-        info: .float
-    )
-    static let externalPower = Self(
-        code: .init(
-            fourCharacterString:
-                TelemetrySystemContract.AppleSMCKey.externalPower.rawValue
-        ),
-        info: .float
-    )
-    static let systemPower = Self(
-        code: .init(
-            fourCharacterString:
-                TelemetrySystemContract.AppleSMCKey.systemPower.rawValue
-        ),
-        info: .float
-    )
+    /// Every key PowerLens reads is a 4-byte float.
+    init(_ key: TelemetrySystemContract.AppleSMCKey) {
+        code = FourCharCode(fourCharacterString: key.rawValue)
+        info = .float
+    }
+
+    static let batteryPower = Self(.batteryPower)
+    static let externalPower = Self(.externalPower)
+    static let systemPower = Self(.systemPower)
 }
 
 private struct SMCParamStruct {

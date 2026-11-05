@@ -49,6 +49,14 @@ struct AppPreferencesTests {
     }
 
     @Test
+    func menuBarStylesKeepTheirStoredNamesAndPickerOrder() {
+        // Raw values are persisted in user defaults.
+        #expect(MenuBarDisplayStylePreference.allCases.map(\.rawValue) == [
+            "powerLens", "powerText", "nativeBattery", "percentInside", "nativeBatteryOnly",
+        ])
+    }
+
+    @Test
     func longTermHistoryRequiresConfirmationOnlyWhenDiscardingRetainedData() {
         #expect(
             LongTermResolution.requiresDestructiveConfirmation(

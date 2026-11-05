@@ -30,12 +30,13 @@ extension TelemetrySnapshot {
         }
 
         if let temperature = batteryTemperatureC,
-           temperature >= 36 {
+           case let assessment = BatteryTemperatureAssessment(temperature),
+           assessment.isAboveNormal {
             results.append(
                 DiagnosticItem(
                     kind: .temperatureHigh,
-                    severity: .caution,
-                    title: L10n.text("diag.temperatureHigh.title"),
+                    severity: assessment == .hot ? .warning : .caution,
+                    title: L10n.text(assessment == .hot ? "diag.temperatureHigh.title" : "diag.temperatureWarm.title"),
                     message: L10n.tr("diag.temperatureHigh.message", Formatters.temperature(temperature))
                 )
             )

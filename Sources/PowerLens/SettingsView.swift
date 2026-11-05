@@ -108,19 +108,14 @@ struct SettingsView: View {
         }
 
         Section {
-            LabeledContent {
-                Picker(L10n.text("menuBarStyle.title"), selection: $menuBarDisplayStyle) {
-                    ForEach(MenuBarDisplayStylePreference.allCases) { style in
-                        Text(style.title).tag(style.rawValue)
-                    }
-                }
-                .labelsHidden()
-            } label: {
+            VStack(alignment: .leading, spacing: 10) {
                 rowLabel(
                     L10n.text("menuBarStyle.title"),
                     (MenuBarDisplayStylePreference(rawValue: menuBarDisplayStyle) ?? .powerLens).detail
                 )
+                MenuBarStylePicker(selection: $menuBarDisplayStyle)
             }
+            .padding(.vertical, 2)
 
             Toggle(isOn: $showDockIcon) {
                 rowLabel(
@@ -161,19 +156,22 @@ struct SettingsView: View {
                 rowLabel(L10n.text("settings.row.status"), store.telemetryStatusText)
             }
 
-            LabeledContent {
-                Picker(L10n.text("telemetry.label.preference"), selection: $telemetryEnginePreference) {
-                    ForEach(TelemetryEnginePreference.allCases) { preference in
-                        Text(preference.displayName).tag(preference.rawValue)
+            Picker(selection: $telemetryEnginePreference) {
+                ForEach(TelemetryEnginePreference.allCases) { preference in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(preference.displayName)
+                        Text(preference.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .padding(.vertical, 2)
+                    .tag(preference.rawValue)
                 }
-                .labelsHidden()
             } label: {
-                rowLabel(
-                    L10n.text("telemetry.label.preference"),
-                    (TelemetryEnginePreference(rawValue: telemetryEnginePreference) ?? .auto).detail
-                )
+                rowLabel(L10n.text("telemetry.label.preference"), L10n.text("telemetry.label.preference.detail"))
             }
+            .pickerStyle(.radioGroup)
         } header: {
             Text(L10n.text("settings.section.telemetry"))
         } footer: {

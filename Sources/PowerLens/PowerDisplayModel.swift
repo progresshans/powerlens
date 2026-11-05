@@ -159,7 +159,7 @@ extension TelemetrySnapshot {
             if let headroom = ratedHeadroomW {
                 return L10n.tr(
                     "status.subheadline.ratedHeadroom",
-                    Formatters.power(headroom)
+                    Formatters.ratedPower(headroom)
                 )
             }
             return L10n.text("status.subheadline.currentChargerHealthy")

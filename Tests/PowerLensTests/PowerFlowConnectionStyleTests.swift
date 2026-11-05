@@ -59,7 +59,7 @@ struct PowerFlowConnectionStyleTests {
         #expect(models.map(\.state) == [state, state, state])
         #expect(models.map(\.connectionStyle) == [.solid, .solid, .solid])
         #expect(models.allSatisfy { $0.showsConnections })
-        #expect(models.allSatisfy { $0.statusTitle == state.localizedTitle })
+        #expect(models.allSatisfy { $0.state == state })
         #expect(models.allSatisfy { $0.routes.map(\.role) == models[0].routes.map(\.role) })
         #expect(snapshots.allSatisfy { $0.menuBarTitle == "80% · 20.0W" })
         for model in models {

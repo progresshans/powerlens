@@ -1,7 +1,7 @@
 import Foundation
 
 enum HistorySchema {
-    static let currentVersion = 4
+    static let currentVersion = 5
 
     static let creationStatements = [
         """
@@ -76,6 +76,7 @@ enum HistorySchema {
             adapter_current_ma INTEGER,
             system_load_mw INTEGER,
             battery_power_source_code INTEGER,
+            measurement_payload TEXT,
             FOREIGN KEY (battery_id) REFERENCES batteries(battery_id),
             FOREIGN KEY (battery_state_id) REFERENCES battery_states(battery_state_id),
             FOREIGN KEY (adapter_id) REFERENCES adapters(adapter_id),
@@ -136,6 +137,11 @@ enum HistorySchema {
     /// Older prerelease databases did not set `user_version`, so migrations
     /// are guarded by actual column presence rather than only a version number.
     static let columnMigrations = [
+        ColumnMigration(
+            table: "telemetry_samples",
+            column: "measurement_payload",
+            sql: "ALTER TABLE telemetry_samples ADD COLUMN measurement_payload TEXT;"
+        ),
         ColumnMigration(
             table: "telemetry_samples",
             column: "battery_power_source_code",

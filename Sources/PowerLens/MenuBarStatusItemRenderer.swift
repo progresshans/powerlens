@@ -26,6 +26,43 @@ enum MenuBarStatusItemRenderer {
         cachedImage(percent: canonicalAssetPercent(level: level), badge: badge)
     }
 
+    /// Color on the glyph. The fill follows macOS (yellow in Low Power Mode);
+    /// PowerLens's own warning only ever tints the badge, so it cannot be
+    /// mistaken for Low Power Mode.
+    struct Tint: Hashable, Sendable {
+        var lowPowerFill = false
+        var warningBadge = false
+
+        static let none = Tint()
+    }
+
+    /// A colored, non-template variant. Falls back to the template image when
+    /// there is nothing to tint.
+    static func batteryImage(level: Double?, badge: Badge, tint: Tint) -> NSImage {
+        guard tint != .none else {
+            return batteryImage(level: level, badge: badge)
+        }
+
+        let percent = canonicalAssetPercent(level: level)
+        let key = ImageKey(assetName: assetName(percent: percent), badge: badge, tint: tint)
+        if let image = imageCache[key] {
+            return image
+        }
+
+        let image: NSImage
+        if let pathData = assetPathData(named: key.assetName) {
+            image = NSImage(size: Metrics.canvasSize, flipped: false) { rect in
+                drawTintedAsset(pathData: pathData, badge: badge, tint: tint, in: rect)
+                return true
+            }
+            image.isTemplate = false
+        } else {
+            image = cachedImage(percent: percent, badge: badge)
+        }
+        imageCache[key] = image
+        return image
+    }
+
     /// Returns the shared base asset; badges are composed at draw time.
     static func assetIdentifier(level: Double?, badge: Badge) -> String {
         assetName(percent: canonicalAssetPercent(level: level))
@@ -44,8 +81,55 @@ enum MenuBarStatusItemRenderer {
 
     static var canvasSize: NSSize { Metrics.canvasSize }
 
+    /// The macOS 27 battery: level fill, percentage, and power badge share one
+    /// solid rounded body. Digits and badge are cut out of the fill and drawn
+    /// solid over the empty track, so they stay legible at any level. A
+    /// missing level shows "--" over an empty body, never a default fill.
+    static func percentInsideImage(level: Double?, badge: Badge, tint: Tint = .none) -> NSImage {
+        let key = PercentInsideKey(percent: percentInsideValue(level: level), badge: badge, tint: tint)
+        if let image = percentInsideCache[key] {
+            return image
+        }
+
+        let image = NSImage(size: PercentInsideMetrics.canvasSize, flipped: false) { rect in
+            drawPercentInside(key, in: rect)
+            return true
+        }
+        image.isTemplate = tint == .none
+        image.accessibilityDescription = key.percent.map { Formatters.percent(Double($0)) }
+        // Whole percents times badges and tints add up over a day; only the
+        // current image matters, so start over rather than grow without bound.
+        if percentInsideCache.count >= PercentInsideMetrics.cacheLimit {
+            percentInsideCache.removeAll(keepingCapacity: true)
+        }
+        percentInsideCache[key] = image
+        return image
+    }
+
+    /// The whole percent the icon shows, rounded like every other readout.
+    static func percentInsideValue(level: Double?) -> Int? {
+        guard let level, level.isFinite else {
+            return nil
+        }
+        return Int(min(max(level, 0), 100).rounded())
+    }
+
+    static var percentInsideCanvasSize: NSSize { PercentInsideMetrics.canvasSize }
+
+    /// The battery body's frame in the canvas (y up), or nil when the asset
+    /// cannot load.
+    static var percentInsideBodyFrame: NSRect? {
+        percentInsideShape.map {
+            PercentInsideMetrics.bodyFrame(
+                for: $0.body.bounds,
+                in: NSRect(origin: .zero, size: PercentInsideMetrics.canvasSize)
+            )
+        }
+    }
+
     private static var assetPathDataCache: [String: String] = [:]
     private static var imageCache: [ImageKey: NSImage] = [:]
+    private static var percentInsideCache: [PercentInsideKey: NSImage] = [:]
 
     private static func cachedImage(percent: Int, badge: Badge) -> NSImage {
         let key = ImageKey(assetName: assetName(percent: percent), badge: badge)
@@ -143,7 +227,50 @@ enum MenuBarStatusItemRenderer {
         fillPath.fill()
     }
 
-    private static func drawBolt(transform: AffineTransform, context: CGContext) {
+    private static func drawTintedAsset(pathData: String, badge: Badge, tint: Tint, in rect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else {
+            return
+        }
+
+        context.saveGState()
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+
+        // Non-template images are not recolored by the menu bar, so draw the
+        // shell in the text color of the current (menu bar) appearance.
+        let ink = NSColor.textColor
+        let transform = Metrics.assetSymbolTransform(in: rect)
+        let parts = splitFillSubpath(pathData)
+        draw(pathData: parts.shell, transform: transform, color: ink)
+        if let fill = parts.fill {
+            draw(pathData: fill, transform: transform, color: tint.lowPowerFill ? .systemYellow : ink)
+        }
+
+        let badgeColor = tint.warningBadge ? NSColor.systemRed : ink
+        switch badge {
+        case .none:
+            break
+        case .chargingBolt:
+            drawBolt(transform: transform, context: context, color: badgeColor)
+        case .pluggedHolding:
+            drawPlug(transform: transform, context: context, color: badgeColor)
+        }
+
+        context.restoreGState()
+    }
+
+    /// Asset paths start with the level fill as their own subpath when the
+    /// level is above zero; the remaining three subpaths are the shell.
+    private static func splitFillSubpath(_ pathData: String) -> (fill: String?, shell: String) {
+        let starts = pathData.indices.filter { pathData[$0] == "M" }
+        guard starts.count >= 4 else {
+            return (nil, pathData)
+        }
+        let boundary = starts[1]
+        return (String(pathData[..<boundary]), String(pathData[boundary...]))
+    }
+
+    private static func drawBolt(transform: AffineTransform, context: CGContext, color: NSColor = .black) {
         let haloPath = path(from: SymbolPaths.boltHalo)
         haloPath.transform(using: transform)
 
@@ -153,10 +280,10 @@ enum MenuBarStatusItemRenderer {
         haloPath.fill()
         context.restoreGState()
 
-        draw(pathData: SymbolPaths.boltCore, transform: transform)
+        draw(pathData: SymbolPaths.boltCore, transform: transform, color: color)
     }
 
-    private static func drawPlug(transform: AffineTransform, context: CGContext) {
+    private static func drawPlug(transform: AffineTransform, context: CGContext, color: NSColor = .black) {
         let haloPath = path(from: SymbolPaths.plugCore)
         haloPath.transform(using: transform)
         haloPath.lineCapStyle = .round
@@ -171,13 +298,13 @@ enum MenuBarStatusItemRenderer {
         haloPath.stroke()
         context.restoreGState()
 
-        draw(pathData: SymbolPaths.plugCore, transform: transform)
+        draw(pathData: SymbolPaths.plugCore, transform: transform, color: color)
     }
 
-    private static func draw(pathData: String, transform: AffineTransform) {
+    private static func draw(pathData: String, transform: AffineTransform, color: NSColor = .black) {
         let path = path(from: pathData)
         path.transform(using: transform)
-        NSColor.black.setFill()
+        color.setFill()
         path.fill()
     }
 
@@ -241,8 +368,14 @@ enum MenuBarStatusItemRenderer {
         min(max((level ?? 0) / 100, 0), 1)
     }
 
-    private static func assetPathData(named name: String) -> String? {
-        if let pathData = assetPathDataCache[name] {
+    /// Path data of the first symbol group found, in order. The default list
+    /// prefers the lightest small weight.
+    private static func assetPathData(
+        named name: String,
+        symbolIDs: [String] = ["Ultralight-S", "Thin-S", "Regular-S"]
+    ) -> String? {
+        let cacheKey = ([name] + symbolIDs).joined(separator: "#")
+        if let pathData = assetPathDataCache[cacheKey] {
             return pathData
         }
 
@@ -253,12 +386,12 @@ enum MenuBarStatusItemRenderer {
             withExtension: "svg"
         ),
             let svg = try? String(contentsOf: url, encoding: .utf8),
-            let pathData = smallPathData(from: svg)
+            let pathData = symbolIDs.lazy.compactMap({ pathData(from: svg, symbolID: $0) }).first
         else {
             return nil
         }
 
-        assetPathDataCache[name] = pathData
+        assetPathDataCache[cacheKey] = pathData
         return pathData
     }
 
@@ -269,16 +402,6 @@ enum MenuBarStatusItemRenderer {
     private static func roundedAssetLevel(_ level: Double) -> Int {
         let percentage = min(max(level * 100, 0), 100)
         return min(max(Int((percentage / 5).rounded()) * 5, 0), 100)
-    }
-
-    private static func smallPathData(from svg: String) -> String? {
-        for symbolID in ["Ultralight-S", "Thin-S", "Regular-S"] {
-            if let pathData = pathData(from: svg, symbolID: symbolID) {
-                return pathData
-            }
-        }
-
-        return nil
     }
 
     private static func pathData(from svg: String, symbolID: String) -> String? {
@@ -297,6 +420,264 @@ enum MenuBarStatusItemRenderer {
         }
 
         return String(regularSmallGroup[pathStart..<pathEnd])
+    }
+
+    private static func drawPercentInside(_ key: PercentInsideKey, in rect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext,
+              let shape = percentInsideShape
+        else {
+            return
+        }
+
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+
+        // Template images are recolored by the menu bar. Tinted images are
+        // not, so they draw in the current appearance's text color.
+        let ink: NSColor = key.tint == .none ? .black : .textColor
+        let secondary = ink.withAlphaComponent(PercentInsideMetrics.trackAlpha)
+        let transform = PercentInsideMetrics.transform(for: shape.body.bounds, in: rect)
+        let body = transformed(shape.body, by: transform).cgPath
+        let nub = transformed(shape.nub, by: transform).cgPath
+        let frame = body.boundingBoxOfPath
+
+        let percent = key.percent ?? 0
+        let reach = percent > 0
+            ? deviceAligned(frame.minX + frame.width * CGFloat(percent) / 100, in: context)
+            : frame.minX
+        let filled = NSRect(x: rect.minX, y: rect.minY, width: max(reach - rect.minX, 0), height: rect.height)
+        let empty = NSRect(x: reach, y: rect.minY, width: max(rect.maxX - reach, 0), height: rect.height)
+
+        context.saveGState()
+        context.addPath(body)
+        context.clip()
+        secondary.setFill()
+        context.fill(empty)
+        (key.tint.lowPowerFill ? NSColor.systemYellow : ink).setFill()
+        context.fill(filled)
+        context.restoreGState()
+
+        secondary.setFill()
+        context.addPath(nub)
+        context.fillPath()
+
+        let content = percentInsideContent(key, body: frame, shape: shape)
+
+        // Cut the digits and badge out of the fill... Cut-outs show the menu
+        // bar through the fill, which reads well on the ink fill and on yellow
+        // over a dark menu bar, but not on yellow over a light one, so there
+        // they are drawn in ink instead.
+        let cutsOut = !key.tint.lowPowerFill
+            || NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        context.saveGState()
+        context.addPath(body)
+        context.clip()
+        context.clip(to: filled)
+        if cutsOut {
+            context.setBlendMode(.destinationOut)
+            NSColor.black.setFill()
+        } else {
+            ink.setFill()
+        }
+        context.addPath(content.all)
+        context.fillPath()
+        context.restoreGState()
+
+        // ...and draw them solid over the empty track.
+        context.saveGState()
+        context.addPath(body)
+        context.clip()
+        context.clip(to: empty)
+        ink.setFill()
+        context.addPath(content.all)
+        context.fillPath()
+        context.restoreGState()
+
+        // A warning colors the badge wherever it sits, as on the other icons.
+        if key.tint.warningBadge, let badge = content.badge {
+            NSColor.systemRed.setFill()
+            context.addPath(badge)
+            context.fillPath()
+        }
+    }
+
+    /// Digits followed by the badge, centered in the body as one group.
+    private static func percentInsideContent(
+        _ key: PercentInsideKey,
+        body: NSRect,
+        shape: PercentInsideShape
+    ) -> (all: CGPath, badge: CGPath?) {
+        let fontSize = body.height * PercentInsideMetrics.fontScale
+        let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .semibold)
+        let capHeight = font.capHeight
+        let digits = glyphPath(
+            key.percent.map(String.init) ?? "--",
+            font: font,
+            tracking: PercentInsideMetrics.tracking * fontSize
+        )
+        let digitInk = digits.boundingBoxOfPath
+
+        // Lay the group out from x = 0 with the baseline at y = 0.
+        let local = CGMutablePath()
+        local.addPath(digits, transform: CGAffineTransform(translationX: -digitInk.minX, y: 0))
+        var groupWidth = digitInk.width
+        var badgeLocal: CGPath?
+
+        let badgeSource: NSBezierPath? = switch key.badge {
+        case .none: nil
+        case .chargingBolt: shape.bolt
+        case .pluggedHolding: shape.plug
+        }
+        if let badgeSource {
+            let source = badgeSource.cgPath
+            let bounds = source.boundingBoxOfPath
+            let scale = capHeight * PercentInsideMetrics.badgeHeight / bounds.height
+            let left = groupWidth + PercentInsideMetrics.badgeGap * fontSize
+            // SF Symbols paths point y down; flip them into the canvas and
+            // centre the badge on the digits' cap height.
+            let place = CGAffineTransform(
+                a: scale, b: 0, c: 0, d: -scale,
+                tx: left - bounds.minX * scale,
+                ty: capHeight / 2 + bounds.midY * scale
+            )
+            let badge = CGMutablePath()
+            badge.addPath(source, transform: place)
+            badgeLocal = badge
+            local.addPath(badge)
+            groupWidth = left + bounds.width * scale
+        }
+
+        let available = body.width - 2 * PercentInsideMetrics.sideMargin * body.height
+        let fit = min(1, available / groupWidth)
+        let final = CGAffineTransform(
+            a: fit, b: 0, c: 0, d: fit,
+            tx: body.midX - groupWidth * fit / 2,
+            ty: body.midY - capHeight * fit / 2
+        )
+
+        let all = CGMutablePath()
+        all.addPath(local, transform: final)
+        let badge = badgeLocal.map { path -> CGPath in
+            let placed = CGMutablePath()
+            placed.addPath(path, transform: final)
+            return placed
+        }
+        return (all, badge)
+    }
+
+    /// Outlines of `text` with tabular digits, baseline at y = 0.
+    private static func glyphPath(_ text: String, font: NSFont, tracking: CGFloat) -> CGPath {
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(string: text, attributes: [.font: font, .kern: tracking])
+        )
+        let path = CGMutablePath()
+        let runs = CTLineGetGlyphRuns(line) as? [CTRun] ?? []
+        for run in runs {
+            let count = CTRunGetGlyphCount(run)
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetGlyphs(run, CFRange(location: 0, length: count), &glyphs)
+            CTRunGetPositions(run, CFRange(location: 0, length: count), &positions)
+            for (glyph, position) in zip(glyphs, positions) {
+                guard let outline = CTFontCreatePathForGlyph(font as CTFont, glyph, nil) else {
+                    continue
+                }
+                path.addPath(outline, transform: CGAffineTransform(translationX: position.x, y: position.y))
+            }
+        }
+        return path
+    }
+
+    /// Snaps an x coordinate to the device pixel grid so the straight edge of
+    /// the fill stays crisp at 1x and 2x.
+    private static func deviceAligned(_ x: CGFloat, in context: CGContext) -> CGFloat {
+        let device = context.convertToDeviceSpace(CGPoint(x: x, y: 0))
+        return context.convertToUserSpace(CGPoint(x: device.x.rounded(), y: device.y)).x
+    }
+
+    private static func transformed(_ path: NSBezierPath, by transform: AffineTransform) -> NSBezierPath {
+        let copy = NSBezierPath()
+        copy.append(path)
+        copy.transform(using: transform)
+        return copy
+    }
+
+    /// Splits SVG path data before each move-to.
+    private static func subpaths(of pathData: String) -> [String] {
+        let starts = pathData.indices.filter { pathData[$0] == "M" }
+        return zip(starts, starts.dropFirst() + [pathData.endIndex]).map { String(pathData[$0..<$1]) }
+    }
+
+    private struct PercentInsideKey: Hashable {
+        let percent: Int?
+        let badge: Badge
+        let tint: Tint
+    }
+
+    private struct PercentInsideShape {
+        /// The outer outline of the SF Symbols 7 battery, drawn solid.
+        let body: NSBezierPath
+        let nub: NSBezierPath
+        let bolt: NSBezierPath
+        let plug: NSBezierPath
+    }
+
+    /// Loaded once. The battery asset holds the outer outline, the inner
+    /// outline (unused: the body is solid), and the nub.
+    private static let percentInsideShape: PercentInsideShape? = {
+        guard let battery = assetPathData(named: "battery.0percent.macOS27"),
+              let bolt = assetPathData(named: "bolt.fill", symbolIDs: ["Regular-S"])
+        else {
+            return nil
+        }
+        let parts = subpaths(of: battery)
+        guard parts.count == 3 else {
+            return nil
+        }
+        return PercentInsideShape(
+            body: path(from: parts[0]),
+            nub: path(from: parts[2]),
+            bolt: path(from: bolt),
+            plug: path(from: SymbolPaths.plugCore)
+        )
+    }()
+
+    /// Measured from the macOS 27 system battery at 2x: a 23 pt body with
+    /// SF Pro Semibold digits about two thirds of its height, tracked tight.
+    private enum PercentInsideMetrics {
+        static let canvasSize = NSSize(width: 26, height: 13)
+        static let bodyWidth: CGFloat = 23
+        /// Opacity of the empty track and the nub, relative to the ink.
+        static let trackAlpha: CGFloat = 0.5
+        /// Font size as a fraction of the body height.
+        static let fontScale: CGFloat = 0.926
+        /// Letter spacing and the digit-to-badge gap, in ems.
+        static let tracking: CGFloat = -0.078
+        static let badgeGap: CGFloat = 0.11
+        /// Badge height as a multiple of the digits' cap height.
+        static let badgeHeight: CGFloat = 1.05
+        /// Clearance on each side, as a fraction of the body height. Wider
+        /// content ("100" with a badge) shrinks to fit.
+        static let sideMargin: CGFloat = 0.135
+        static let cacheLimit = 64
+
+        /// Puts the body flush left on a whole point so its straight edges
+        /// stay crisp, centred vertically. SF Symbols paths point y down.
+        static func transform(for source: NSRect, in rect: NSRect) -> AffineTransform {
+            let scale = bodyWidth / source.width
+            return AffineTransform(
+                m11: scale, m12: 0, m21: 0, m22: -scale,
+                tX: rect.minX - source.minX * scale,
+                tY: rect.midY + source.midY * scale
+            )
+        }
+
+        static func bodyFrame(for source: NSRect, in rect: NSRect) -> NSRect {
+            let height = source.height * bodyWidth / source.width
+            return NSRect(x: rect.minX, y: rect.midY - height / 2, width: bodyWidth, height: height)
+        }
     }
 
     private enum Metrics {
@@ -342,6 +723,7 @@ enum MenuBarStatusItemRenderer {
     private struct ImageKey: Hashable {
         let assetName: String
         let badge: Badge
+        var tint: Tint = .none
     }
 
     private enum SymbolPaths {

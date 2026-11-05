@@ -82,6 +82,10 @@ final class ManagedWindowController {
         }
     }
 
+    func hasVisibleContent(identifier: String) -> Bool {
+        managedWindow(identifier: identifier).map(WindowContentVisibility.isVisible) ?? false
+    }
+
     func focusManagedWindow(
         identifier: String,
         remainingAttempts: Int = 4,
