@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import PowerLens
 
@@ -53,6 +54,19 @@ struct MenuBarBatteryTintTests {
 
         #expect(image.isTemplate)
         #expect(image === MenuBarStatusItemRenderer.batteryImage(level: 65, badge: .chargingBolt))
+    }
+
+    @Test
+    func detailedStyleSymbolsTurnYellowInLowPowerModeExceptTheWarning() {
+        let states: [ExternalPowerState] = [.onBattery, .charging, .holding, .connected]
+
+        for state in states {
+            let symbol = state.menuBarSymbolName
+            let palette = MenuBarStatusItemController.lowPowerPalette(forSymbolNamed: symbol)
+            #expect(palette?.last == .systemYellow, "\(symbol) does not turn yellow")
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil)
+        }
+        #expect(MenuBarStatusItemController.lowPowerPalette(forSymbolNamed: "exclamationmark.triangle.fill") == nil)
     }
 
     @Test

@@ -129,6 +129,7 @@ enum MenuBarDisplayStylePreference: String, CaseIterable, Identifiable {
     case powerLens
     case powerText
     case nativeBattery
+    case percentInside
     case nativeBatteryOnly
 
     static let storageKey = "menuBarDisplayStyle"
@@ -153,6 +154,8 @@ enum MenuBarDisplayStylePreference: String, CaseIterable, Identifiable {
             L10n.text("menuBarStyle.powerText.title")
         case .nativeBattery:
             L10n.text("menuBarStyle.nativeBattery.title")
+        case .percentInside:
+            L10n.text("menuBarStyle.percentInside.title")
         case .nativeBatteryOnly:
             L10n.text("menuBarStyle.nativeBatteryOnly.title")
         }
@@ -166,6 +169,8 @@ enum MenuBarDisplayStylePreference: String, CaseIterable, Identifiable {
             L10n.text("menuBarStyle.powerText.detail")
         case .nativeBattery:
             L10n.text("menuBarStyle.nativeBattery.detail")
+        case .percentInside:
+            L10n.text("menuBarStyle.percentInside.detail")
         case .nativeBatteryOnly:
             L10n.text("menuBarStyle.nativeBatteryOnly.detail")
         }

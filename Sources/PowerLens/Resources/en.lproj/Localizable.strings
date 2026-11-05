@@ -16,6 +16,8 @@
 "menuBarStyle.powerText.detail" = "Battery level and current power only";
 "menuBarStyle.nativeBattery.title" = "Battery Icon";
 "menuBarStyle.nativeBattery.detail" = "Battery level with the same battery icon as macOS";
+"menuBarStyle.percentInside.title" = "Percent Inside";
+"menuBarStyle.percentInside.detail" = "Battery level and charging inside the battery icon, like macOS 27";
 "menuBarStyle.nativeBatteryOnly.title" = "Icon Only";
 "menuBarStyle.nativeBatteryOnly.detail" = "Just the battery icon, using the least space";
 
