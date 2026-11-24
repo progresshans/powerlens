@@ -4,6 +4,12 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [Unreleased]
+
+### Fixed
+
+- The battery health trend now shows a return to a previously observed capacity.
+
 ## [0.9.6] - 2026-11-05
 
 ### Added
