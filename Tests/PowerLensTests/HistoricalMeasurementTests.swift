@@ -66,13 +66,36 @@ struct HistoricalMeasurementTests {
         let backup = HistoryDatabaseBackup.url(for: url, schemaVersion: 4)
         #expect(FileManager.default.fileExists(atPath: backup.path))
         #expect(try version(backup) == 4)
-        #expect(try version(url) == 5)
+        #expect(try version(url) == Int64(HistorySchema.currentVersion))
         let bytes = try Data(contentsOf: backup)
         _ = try await store.loadRecent(since: sample.timestamp)
         #expect(try Data(contentsOf: backup) == bytes)
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             .filter { $0.hasPrefix(".history-backup-") }
         #expect(leftovers.isEmpty)
+    }
+
+    @Test
+    func versionFiveRecoversKnownHealthTransitionsAcrossTheRawBoundary() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("history.sqlite3")
+        let store = HistoryStore(databaseURL: url)
+        let start = Date(timeIntervalSince1970: 864_000)
+        for (offset, capacity) in [(0, 5100), (60, 5050), (120, 5100), (3650, 5000)] {
+            try await store.append(makeTelemetrySnapshot(timestamp: start.addingTimeInterval(Double(offset)),
+                                                         fullChargeCapacityMah: capacity))
+        }
+        try await store.purge(olderThan: start.addingTimeInterval(3600), rollupBucketSeconds: 3600)
+        try sql(url, """
+            DROP TABLE archived_battery_health;
+            ALTER TABLE history_rollups DROP COLUMN last_sample_ts;
+            ALTER TABLE history_rollups DROP COLUMN last_external_connected;
+            PRAGMA user_version = 5;
+            """)
+        let migrated = try await store.batteryHealthTrend(since: start)
+        #expect(migrated.compactMap(\.fullChargeCapacityMah) == [5100, 5050, 5100, 5000])
+        #expect(try version(HistoryDatabaseBackup.url(for: url, schemaVersion: 5)) == 5)
     }
 
     @Test

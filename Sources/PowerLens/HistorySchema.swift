@@ -1,7 +1,7 @@
 import Foundation
 
 enum HistorySchema {
-    static let currentVersion = 5
+    static let currentVersion = 6
 
     static let creationStatements = [
         """
@@ -29,6 +29,16 @@ enum HistorySchema {
             last_seen_ts INTEGER NOT NULL,
             FOREIGN KEY (battery_id) REFERENCES batteries(battery_id)
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS archived_battery_health (
+            event_id INTEGER PRIMARY KEY,
+            ts INTEGER NOT NULL,
+            battery_state_id INTEGER NOT NULL REFERENCES battery_states(battery_state_id)
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS archived_battery_health_ts_idx ON archived_battery_health(ts);
         """,
         """
         CREATE TABLE IF NOT EXISTS adapters (
@@ -125,6 +135,8 @@ enum HistorySchema {
             first_sample_ts INTEGER,
             first_is_charging INTEGER,
             last_is_charging INTEGER,
+            last_sample_ts INTEGER,
+            last_external_connected INTEGER,
             PRIMARY KEY (bucket_start, bucket_seconds)
         );
         """,
@@ -195,6 +207,8 @@ enum HistorySchema {
         "first_sample_ts",
         "first_is_charging",
         "last_is_charging",
+        "last_sample_ts",
+        "last_external_connected",
     ]
 }
 

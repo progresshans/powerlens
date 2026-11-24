@@ -88,7 +88,7 @@ The History settings control retention:
 - full-detail telemetry samples remain for the selected window
 - hourly or daily long-term storage replaces expired samples with aggregate
   power data, removes unreferenced app and adapter rows, and retains
-  battery-health states for the long-term health trend; the battery serial
+  the times of battery-health changes for the long-term trend. The battery serial
   number or hardware battery identifier remains in the local history database
   for as long as those states are retained
 - **Don't keep** deletes expired samples and rollups, then removes app, adapter,

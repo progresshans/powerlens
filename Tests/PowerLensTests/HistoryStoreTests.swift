@@ -657,6 +657,47 @@ struct HistoryStoreTests {
     }
 
     @Test
+    func irregularSampleDurationsSurviveRepeatedRollupsAndRawBoundaries() async throws {
+        let store = HistoryStore(databaseURL: makeTemporaryDatabaseURL(name: "duration-boundaries"))
+        let base = Date(timeIntervalSince1970: 864_000)
+        // Include adjacent buckets, duplicate seconds, a sleep gap, and source changes.
+        for (offset, external) in [(3590, true), (3595, true), (3595, false), (3600, false),
+                                   (3605, true), (7200, false), (7205, true)] {
+            try await store.append(makeSnapshot(timestamp: base.addingTimeInterval(Double(offset)),
+                                                externalConnected: external))
+        }
+        let range = DateInterval(start: base, duration: 10_800)
+        let raw = try await store.summary(for: range)
+        #expect(raw.timeOnExternal == 605)
+        #expect(raw.timeOnBattery == 15)
+        for cutoff in [3600, 7200, 10800] {
+            try await store.purge(olderThan: base.addingTimeInterval(Double(cutoff)), rollupBucketSeconds: 3600)
+            let after = try await store.summary(for: range)
+            #expect(after.timeOnBattery == raw.timeOnBattery)
+            #expect(after.timeOnExternal == raw.timeOnExternal)
+            #expect(after.sampleCount == raw.sampleCount)
+        }
+    }
+
+    @Test
+    func recurringCapacitiesSurviveRetentionAndExpireWhenDiscarded() async throws {
+        let store = HistoryStore(databaseURL: makeTemporaryDatabaseURL(name: "health-recurrence"))
+        let base = Date(timeIntervalSince1970: 864_000)
+        for (offset, capacity) in [(0, 5100), (5, 5050), (10, 5100), (3600, 5100), (3605, 5025)] {
+            try await store.append(makeSnapshot(timestamp: base.addingTimeInterval(Double(offset)),
+                                                fullChargeCapacityMah: capacity))
+        }
+        let original = try await store.batteryHealthTrend(since: base)
+        #expect(original.compactMap(\.fullChargeCapacityMah) == [5100, 5050, 5100, 5025])
+        for cutoff in [3600, 7200] {
+            try await store.purge(olderThan: base.addingTimeInterval(Double(cutoff)), rollupBucketSeconds: 3600)
+            #expect(try await store.batteryHealthTrend(since: base) == original)
+        }
+        try await store.purge(olderThan: base.addingTimeInterval(7200), rollupBucketSeconds: nil)
+        #expect(try await store.batteryHealthTrend(since: base).isEmpty)
+    }
+
+    @Test
     func batteryHealthTrendReturnsPointPerDistinctState() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "health-trend")
         let store = HistoryStore(databaseURL: dbURL)

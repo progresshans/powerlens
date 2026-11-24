@@ -160,6 +160,13 @@ unknown provenance; migration must not infer missing sensor sources. Chart
 identity comes from `sample_id`, not the timestamp. An unreadable payload is a
 read failure, not an empty result or a fallback to differently rounded values.
 
+Schema v6 records the final observation time and power source in each new
+rollup so elapsed time can be joined across adjacent rollups and the raw
+tail. Older rollups keep their original duration estimates. For the health
+trend, retained samples supply the full sequence of states. Where raw
+samples have expired, the migration recovers the first and last observations
+that v5 still has for each battery state.
+
 Before upgrading an existing schema, SQLite's backup API creates a copy beside
 the database named after the schema it holds, such as
 `history.sqlite3.schema-v4.sqlite3` before the v4 to v5 upgrade, including
