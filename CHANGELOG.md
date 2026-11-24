@@ -10,9 +10,6 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 - Reliable mode now displays charger current in amperes. More Precise mode
   leaves the charger name empty when macOS supplies only a battery device name.
-- Hourly and daily summaries preserve elapsed time on battery and external
-  power across irregular samples. Battery health charts now show when capacity
-  returns to an earlier value.
 
 ## [0.9.6] - 2026-11-05
 

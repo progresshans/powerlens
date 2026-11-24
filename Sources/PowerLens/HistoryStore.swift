@@ -2,7 +2,6 @@ import Foundation
 import SQLite3
 
 actor HistoryStore: HistoryStoring {
-    private static let maximumSampleGapSeconds = 600
     private let databaseURL: URL
 
     init(databaseURL: URL? = nil) {
@@ -198,17 +197,6 @@ actor HistoryStore: HistoryStoring {
                 // cutoff so a straddling bucket is never split across two runs.
                 let effectiveCutoff =
                     (cutoff / Int64(bucketSeconds)) * Int64(bucketSeconds)
-                try SQLiteStatement.executePrepared(
-                    """
-                    INSERT INTO archived_battery_health(ts, battery_state_id)
-                    SELECT ts, battery_state_id FROM (
-                        SELECT ts, sample_id, battery_state_id,
-                               LAG(battery_state_id) OVER (ORDER BY ts, sample_id) AS previous
-                        FROM telemetry_samples WHERE ts < ? AND battery_state_id IS NOT NULL
-                    ) WHERE battery_state_id IS NOT previous ORDER BY ts, sample_id
-                    """,
-                    using: db, operation: "archive battery health transitions"
-                ) { sqlite3_bind_int64($0, 1, effectiveCutoff) }
                 try rollUpSamples(before: effectiveCutoff, bucketSeconds: bucketSeconds, using: db)
                 try SQLiteStatement.executePrepared(
                     "DELETE FROM telemetry_samples WHERE ts < ?",
@@ -218,10 +206,6 @@ actor HistoryStore: HistoryStoring {
                     sqlite3_bind_int64(statement, 1, effectiveCutoff)
                 }
             } else {
-                try SQLiteStatement.executePrepared(
-                    "DELETE FROM archived_battery_health WHERE ts < ?",
-                    using: db, operation: "delete expired battery health transitions"
-                ) { sqlite3_bind_int64($0, 1, cutoff) }
                 // Long-term resolution is off: discard old samples without
                 // downsampling, including rollups from a previous setting.
                 try SQLiteStatement.executePrepared(
@@ -315,9 +299,6 @@ actor HistoryStore: HistoryStoring {
                 FROM telemetry_samples
                 WHERE telemetry_samples.battery_state_id =
                     battery_states.battery_state_id
-            ) AND NOT EXISTS (
-                SELECT 1 FROM archived_battery_health h
-                WHERE h.battery_state_id = battery_states.battery_state_id
             );
             """,
             using: db,
@@ -346,7 +327,7 @@ actor HistoryStore: HistoryStoring {
         // Each bucket counts its own rising charging edges, including an
         // already-charging first observation. Stored boundary states let the
         // summary join these segments without double-counting one session.
-        // Elapsed time inside a bucket and gaps between buckets use the raw summary cap.
+        // Duration estimates retain the nominal one-minute sampling interval.
         let sql = """
         WITH bucketed AS (
             SELECT *, (ts / ?1) * ?1 AS bucket
@@ -354,7 +335,6 @@ actor HistoryStore: HistoryStoring {
             WHERE ts < ?2
         ), ordered AS (
             SELECT *,
-                LEAD(ts) OVER (PARTITION BY bucket ORDER BY ts, sample_id) AS next_ts,
                 LAG(is_charging) OVER (
                     PARTITION BY bucket ORDER BY ts, sample_id
                 ) AS previous_charging,
@@ -390,9 +370,7 @@ actor HistoryStore: HistoryStoring {
             battery_temperature_count,
             first_sample_ts,
             first_is_charging,
-            last_is_charging,
-            last_sample_ts,
-            last_external_connected
+            last_is_charging
         )
         SELECT
             bucket,
@@ -407,8 +385,8 @@ actor HistoryStore: HistoryStoring {
             CAST(ROUND(AVG(battery_power_mw)) AS INTEGER),
             CAST(ROUND(AVG(battery_temperature_c_x100)) AS INTEGER),
             MAX(battery_temperature_c_x100),
-            SUM(CASE WHEN external_connected = 0 THEN MIN(COALESCE(next_ts - ts, 0), \(Self.maximumSampleGapSeconds)) ELSE 0 END),
-            SUM(CASE WHEN external_connected = 1 THEN MIN(COALESCE(next_ts - ts, 0), \(Self.maximumSampleGapSeconds)) ELSE 0 END),
+            SUM(CASE WHEN external_connected = 0 THEN 60 ELSE 0 END),
+            SUM(CASE WHEN external_connected = 1 THEN 60 ELSE 0 END),
             SUM(CASE WHEN is_charging = 1
                      AND COALESCE(previous_charging, 0) = 0 THEN 1 ELSE 0 END),
             SUM(system_load_mw),
@@ -419,9 +397,7 @@ actor HistoryStore: HistoryStoring {
             COUNT(battery_temperature_c_x100),
             MIN(ts),
             MAX(CASE WHEN first_position = 1 THEN is_charging END),
-            MAX(CASE WHEN last_position = 1 THEN is_charging END),
-            MAX(ts),
-            MAX(CASE WHEN last_position = 1 THEN external_connected END)
+            MAX(CASE WHEN last_position = 1 THEN is_charging END)
         FROM ordered
         GROUP BY bucket
         """
@@ -607,27 +583,16 @@ actor HistoryStore: HistoryStoring {
         }
 
         let sql = """
-        WITH observations AS (
-            SELECT ts, 0 AS source, event_id AS seq, battery_state_id
-            FROM archived_battery_health WHERE ts >= ?1
-            UNION ALL
-            SELECT ts, 1, sample_id, battery_state_id
-            FROM telemetry_samples WHERE ts >= ?1 AND battery_state_id IS NOT NULL
-        ), changes AS (
-            SELECT *, LAG(battery_state_id) OVER (ORDER BY ts, source, seq) AS previous
-            FROM observations
-        )
         SELECT
-            c.ts,
+            bs.first_seen_ts,
             bs.full_charge_capacity_mah,
             bs.nominal_capacity_mah,
             bs.cycle_count,
             b.design_capacity_mah
-        FROM changes c
-        JOIN battery_states bs ON bs.battery_state_id = c.battery_state_id
+        FROM battery_states bs
         JOIN batteries b ON b.battery_id = bs.battery_id
-        WHERE c.battery_state_id IS NOT c.previous
-        ORDER BY c.ts, c.source, c.seq
+        WHERE bs.first_seen_ts >= ?
+        ORDER BY bs.first_seen_ts ASC
         """
 
         let statement = try SQLiteStatement.prepare(
@@ -702,7 +667,7 @@ actor HistoryStore: HistoryStoring {
         // Cap inter-sample gaps so sleep/quit periods do not inflate the on-battery
         // and on-external totals. The persistence cadence is roughly one sample a
         // minute, so a 10-minute cap tolerates brief stalls without overcounting.
-        let maxGap = TimeInterval(Self.maximumSampleGapSeconds)
+        let maxGap: TimeInterval = 600
         var sampleCount = 0
         var loadSum = 0.0
         var loadSamples = 0
@@ -882,7 +847,7 @@ actor HistoryStore: HistoryStoring {
             return .empty(range: range)
         }
 
-        let boundaries = try mergedSegmentStatistics(
+        let combinedChargeSessions = try mergedChargeSessions(
             for: range,
             rawFirstTimestamp: firstTimestamp,
             rawFirstCharging: firstCharging,
@@ -901,20 +866,20 @@ actor HistoryStore: HistoryStoring {
             maxTemperatureC: tempMax,
             minBatteryLevel: levelMin,
             maxBatteryLevel: levelMax,
-            timeOnBattery: timeOnBattery + boundaries.batteryGap,
-            timeOnExternal: timeOnExternal + boundaries.externalGap,
-            chargeSessions: boundaries.sessions
+            timeOnBattery: timeOnBattery,
+            timeOnExternal: timeOnExternal,
+            chargeSessions: combinedChargeSessions
         )
     }
 
-    private func mergedSegmentStatistics(
+    private func mergedChargeSessions(
         for range: DateInterval,
         rawFirstTimestamp: Int64?,
         rawFirstCharging: Bool?,
         rawLastCharging: Bool,
         rawChargeSessions: Int,
         using db: OpaquePointer
-    ) throws -> (sessions: Int, batteryGap: TimeInterval, externalGap: TimeInterval) {
+    ) throws -> Int {
         // Raw data is the contiguous retained tail, so its already-computed
         // sessions form one segment. New rollups each form another segment.
         // A NULL legacy boundary deliberately breaks continuity: the original
@@ -925,15 +890,13 @@ actor HistoryStore: HistoryStoring {
                    bucket_seconds,
                    COALESCE(charge_sessions, 0) AS sessions,
                    first_is_charging AS first_charging,
-                   last_is_charging AS last_charging, last_sample_ts, last_external_connected
+                   last_is_charging AS last_charging
             FROM history_rollups
             WHERE bucket_start >= ?1 AND bucket_start < ?2
             UNION ALL
-            SELECT ?3, 0, ?4, ?5, ?6, NULL, NULL WHERE ?3 IS NOT NULL
+            SELECT ?3, 0, ?4, ?5, ?6 WHERE ?3 IS NOT NULL
         ), connected AS (
-            SELECT sessions, first_charging, last_external_connected,
-                   MIN(LEAD(first_ts) OVER (ORDER BY first_ts, bucket_seconds) - last_sample_ts,
-                       \(Self.maximumSampleGapSeconds)) AS next_gap,
+            SELECT sessions, first_charging,
                    LAG(last_charging) OVER (
                        ORDER BY first_ts, bucket_seconds
                    ) AS previous_last_charging
@@ -941,25 +904,21 @@ actor HistoryStore: HistoryStoring {
         )
         SELECT COALESCE(SUM(sessions - CASE
             WHEN first_charging = 1 AND previous_last_charging = 1 THEN 1
-            ELSE 0 END), 0),
-            SUM(CASE WHEN last_external_connected = 0 THEN MAX(0, next_gap) END),
-            SUM(CASE WHEN last_external_connected = 1 THEN MAX(0, next_gap) END)
+            ELSE 0 END), 0)
         FROM connected
         """
-        let statement = try SQLiteStatement.prepare(sql, using: db, operation: "merge history segments")
-        defer { sqlite3_finalize(statement) }
-        sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
-        sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
-        SQLiteStatement.bind(rawFirstTimestamp, to: statement, index: 3)
-        SQLiteStatement.bind(rawChargeSessions, to: statement, index: 4)
-        SQLiteStatement.bind(rawFirstCharging.map { $0 ? 1 : 0 }, to: statement, index: 5)
-        sqlite3_bind_int(statement, 6, rawLastCharging ? 1 : 0)
-        let result = sqlite3_step(statement)
-        guard result == SQLITE_ROW else {
-            throw SQLiteStatement.error(operation: "merge history segments", result: result, using: db)
-        }
-        return (Int(sqlite3_column_int64(statement, 0)), sqlite3_column_double(statement, 1),
-                sqlite3_column_double(statement, 2))
+        return Int(try SQLiteStatement.querySingleInt64(
+            sql,
+            using: db,
+            operation: "join history charging sessions"
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
+            sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
+            SQLiteStatement.bind(rawFirstTimestamp, to: statement, index: 3)
+            SQLiteStatement.bind(rawChargeSessions, to: statement, index: 4)
+            SQLiteStatement.bind(rawFirstCharging.map { $0 ? 1 : 0 }, to: statement, index: 5)
+            sqlite3_bind_int(statement, 6, rawLastCharging ? 1 : 0)
+        } ?? 0)
     }
 
     /// No suspension occurs between these queries, so append/purge operations
@@ -1134,21 +1093,6 @@ actor HistoryStore: HistoryStoring {
                 )
             }
 
-            // Older rollups kept only the first and last sighting of each state.
-            // Recover those known observations before the raw tail, without guessing transitions.
-            try SQLiteStatement.execute(
-                """
-                INSERT INTO archived_battery_health(ts, battery_state_id)
-                SELECT ts, battery_state_id FROM (
-                    SELECT first_seen_ts AS ts, battery_state_id FROM battery_states
-                    UNION
-                    SELECT last_seen_ts AS ts, battery_state_id FROM battery_states
-                )
-                WHERE EXISTS (SELECT 1 FROM history_rollups)
-                  AND ts < COALESCE((SELECT MIN(ts) FROM telemetry_samples), 9223372036854775807)
-                ORDER BY ts, battery_state_id
-                """, using: db, operation: "recover archived battery health observations"
-            )
             try SQLiteStatement.execute(
                 "PRAGMA user_version = \(HistorySchema.currentVersion);",
                 using: db,
