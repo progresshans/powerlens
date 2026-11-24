@@ -4,6 +4,13 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [Unreleased]
+
+### Fixed
+
+- Time on battery and external power now counts observed gaps of up to three
+  minutes in raw history and new rollups. Longer gaps contribute zero.
+
 ## [0.9.6] - 2026-11-05
 
 ### Added
