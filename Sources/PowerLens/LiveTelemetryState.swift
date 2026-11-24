@@ -14,6 +14,7 @@ struct LiveTelemetryState {
     private(set) var lastAttemptAt: Date?
     private(set) var presentation: LivePowerPresentation?
     private(set) var menuBar = MenuBarPresentation.waiting
+    private var tooltipLocale: Locale?
 
     var isAwaitingSource: Bool {
         guard let source, let snapshot else { return false }
@@ -35,7 +36,7 @@ struct LiveTelemetryState {
         compatibilityDiagnostics = result.systemCompatibilityDiagnostics
         lastAttemptAt = attemptedAt
         health = .live
-        rebuildPresentation()
+        rebuildPresentation(reformatTooltip: true)
     }
 
     mutating func fail(at date: Date) {
@@ -45,26 +46,34 @@ struct LiveTelemetryState {
         // Source reconciliation remains pending independently of this count.
     }
 
-    mutating func rebuildPresentation() {
+    mutating func rebuildPresentation(reformatTooltip: Bool = false) {
+        // Source notifications can change the headline while the last sensor sample is still current.
+        let locale = L10n.locale
+        let existingTooltip = !reformatTooltip && tooltipLocale == locale ? presentation?.tooltip : nil
         diagnostics = snapshot?.diagnostics(resolvedState: resolvedState) ?? []
         presentation = snapshot.map {
-            LivePowerPresentation(snapshot: $0, resolvedState: resolvedState,
-                                  diagnostics: diagnostics, isAwaitingSource: isAwaitingSource)
+            LivePowerPresentation(
+                snapshot: $0, resolvedState: resolvedState, diagnostics: diagnostics,
+                isAwaitingSource: isAwaitingSource, existingTooltip: existingTooltip
+            )
         }
+        tooltipLocale = locale
         if let source, snapshot?.externalConnected != source.externalConnected {
             let state: ExternalPowerState = source.externalConnected ? .connected : .onBattery
+            let headline = L10n.text(source.externalConnected ? "status.externalPowerConnected" : "status.runningOnBattery")
             menuBar = MenuBarPresentation(
                 snapshot: snapshot, symbolName: state.menuBarSymbolName,
                 batteryBadge: .resolved(for: state),
-                statusHeadline: L10n.text(source.externalConnected ? "status.externalPowerConnected" : "status.runningOnBattery"),
+                tooltip: PowerFlowTooltip.menuBar(statusHeadline: headline, body: presentation?.tooltip),
                 lowPowerMode: snapshot?.lowPowerModeEnabled ?? false
             )
         } else if let snapshot, let resolvedState {
+            let headline = snapshot.statusHeadline(resolvedState: resolvedState)
             menuBar = MenuBarPresentation(
                 snapshot: snapshot,
                 symbolName: snapshot.menuBarSymbolName(using: diagnostics, externalPowerState: resolvedState.externalPowerState),
                 batteryBadge: .resolved(for: resolvedState.externalPowerState),
-                statusHeadline: snapshot.statusHeadline(resolvedState: resolvedState),
+                tooltip: PowerFlowTooltip.menuBar(statusHeadline: headline, body: presentation?.tooltip),
                 lowPowerMode: snapshot.lowPowerModeEnabled,
                 powerWarning: resolvedState.powerDeliveryState == .sustainedShortfall
             )
@@ -88,11 +97,11 @@ struct LivePowerPresentation {
     let diagnostics: [DiagnosticItem]
 
     init(snapshot: TelemetrySnapshot, resolvedState: ResolvedPowerState?,
-         diagnostics: [DiagnosticItem], isAwaitingSource: Bool) {
+         diagnostics: [DiagnosticItem], isAwaitingSource: Bool, existingTooltip: String? = nil) {
         self.isAwaitingSource = isAwaitingSource
         let readings = PowerFlowReadings(snapshot: snapshot)
         self.readings = readings
-        tooltip = PowerFlowTooltip.text(snapshot: snapshot, readings: readings)
+        tooltip = existingTooltip ?? PowerFlowTooltip.text(snapshot: snapshot, readings: readings)
         graph = PowerFlowGraph(model: PowerFlowPresentationModel(snapshot: snapshot, readings: readings))
         status = isAwaitingSource ? .sourceTransition
             : PowerStatusPresentation(snapshot: snapshot, resolvedState: resolvedState, readings: readings)

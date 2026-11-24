@@ -10,6 +10,8 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 - Closing Settings stops its form from recalculating the window layout on
   each power reading.
+- The menu bar reuses the power-flow tooltip text shown in the popover and
+  Dashboard, reducing the CPU work for each reading.
 
 ## [0.9.6] - 2026-11-05
 
