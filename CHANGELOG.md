@@ -6,10 +6,24 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ## [Unreleased]
 
+### Changed
+
+- Time on Battery and Time on Adapter on the History page now count only the
+  time the Mac was awake. Sleep was partly counted before, so the totals are
+  lower. They also no longer shift when old history is summarized. History
+  summarized before this update keeps its earlier totals.
+
 ### Fixed
 
-- Time on battery and external power now counts observed gaps of up to three
-  minutes in raw history and new rollups. Longer gaps contribute zero.
+- Reliable mode now displays charger current in amperes. More Precise mode
+  leaves the charger name empty when macOS supplies only a battery device name.
+- The Battery Health chart now shows a capacity that returns to an earlier
+  value. Returns from before this update cannot be recovered.
+
+### Contributors
+
+- @fordpiggy1 made their first contribution with the charger, time total, and
+  battery health changes (#60, #63, #64).
 
 ## [0.9.6] - 2026-11-05
 
