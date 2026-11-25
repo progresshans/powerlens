@@ -325,8 +325,8 @@ final class PowerLensStore: ObservableObject {
         }
     }
 
-    func refreshMenuBarLocalization() {
-        live.rebuildPresentation()
+    func refreshMenuBarLocalization(reformatTooltip: Bool = false) {
+        live.rebuildPresentation(reformatTooltip: reformatTooltip)
     }
 
     private func resetEnergySampling() {

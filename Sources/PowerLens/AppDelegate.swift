@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         softwareUpdateController.startIfConfigured()
-        updateStatusItem(using: store.menuBarPresentation)
+        statusItemController.update(store.menuBarPresentation)
         updateRefreshCadence()
 
         if DockIconPreference.current {
@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.$live.map(\.menuBar)
             .removeDuplicates()
             .sink { [weak self] presentation in
-                self?.updateStatusItem(using: presentation)
+                self?.statusItemController.update(presentation)
             }
             .store(in: &cancellables)
 
@@ -153,7 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                self?.refreshLocalizedViews()
+                // A system format change can keep the same language identifier.
+                self?.refreshLocalizedViews(reformatTooltip: true)
             }
             .store(in: &cancellables)
 
@@ -181,10 +182,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popoverPresenter.toggle(relativeTo: statusItemController.button, snapshot: store.latest)
     }
 
-    private func refreshLocalizedViews() {
+    private func refreshLocalizedViews(reformatTooltip: Bool = false) {
         popoverPresenter.refreshLocalizedViews(snapshot: store.latest)
-        store.refreshMenuBarLocalization()
-        updateStatusItem(using: store.menuBarPresentation)
+        store.refreshMenuBarLocalization(reformatTooltip: reformatTooltip)
+        statusItemController.update(store.menuBarPresentation)
         managedWindowController.updateManagedWindowTitle(
             identifier: PowerLensWindowIdentifier.dashboard,
             title: L10n.text("ui.window.dashboard")
@@ -192,17 +193,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         managedWindowController.updateManagedWindowTitle(
             identifier: PowerLensWindowIdentifier.settings,
             title: L10n.text("ui.window.settings")
-        )
-    }
-
-    private func updateStatusItem(using presentation: MenuBarPresentation) {
-        statusItemController.update(
-            snapshot: presentation.snapshot,
-            symbolName: presentation.symbolName,
-            batteryBadge: presentation.batteryBadge,
-            statusHeadline: presentation.statusHeadline,
-            lowPowerMode: presentation.lowPowerMode,
-            powerWarning: presentation.powerWarning
         )
     }
 

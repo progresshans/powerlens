@@ -27,13 +27,20 @@ struct LivePresentationIntegrationTests {
     }
 
     @Test
-    func sourceTransitionSurvivesFailuresAndEndsOnlyAfterAMatchingSample() {
+    func sourceTransitionSurvivesFailuresAndEndsOnlyAfterAMatchingSample() throws {
         let charging = makeTelemetrySnapshot(isCharging: true, batteryCurrentA: 1, batteryPowerW: -12)
         var tracker = PowerStateTracker()
         var live = LiveTelemetryState()
+        #expect(live.menuBar.tooltip == "PowerLens")
+        live.observe(.init(externalConnected: true, observedAt: charging.timestamp))
+        #expect(live.menuBar.tooltip == L10n.text("status.externalPowerConnected"))
+        let chargingState = tracker.resolve(charging)
         live.accept(.init(snapshot: charging, activeEngine: .livePrecision),
-                    resolvedState: tracker.resolve(charging), attemptedAt: charging.timestamp)
+                    resolvedState: chargingState, attemptedAt: charging.timestamp)
+        let chargingBody = try #require(live.presentation?.tooltip)
+        #expect(live.menuBar.tooltip == "\(charging.statusHeadline(resolvedState: chargingState))\n\n\(chargingBody)")
         live.observe(.init(externalConnected: false, observedAt: charging.timestamp.addingTimeInterval(1)))
+        let transitionTooltip = "\(L10n.text("status.runningOnBattery"))\n\n\(chargingBody)"
         for attempt in 1...3 {
             live.fail(at: charging.timestamp.addingTimeInterval(Double(attempt)))
             #expect(live.health == .delayed(failedAttempts: attempt))
@@ -43,16 +50,43 @@ struct LivePresentationIntegrationTests {
             #expect(live.presentation?.notice == nil)
             #expect(live.presentation?.diagnostics.isEmpty == true)
             #expect(live.menuBar.batteryBadge == .none)
+            #expect(live.menuBar.tooltip == transitionTooltip)
         }
         live.rebuildPresentation()
         #expect(live.presentation?.status == .sourceTransition)
+        #expect(live.menuBar.tooltip == transitionTooltip)
         let battery = makeTelemetrySnapshot(powerSource: .battery, externalConnected: false,
                                             batteryCurrentA: -1, batteryPowerW: 12, adapterInputPowerW: 0, systemLoadW: 12)
+        let batteryState = tracker.resolve(battery)
         live.accept(.init(snapshot: battery, activeEngine: .livePrecision),
-                    resolvedState: tracker.resolve(battery), attemptedAt: battery.timestamp)
+                    resolvedState: batteryState, attemptedAt: battery.timestamp)
         #expect(!live.isAwaitingSource)
         #expect(live.health == .live)
         #expect(live.presentation?.graph.state == .discharging)
+        let batteryBody = try #require(live.presentation?.tooltip)
+        #expect(batteryBody == PowerFlowTooltip.text(snapshot: battery))
+        #expect(batteryBody != chargingBody)
+        #expect(live.menuBar.tooltip == "\(battery.statusHeadline(resolvedState: batteryState))\n\n\(batteryBody)")
+    }
+
+    @Test
+    func menuBarTooltipUpdatesWhenOnlyRawPowerChanges() throws {
+        let first = makeTelemetrySnapshot(systemLoadW: 10.011)
+        let second = makeTelemetrySnapshot(systemLoadW: 10.019)
+        #expect(first.menuBarTitle == second.menuBarTitle)
+        var live = LiveTelemetryState()
+        var tracker = PowerStateTracker()
+        live.accept(.init(snapshot: first, activeEngine: .livePrecision),
+                    resolvedState: tracker.resolve(first), attemptedAt: first.timestamp)
+        let firstBody = try #require(live.presentation?.tooltip)
+
+        let state = tracker.resolve(second)
+        live.accept(.init(snapshot: second, activeEngine: .livePrecision),
+                    resolvedState: state, attemptedAt: second.timestamp)
+        let secondBody = try #require(live.presentation?.tooltip)
+        #expect(secondBody != firstBody)
+        #expect(secondBody == PowerFlowTooltip.text(snapshot: second))
+        #expect(live.menuBar.tooltip == "\(second.statusHeadline(resolvedState: state))\n\n\(secondBody)")
     }
 
     @Test(arguments: ["Nominal", "Critical"])

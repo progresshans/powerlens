@@ -25,34 +25,24 @@ final class MenuBarStatusItemController: NSObject {
         button.imagePosition = .imageLeading
     }
 
-    func update(
-        snapshot: TelemetrySnapshot?,
-        symbolName: String,
-        batteryBadge: MenuBarStatusItemRenderer.Badge,
-        statusHeadline: String?,
-        lowPowerMode: Bool = false,
-        powerWarning: Bool = false
-    ) {
+    func update(_ presentation: MenuBarPresentation) {
         guard let button else {
             return
         }
 
+        let snapshot = presentation.snapshot
         let style = MenuBarDisplayStylePreference.current
         button.image = menuBarImage(
             for: style,
             snapshot: snapshot,
-            symbolName: symbolName,
-            batteryBadge: batteryBadge,
-            tint: MenuBarStatusItemRenderer.Tint(lowPowerFill: lowPowerMode, warningBadge: powerWarning)
+            symbolName: presentation.symbolName,
+            batteryBadge: presentation.batteryBadge,
+            tint: .init(lowPowerFill: presentation.lowPowerMode, warningBadge: presentation.powerWarning)
         )
         button.imagePosition = imagePosition(for: style)
-        button.attributedTitle = menuBarTitle(for: style, snapshot: snapshot, showsWarningDot: powerWarning)
-        let tooltip = PowerFlowTooltip.menuBar(
-            snapshot: snapshot,
-            statusHeadline: statusHeadline
-        )
-        button.toolTip = tooltip
-        button.setAccessibilityHelp(tooltip)
+        button.attributedTitle = menuBarTitle(for: style, snapshot: snapshot, showsWarningDot: presentation.powerWarning)
+        button.toolTip = presentation.tooltip
+        button.setAccessibilityHelp(presentation.tooltip)
     }
 
     @objc

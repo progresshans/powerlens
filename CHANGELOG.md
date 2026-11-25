@@ -19,6 +19,10 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
   leaves the charger name empty when macOS supplies only a battery device name.
 - The Battery Health chart now shows a capacity that returns to an earlier
   value. Returns from before this update cannot be recovered.
+- Closing Settings stops its form from recalculating the window layout on
+  each power reading.
+- The menu bar reuses the power-flow tooltip text shown in the popover and
+  Dashboard, reducing the CPU work for each reading.
 
 ### Contributors
 

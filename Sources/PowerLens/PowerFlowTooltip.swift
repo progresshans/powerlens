@@ -62,13 +62,10 @@ enum PowerFlowTooltip {
         return lines.joined(separator: "\n")
     }
 
-    static func menuBar(
-        snapshot: TelemetrySnapshot?,
-        statusHeadline: String?
-    ) -> String {
+    static func menuBar(statusHeadline: String?, body: String?) -> String {
         let headline = statusHeadline ?? "PowerLens"
-        guard let snapshot else { return headline }
-        return "\(headline)\n\n\(text(snapshot: snapshot))"
+        guard let body else { return headline }
+        return "\(headline)\n\n\(body)"
     }
 
     private static func calculation(_ readings: PowerFlowReadings) -> String {
