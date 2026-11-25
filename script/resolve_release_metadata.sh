@@ -242,18 +242,27 @@ if [[ "$GITHUB_EVENT_NAME" == "push" \
   else
     channel="stable"
   fi
-elif [[ "$GITHUB_EVENT_NAME" == "push" \
-  && "$GITHUB_REF_TYPE" == "branch" \
-  && "$GITHUB_REF_NAME" == "develop" \
+elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" \
   && -z "$DISPATCH_VERSION" ]]; then
+  # A dispatch without a version asks for the next numbered alpha. It is the
+  # only release that skips approval, so it accepts nothing but develop.
+  if [[ "$DISPATCH_CHANNEL" != "alpha" ]]; then
+    die "a ${DISPATCH_CHANNEL:-stable} release requires an explicit version"
+  fi
+  if [[ "$GITHUB_REF_TYPE" != "branch" || "$GITHUB_REF_NAME" != "develop" ]]; then
+    die "the next numbered alpha is published from develop only, not $GITHUB_REF_TYPE $GITHUB_REF_NAME"
+  fi
+  # "automatic" refers to the automatically numbered tag, not to the trigger.
   release_kind="automatic"
   channel="alpha"
   reserve_automatic_alpha_tag
-else
+elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
   release_kind="manual"
-  version="${DISPATCH_VERSION:?workflow_dispatch requires a version}"
+  version="$DISPATCH_VERSION"
   tag="v${version}"
   channel="${DISPATCH_CHANNEL:-stable}"
+else
+  die "unsupported release event: $GITHUB_EVENT_NAME on $GITHUB_REF_TYPE $GITHUB_REF_NAME"
 fi
 
 validate_version "$version"

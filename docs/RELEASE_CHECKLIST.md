@@ -1,9 +1,10 @@
 # PowerLens Release Checklist
 
-Use this checklist for stable and alpha releases. Merging a reviewed pull
-request into `develop` automatically builds and publishes a numbered alpha
-release without deployment approval. Stable releases, explicit tag releases,
-and any manually initiated alpha release remain deliberate and wait for the
+Use this checklist for stable and alpha releases. Merging into `develop` does
+not publish anything. A maintainer publishes a numbered alpha by dispatching
+the release workflow from `develop` on the alpha channel with no version; it
+builds without deployment approval. Stable releases, explicit tag releases,
+and any dispatch that names a version remain deliberate and wait for the
 `release-approval` environment.
 
 ## GitHub Environment Policy
@@ -21,7 +22,7 @@ and any manually initiated alpha release remain deliberate and wait for the
 - [ ] Update `CHANGELOG.md` with user-facing Added, Changed, and Fixed entries.
 - [ ] For a stable release, confirm an exact, non-empty `[<version>]` section
       exists. Explicit alpha releases may fall back to `[Unreleased]` but also
-      require non-empty notes; only automatic `develop` alphas may use the
+      require non-empty notes; only numbered `develop` alphas may use the
       generic preview note.
 - [ ] Confirm `Package.resolved` contains the intended Sparkle version and
       revision.
@@ -66,33 +67,38 @@ and any manually initiated alpha release remain deliberate and wait for the
 
 ## Publication
 
-- [ ] For an automatic alpha, merge the reviewed commit into `develop` and
-      confirm the latest intended commit has a scheduled workflow that skips the
-      `release-approval` job. When another automatic alpha is already active,
-      expect multiple pending merges to coalesce to the newest `develop` commit
-      rather than publishing every intermediate commit.
-- [ ] For a stable or manually initiated alpha, push an explicit `v<version>` or
-      `v<version>-alpha.<n>` tag, or manually dispatch the workflow with the
-      matching channel. These explicit releases must not be coalesced.
-- [ ] For a stable, explicit-tag, or manually dispatched release, approve the
+- [ ] For a numbered alpha, confirm `develop` holds every change the alpha
+      should carry, then dispatch the workflow from `develop` with the alpha
+      channel and no version: in GitHub Actions choose Publish Release, Run
+      workflow, and the `develop` branch, or run
+      `gh workflow run release.yml --ref develop`. Confirm the run skips the
+      `release-approval` job and builds the intended `develop` commit. When
+      another numbered alpha is already active, expect pending requests to
+      coalesce to the newest one. A request from any other branch is rejected.
+- [ ] For a stable release or an alpha with a chosen version, push an explicit
+      `v<version>` or `v<version>-alpha.<n>` tag, or dispatch the workflow with
+      that version and the matching channel. These explicit releases must not
+      be coalesced.
+- [ ] For a stable, explicit-tag, or versioned dispatch release, approve the
       `release-approval` environment only after reviewing the exact commit,
       expected version and channel, source CHANGELOG entries, and CI result.
-      Automatic `develop` alphas must not request this approval.
-- [ ] After metadata resolution, confirm an automatic alpha's annotated tag
+      Numbered `develop` alphas must not request this approval.
+- [ ] After metadata resolution, confirm a numbered alpha's annotated tag
       points to the exact source commit and records the current workflow run
       ID. For an explicit tag release, confirm the existing tag points to that
-      commit. A manual dispatch intentionally has no tag yet.
-- [ ] For a manual dispatch, confirm the publication job preserves the live
+      commit. A versioned dispatch intentionally has no tag yet.
+- [ ] For a versioned dispatch, confirm the publication job preserves the live
       feeds and accepts the appcast progression before it reserves the
       annotated tag. A rejected older version must leave no remote tag.
 - [ ] If any stage fails after tag reservation, rerun that same workflow. Do
       not dispatch a different run for the reserved version; a different run is
       intentionally prevented from overwriting it. Do not rerun a deterministic
-      appcast progression rejection: an automatic alpha keeps its unpublished
-      reserved tag and a newer `develop` run must advance past it; an explicit
-      release needs a deliberately newer version and tag after investigation.
+      appcast progression rejection: a numbered alpha keeps its unpublished
+      reserved tag and a new numbered alpha request must advance past it; an
+      explicit release needs a deliberately newer version and tag after
+      investigation.
 - [ ] Verify the GitHub Release body contains the intended CHANGELOG section or,
-      for an automatic alpha with no entries, the expected generic preview
+      for a numbered alpha with no entries, the expected generic preview
       note.
 - [ ] Download the published assets and verify their checksums.
 - [ ] Confirm the stable or alpha appcast serves the new item while the other
