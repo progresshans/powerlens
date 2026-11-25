@@ -300,6 +300,35 @@ struct HistoryStoreTests {
         #expect(loaded.first?.timestamp == recent)
     }
 
+    @Test(arguments: [3_600, 86_400])
+    func awakeTimeSurvivesRepeatedPurges(bucket: Int) async throws {
+        let store = HistoryStore(databaseURL: makeTemporaryDatabaseURL(name: "awake-gaps"))
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        let boundary = TimeInterval(bucket)
+        let observations: [(TimeInterval, Bool)] = [
+            (boundary - 10, true), (boundary - 5, true), (boundary, false),
+            (boundary, true), (boundary + 180, false), (boundary + 361, true),
+            (boundary + 1_441, false), (boundary + 1_461, true),
+        ]
+        for (offset, external) in observations {
+            try await store.append(makeSnapshot(timestamp: day.addingTimeInterval(offset),
+                                                externalConnected: external))
+        }
+        let range = DateInterval(start: day, duration: 3 * boundary)
+        // 5 + 5 seconds across the boundary, then exactly 180 on AC.
+        // The duplicate, the 181-second gap, the sleep gap and the tail add zero.
+        for pass in 0...2 {
+            if pass > 0 {
+                try await store.purge(olderThan: day.addingTimeInterval(Double(pass) * boundary),
+                                      rollupBucketSeconds: bucket)
+            }
+            let summary = try await store.summary(for: range)
+            #expect(summary.sampleCount == observations.count)
+            #expect(summary.timeOnExternal == 190)
+            #expect(summary.timeOnBattery == 20)
+        }
+    }
+
     @Test
     func summaryIncludesRolledUpData() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "summary-rollup")
