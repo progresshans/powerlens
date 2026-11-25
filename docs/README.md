@@ -1,18 +1,14 @@
 # PowerLens GitHub Pages
 
-This directory is the static GitHub Pages content for PowerLens update feeds.
-The release workflow uploads this directory as a GitHub Pages artifact after
-regenerating the target Sparkle appcast.
+This directory is the static GitHub Pages content for PowerLens update feeds. The release workflow uploads this directory as a GitHub Pages artifact after regenerating the target Sparkle appcast.
 
-When GitHub Pages is configured to deploy from GitHub Actions,
-`appcast.xml` is served at:
+When GitHub Pages is configured to deploy from GitHub Actions, `appcast.xml` is served at:
 
 ```text
 https://progresshans.github.io/powerlens/appcast.xml
 ```
 
-That URL is the default stable Sparkle feed URL embedded in release builds.
-Alpha updates use the adjacent feed:
+That URL is the default stable Sparkle feed URL embedded in release builds. Alpha updates use the adjacent feed:
 
 ```text
 https://progresshans.github.io/powerlens/appcast-alpha.xml
@@ -20,13 +16,9 @@ https://progresshans.github.io/powerlens/appcast-alpha.xml
 
 ## Appcast Workflow
 
-`docs/appcast.xml` and `docs/appcast-alpha.xml` start as valid empty feeds so
-update checks do not hit a 404 before the first Sparkle-visible release is
-published. For actual releases, the `Publish Release` GitHub Actions workflow
-generates the target feed from the exact signed ZIP uploaded to GitHub Releases.
+`docs/appcast.xml` and `docs/appcast-alpha.xml` start as valid empty feeds so update checks do not hit a 404 before the first Sparkle-visible release is published. For actual releases, the `Publish Release` GitHub Actions workflow generates the target feed from the exact signed ZIP uploaded to GitHub Releases.
 
-For a manual local package, use a temporary work directory for Sparkle's
-generated files, then copy only the stable feed into `docs/appcast.xml`:
+For a manual local package, use a temporary work directory for Sparkle's generated files, then copy only the stable feed into `docs/appcast.xml`:
 
 ```bash
 set -a
@@ -42,12 +34,9 @@ POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX="https://github.com/progresshans/powerlens
 ./script/package_release.sh
 ```
 
-Upload the matching `release/PowerLens-0.9.1.app.zip` to the same GitHub
-Release referenced by the download URL prefix. If the ZIP is rebuilt after the
-appcast is generated, regenerate `docs/appcast.xml` before publishing.
+Upload the matching `release/PowerLens-0.9.1.app.zip` to the same GitHub Release referenced by the download URL prefix. If the ZIP is rebuilt after the appcast is generated, regenerate `docs/appcast.xml` before publishing.
 
-For an alpha release, use the same workflow with an alpha version/tag and copy
-the generated feed into `docs/appcast-alpha.xml`:
+For an alpha release, use the same workflow with an alpha version/tag and copy the generated feed into `docs/appcast-alpha.xml`:
 
 ```bash
 POWERLENS_VERSION=0.9.3-alpha.1 \
