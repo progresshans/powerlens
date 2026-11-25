@@ -15,28 +15,13 @@ This folder holds distribution metadata for `PowerLens`.
 
 ## Release Packaging
 
-Run `script/package_release.sh` to create release artifacts under `release/`.
-PowerLens release artifacts support Apple silicon Macs (M1 or later) running
-macOS 26 or later. The packaging script builds the PowerLens executable
-explicitly for arm64, then rejects the bundle unless that executable contains
-exactly the arm64 architecture. Distribution builds use SwiftPM's `native`
-build system by default. `POWERLENS_BUILD_SYSTEM=swiftbuild` is reserved for
-the separate CI compatibility build and does not change the release workflow's
-explicit native setting. By default the script builds an ad-hoc signed local
-release and creates:
+Run `script/package_release.sh` to create release artifacts under `release/`. PowerLens release artifacts support Apple silicon Macs (M1 or later) running macOS 26 or later. The packaging script builds the PowerLens executable explicitly for arm64, then rejects the bundle unless that executable contains exactly the arm64 architecture. Distribution builds use SwiftPM's `native` build system by default. `POWERLENS_BUILD_SYSTEM=swiftbuild` is reserved for the separate CI compatibility build and does not change the release workflow's explicit native setting. By default the script builds an ad-hoc signed local release and creates:
 
 - `PowerLens-<version>.app.zip`
 - `PowerLens-<version>.dmg`
 - `PowerLens-<version>-checksums.txt`
 
-Set `POWERLENS_SIGN_IDENTITY` to a `Developer ID Application` certificate name
-to sign the app and DMG. Set `POWERLENS_NOTARY_PROFILE` to a stored
-`notarytool` keychain profile to notarize and staple the app and DMG.
-Set `POWERLENS_SPARKLE_PUBLIC_ED_KEY` to the Sparkle EdDSA public key to enable
-in-app update checks in the resulting build. Set
-`POWERLENS_SPARKLE_ALPHA_FEED_URL` when the alpha update feed should differ
-from the default GitHub Pages URL.
-For local use, copy `.env.example` to `.env`, update the identity, then run:
+Set `POWERLENS_SIGN_IDENTITY` to a `Developer ID Application` certificate name to sign the app and DMG. Set `POWERLENS_NOTARY_PROFILE` to a stored `notarytool` keychain profile to notarize and staple the app and DMG. Set `POWERLENS_SPARKLE_PUBLIC_ED_KEY` to the Sparkle EdDSA public key to enable in-app update checks in the resulting build. Set `POWERLENS_SPARKLE_ALPHA_FEED_URL` when the alpha update feed should differ from the default GitHub Pages URL. For local use, copy `.env.example` to `.env`, update the identity, then run:
 
 ```bash
 set -a
@@ -50,27 +35,20 @@ set +a
 - local builds are staged into `dist/PowerLens.app`
 - app icon packaging is configured
 - release packaging creates ZIP and DMG artifacts
-- release packaging supports Developer ID signing, notarization, stapling, and
-  checksum generation when local environment variables are provided
-- release packaging embeds Sparkle and can optionally generate an appcast when
-  local Sparkle signing material is available
-- PowerLens's main executable is arm64-only; the embedded Sparkle framework may
-  remain universal because only the app executable defines PowerLens's supported
-  architecture
-- signing certificates and notarization credentials are intentionally local and
-  are not stored in the repository
+- release packaging supports Developer ID signing, notarization, stapling, and checksum generation when local environment variables are provided
+- release packaging embeds Sparkle and can optionally generate an appcast when local Sparkle signing material is available
+- PowerLens's main executable is arm64-only; the embedded Sparkle framework may remain universal because only the app executable defines PowerLens's supported architecture
+- signing certificates and notarization credentials are intentionally local and are not stored in the repository
 
 ## Sparkle Updates
 
-PowerLens uses Sparkle for in-app update checks. The app reads the stable
-update feed from `SUFeedURL`, which defaults to:
+PowerLens uses Sparkle for in-app update checks. The app reads the stable update feed from `SUFeedURL`, which defaults to:
 
 ```text
 https://progresshans.github.io/powerlens/appcast.xml
 ```
 
-The optional alpha update channel reads from `SUAlphaFeedURL`, which defaults
-to:
+The optional alpha update channel reads from `SUAlphaFeedURL`, which defaults to:
 
 ```text
 https://progresshans.github.io/powerlens/appcast-alpha.xml
@@ -82,27 +60,11 @@ Generate a Sparkle EdDSA key once on a maintainer machine:
 .build/artifacts/sparkle/Sparkle/bin/generate_keys --account powerlens
 ```
 
-Put only the printed public key in `POWERLENS_SPARKLE_PUBLIC_ED_KEY`, including
-any trailing `=` padding. The key must be valid base64 that decodes to 32 bytes.
-Leading or trailing whitespace is trimmed by the packaging script, but the key
-should still be stored as a single line. The private key stays in Keychain or
-another local secret store.
+Put only the printed public key in `POWERLENS_SPARKLE_PUBLIC_ED_KEY`, including any trailing `=` padding. The key must be valid base64 that decodes to 32 bytes. Leading or trailing whitespace is trimmed by the packaging script, but the key should still be stored as a single line. The private key stays in Keychain or another local secret store.
 
-To generate an appcast while packaging, set the optional appcast variables from
-`.env.example`, then run the release script. When `SUPublicEDKey` is embedded in
-the app, the script fails if the generated appcast does not contain
-`sparkle:edSignature` for the current archive. Local maintainers can let
-Sparkle sign through Keychain with `--account powerlens`; CI passes an exported
-private EdDSA key through `POWERLENS_SPARKLE_PRIVATE_ED_KEY`. The script copies
-the signed app ZIP into a temporary appcast directory and invokes Sparkle's
-`generate_appcast` tool. Set
-`POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` for stable
-releases or `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml"`
-for alpha releases to copy the generated feed into the local `docs/` directory
-without committing the ZIP archive.
+To generate an appcast while packaging, set the optional appcast variables from `.env.example`, then run the release script. When `SUPublicEDKey` is embedded in the app, the script fails if the generated appcast does not contain `sparkle:edSignature` for the current archive. Local maintainers can let Sparkle sign through Keychain with `--account powerlens`; CI passes an exported private EdDSA key through `POWERLENS_SPARKLE_PRIVATE_ED_KEY`. The script copies the signed app ZIP into a temporary appcast directory and invokes Sparkle's `generate_appcast` tool. Set `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast.xml"` for stable releases or `POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH="$PWD/docs/appcast-alpha.xml"` for alpha releases to copy the generated feed into the local `docs/` directory without committing the ZIP archive.
 
-The repository is prepared for GitHub Pages deployed by GitHub Actions. The
-production appcast URL is:
+The repository is prepared for GitHub Pages deployed by GitHub Actions. The production appcast URL is:
 
 ```text
 https://progresshans.github.io/powerlens/appcast.xml
@@ -120,10 +82,7 @@ For a local end-to-end update smoke test, run:
 ./script/test_sparkle_update.sh
 ```
 
-The test script builds a synthetic older app, builds a newer update archive,
-generates a local appcast, serves it from `127.0.0.1`, and opens the older app.
-It is meant to verify the Sparkle UI and update path before publishing a real
-GitHub Release.
+The test script builds a synthetic older app, builds a newer update archive, generates a local appcast, serves it from `127.0.0.1`, and opens the older app. It is meant to verify the Sparkle UI and update path before publishing a real GitHub Release.
 
 ## GitHub Actions
 
@@ -131,95 +90,39 @@ PowerLens has two workflow layers:
 
 - `.github/workflows/ci.yml`
   - runs on pull requests and pushes to `main` and `develop`
-  - keeps the native macOS 26 release check and adds SwiftBuild checks on both
-    macOS 26 and the Xcode 27 preview image
+  - keeps the native macOS 26 release check and adds SwiftBuild checks on both macOS 26 and the Xcode 27 preview image
   - validates scripts, metadata, and appcast XML
-  - performs an ad-hoc package smoke build without notarization and verifies
-    that the PowerLens executable is exactly arm64
+  - performs an ad-hoc package smoke build without notarization and verifies that the PowerLens executable is exactly arm64
 - `.github/workflows/release.yml`
-  - runs on `v*` tag pushes or a manual dispatch; a branch push never
-    publishes
-  - waits for approval on the `release-approval` environment unless the
-    dispatch asks for a numbered `develop` alpha, then builds on an Apple
-    silicon runner
-  - atomically reserves run-owned tags for numbered alphas before building
-    and for versioned dispatches immediately before publication
+  - runs on `v*` tag pushes or a manual dispatch; a branch push never publishes
+  - waits for approval on the `release-approval` environment unless the dispatch asks for a numbered `develop` alpha, then builds on an Apple silicon runner
+  - atomically reserves run-owned tags for numbered alphas before building and for versioned dispatches immediately before publication
   - verifies that explicit tag-triggered releases use the exact tagged commit
-  - builds an arm64 executable explicitly with SwiftPM's native build system,
-    then signs, notarizes, and packages the app
+  - builds an arm64 executable explicitly with SwiftPM's native build system, then signs, notarizes, and packages the app
   - verifies that the packaged PowerLens executable is exactly arm64
-  - serializes GitHub Release and GitHub Pages mutations in one publication
-    queue
+  - serializes GitHub Release and GitHub Pages mutations in one publication queue
   - creates or safely resumes the run-owned GitHub Release
-  - regenerates the stable or alpha Sparkle appcast while preserving the other
-    channel
+  - regenerates the stable or alpha Sparkle appcast while preserving the other channel
   - deploys the complete appcast site through GitHub Pages Actions
 
-Merging into `develop` does not publish a release. A maintainer requests a
-numbered alpha by dispatching the workflow from `develop` on the alpha channel
-with the version left empty, for example with
-`gh workflow run release.yml --ref develop`. The same request from any other
-branch is rejected. A running numbered alpha is allowed to finish; if two or
-more requests arrive while it is running, GitHub Actions intentionally keeps
-only the newest pending one. Explicit tag and versioned dispatch releases use
-independent request groups and are not coalesced.
+Merging into `develop` does not publish a release. A maintainer requests a numbered alpha by dispatching the workflow from `develop` on the alpha channel with the version left empty, for example with `gh workflow run release.yml --ref develop`. The same request from any other branch is rejected. A running numbered alpha is allowed to finish; if two or more requests arrive while it is running, GitHub Actions intentionally keeps only the newest pending one. Explicit tag and versioned dispatch releases use independent request groups and are not coalesced.
 
-A numbered alpha skips approval and reserves its annotated remote tag before
-building because that tag determines the generated version. An explicit tag
-release verifies the existing tag and tagged commit. A versioned dispatch
-already has an explicit version, so it validates the release notes and builds
-without reserving a tag. Inside the durable publication queue, it first
-preserves the live feeds and validates appcast progression, then reserves its
-annotated tag immediately before creating the GitHub Release. This avoids
-leaving a tag behind when a chosen version cannot advance the current feed.
+A numbered alpha skips approval and reserves its annotated remote tag before building because that tag determines the generated version. An explicit tag release verifies the existing tag and tagged commit. A versioned dispatch already has an explicit version, so it validates the release notes and builds without reserving a tag. Inside the durable publication queue, it first preserves the live feeds and validates appcast progression, then reserves its annotated tag immediately before creating the GitHub Release. This avoids leaving a tag behind when a chosen version cannot advance the current feed.
 
-Each reservation records the GitHub Actions run ID. If a later publication
-stage fails, a rerun of that workflow recovers the same reservation, while a
-different run cannot reuse it. All GitHub Release and Pages mutations pass
-through the same global publication queue.
+Each reservation records the GitHub Actions run ID. If a later publication stage fails, a rerun of that workflow recovers the same reservation, while a different run cannot reuse it. All GitHub Release and Pages mutations pass through the same global publication queue.
 
-The alpha base version comes from the optional
-`POWERLENS_ALPHA_BASE_VERSION` repository variable or, when it is unset, the
-next patch after the latest stable tag. The alpha suffix starts at `1` for a new
-base version and then increments from the highest existing matching alpha tag.
-The configured base must be newer than the latest stable tag. Reserved or
-published tags for a base version are never renumbered, and the base cannot be
-moved behind a newer alpha series that already exists.
+The alpha base version comes from the optional `POWERLENS_ALPHA_BASE_VERSION` repository variable or, when it is unset, the next patch after the latest stable tag. The alpha suffix starts at `1` for a new base version and then increments from the highest existing matching alpha tag. The configured base must be newer than the latest stable tag. Reserved or published tags for a base version are never renumbered, and the base cannot be moved behind a newer alpha series that already exists.
 
-Stable releases should normally be published by pushing a version tag such as
-`v0.9.3`. Maintainers can also publish an explicit alpha tag such as
-`v0.9.3-alpha.1`, or manually dispatch the workflow with a matching version and
-channel. Branch pushes do not publish a release. If a
-release fails after reserving a tag, rerun the original workflow so its run ID
-can safely resume that reservation. A manual version that would move its
-appcast display version or Sparkle build number backward fails before reserving
-its tag.
+Stable releases should normally be published by pushing a version tag such as `v0.9.3`. Maintainers can also publish an explicit alpha tag such as `v0.9.3-alpha.1`, or manually dispatch the workflow with a matching version and channel. Branch pushes do not publish a release. If a release fails after reserving a tag, rerun the original workflow so its run ID can safely resume that reservation. A manual version that would move its appcast display version or Sparkle build number backward fails before reserving its tag.
 
-Release notes are generated from the matching version section in
-`CHANGELOG.md`. Stable versions require an exact, non-empty version section.
-Alpha versions fall back to the base-version section and then to `[Unreleased]`;
-a numbered `develop` alpha uses a short generic preview note when all three
-sections are empty. Explicit tag and versioned dispatch releases remain strict
-and fail instead of publishing an empty note.
+Release notes are generated from the matching version section in `CHANGELOG.md`. Stable versions require an exact, non-empty version section. Alpha versions fall back to the base-version section and then to `[Unreleased]`; a numbered `develop` alpha uses a short generic preview note when all three sections are empty. Explicit tag and versioned dispatch releases remain strict and fail instead of publishing an empty note.
 
-Set the repository's GitHub Pages source to `GitHub Actions`. The release
-workflow publishes the `docs/` site as a Pages artifact after preserving both
-currently published feeds. A missing feed may use the repository placeholder;
-transient HTTP or invalid-XML responses stop the Pages deployment instead of
-silently replacing the other channel. A release also stops before publication
-if it would move the target channel's display version backward. A new release's
-machine-readable Sparkle build number must exceed the highest build already
-published in either the stable or alpha feed, because users can switch channels
-and Sparkle compares `CFBundleVersion`/`sparkle:version` when deciding whether
-an update is newer. An exact rerun of an item already present in its target feed
-is allowed. Before editing an existing release, the workflow verifies the
-remote tag commit and the release's recorded run ID and source SHA.
+Set the repository's GitHub Pages source to `GitHub Actions`. The release workflow publishes the `docs/` site as a Pages artifact after preserving both currently published feeds. A missing feed may use the repository placeholder; transient HTTP or invalid-XML responses stop the Pages deployment instead of silently replacing the other channel. A release also stops before publication if it would move the target channel's display version backward. A new release's machine-readable Sparkle build number must exceed the highest build already published in either the stable or alpha feed, because users can switch channels and Sparkle compares `CFBundleVersion`/`sparkle:version` when deciding whether an update is newer. An exact rerun of an item already present in its target feed is allowed. Before editing an existing release, the workflow verifies the remote tag commit and the release's recorded run ID and source SHA.
 
 The release workflow requires these GitHub Secrets:
 
 - `POWERLENS_SIGN_IDENTITY`
-  - exact codesigning identity, for example
-    `Developer ID Application: HYEONJIN HAN (262HQB69RN)`
+  - exact codesigning identity, for example `Developer ID Application: HYEONJIN HAN (262HQB69RN)`
 - `POWERLENS_DEVELOPER_ID_APPLICATION_P12_BASE64`
   - base64-encoded exported Developer ID Application `.p12`
 - `POWERLENS_DEVELOPER_ID_APPLICATION_P12_PASSWORD`
@@ -233,8 +136,7 @@ The release workflow requires these GitHub Secrets:
 - `POWERLENS_NOTARY_PASSWORD`
   - Apple app-specific password for notarization
 - `POWERLENS_SPARKLE_PUBLIC_ED_KEY`
-  - Sparkle public EdDSA key embedded in the app; keep the trailing `=` padding
-    from `generate_keys`
+  - Sparkle public EdDSA key embedded in the app; keep the trailing `=` padding from `generate_keys`
 - `POWERLENS_SPARKLE_PRIVATE_ED_KEY`
   - exported Sparkle private EdDSA key used only to sign appcasts
 
@@ -244,14 +146,8 @@ The private Sparkle key can be exported on a maintainer Mac with:
 .build/artifacts/sparkle/Sparkle/bin/generate_keys --account powerlens -x ./sparkle-private-ed-key.txt
 ```
 
-Store the file contents in the `POWERLENS_SPARKLE_PRIVATE_ED_KEY` secret, then
-delete the exported local file. The exported key should be a single-line base64
-value. Current Sparkle keys decode to 32 bytes; older Sparkle exports can decode
-to 96 bytes and are still accepted by the release tooling.
+Store the file contents in the `POWERLENS_SPARKLE_PRIVATE_ED_KEY` secret, then delete the exported local file. The exported key should be a single-line base64 value. Current Sparkle keys decode to 32 bytes; older Sparkle exports can decode to 96 bytes and are still accepted by the release tooling.
 
 ## Release Checklist
 
-Follow [the complete release checklist](../docs/RELEASE_CHECKLIST.md), including
-macOS 26 launch validation, telemetry fallbacks, signing, notarization, Sparkle
-update smoke testing, protected-environment approval, and post-publication
-asset/feed verification.
+Follow [the complete release checklist](../docs/RELEASE_CHECKLIST.md), including macOS 26 launch validation, telemetry fallbacks, signing, notarization, Sparkle update smoke testing, protected-environment approval, and post-publication asset/feed verification.
