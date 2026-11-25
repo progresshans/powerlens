@@ -316,9 +316,16 @@ private struct PopoverVisibilityReader<Content: View>: View {
     }
 }
 
+private enum FlowLightIsActiveKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// True only inside a popover that is on screen.
-    @Entry var flowLightIsActive = false
+    var flowLightIsActive: Bool {
+        get { self[FlowLightIsActiveKey.self] }
+        set { self[FlowLightIsActiveKey.self] = newValue }
+    }
 }
 
 /// How the popover answers a new content height. Content taller than the
