@@ -960,7 +960,9 @@ actor HistoryStore: HistoryStoring {
             interval: interval,
             series: (rollups + rawSeries).sorted { $0.bucketStart < $1.bucketStart },
             summary: try summary(for: interval),
-            healthTrend: try batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
+            batteryHealthCharts: BatteryHealthChartSeries(
+                trend: try batteryHealthTrend(since: Date(timeIntervalSince1970: 0))
+            )
         )
     }
 

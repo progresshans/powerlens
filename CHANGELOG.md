@@ -8,6 +8,7 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ### Changed
 
+- The History charts draw fewer points for long battery histories while preserving daily health extremes and changes in charge cycles.
 - Time on Battery and Time on Adapter on the History page now count only the
   time the Mac was awake. Sleep was partly counted before, so the totals are
   lower. They also no longer shift when old history is summarized. History

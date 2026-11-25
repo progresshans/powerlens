@@ -704,6 +704,23 @@ struct HistoryStoreTests {
     }
 
     @Test
+    func insightsReducesChartPointsAndKeepsEveryObservedState() async throws {
+        let store = HistoryStore(databaseURL: makeTemporaryDatabaseURL(name: "health-chart-series"))
+        let start = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_728_000_000))
+            .addingTimeInterval(3600)
+        let capacities = [5000, 5050, 5010, 4950, 5000]
+        for (index, capacity) in capacities.enumerated() {
+            try await store.append(makeSnapshot(timestamp: start.addingTimeInterval(Double(index * 60)),
+                                                fullChargeCapacityMah: capacity))
+        }
+        let trend = try await store.batteryHealthTrend(since: start)
+        try #require(trend.map(\.fullChargeCapacityMah) == capacities)
+        let insights = try await store.loadInsights(for: .last24Hours, now: start.addingTimeInterval(300))
+        #expect(insights.batteryHealthCharts.health == [trend[0], trend[1], trend[3], trend[4]])
+        #expect(insights.batteryHealthCharts.cycles == [trend[0], trend[4]])
+    }
+
+    @Test
     func batteryHealthTrendReturnsPointPerDistinctState() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "health-trend")
         let store = HistoryStore(databaseURL: dbURL)
