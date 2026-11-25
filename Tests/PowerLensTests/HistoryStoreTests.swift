@@ -686,6 +686,24 @@ struct HistoryStoreTests {
     }
 
     @Test
+    func recurringCapacityStartsANewRunAndSurvivesRollup() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "recurring-capacity")
+        let store = HistoryStore(databaseURL: dbURL)
+        let start = Date(timeIntervalSince1970: 1_728_000_000)
+        for (offset, capacity) in [(0, 5100), (5, 5100), (10, 5050), (10, 5100), (15, 5100)] {
+            try await store.append(makeSnapshot(timestamp: start.addingTimeInterval(Double(offset)),
+                                                fullChargeCapacityMah: capacity))
+        }
+        let expected = [5100, 5050, 5100]
+        #expect(try await store.batteryHealthTrend(since: start).map(\.fullChargeCapacityMah) == expected)
+        try await store.purge(olderThan: start.addingTimeInterval(3_600), rollupBucketSeconds: 3_600)
+        #expect(try tableCount("telemetry_samples", dbURL: dbURL) == 0)
+        #expect(try await store.batteryHealthTrend(since: start).map(\.fullChargeCapacityMah) == expected)
+        try await store.purge(olderThan: start.addingTimeInterval(3_600), rollupBucketSeconds: nil)
+        #expect(try await store.batteryHealthTrend(since: start).isEmpty)
+    }
+
+    @Test
     func batteryHealthTrendReturnsPointPerDistinctState() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "health-trend")
         let store = HistoryStore(databaseURL: dbURL)

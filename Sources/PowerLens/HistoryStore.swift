@@ -1182,14 +1182,30 @@ actor HistoryStore: HistoryStoring {
             return nil
         }
 
-        let stateKey = [
-            String(batteryID),
-            HistoryValueCoding.stringComponent(snapshot.fullChargeCapacityMah),
-            HistoryValueCoding.stringComponent(snapshot.nominalCapacityMah),
-            HistoryValueCoding.stringComponent(snapshot.cycleCount),
-            HistoryValueCoding.stringComponent(snapshot.batteryHealthText),
-            HistoryValueCoding.stringComponent(snapshot.batteryHealthCondition),
-        ].joined(separator: "|")
+        // Continue the last row appended for this battery. A legacy row's
+        // last_seen_ts can span several distinct states in the chart.
+        let continuedID = try SQLiteStatement.querySingleInt64(
+            """
+            UPDATE battery_states SET last_seen_ts = MAX(last_seen_ts, ?1)
+            WHERE battery_state_id = (
+                SELECT battery_state_id FROM battery_states WHERE battery_id = ?2
+                ORDER BY battery_state_id DESC LIMIT 1
+            ) AND first_seen_ts <= ?1
+              AND full_charge_capacity_mah IS ?3 AND nominal_capacity_mah IS ?4
+              AND cycle_count IS ?5 AND battery_health_text IS ?6 AND battery_health_condition IS ?7
+            RETURNING battery_state_id
+            """,
+            using: db, operation: "extend battery state run"
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, timestamp)
+            sqlite3_bind_int64(statement, 2, batteryID)
+            SQLiteStatement.bind(snapshot.fullChargeCapacityMah, to: statement, index: 3)
+            SQLiteStatement.bind(snapshot.nominalCapacityMah, to: statement, index: 4)
+            SQLiteStatement.bind(snapshot.cycleCount, to: statement, index: 5)
+            SQLiteStatement.bind(snapshot.batteryHealthText, to: statement, index: 6)
+            SQLiteStatement.bind(snapshot.batteryHealthCondition, to: statement, index: 7)
+        }
+        if let continuedID { return continuedID }
 
         let sql = """
         INSERT INTO battery_states (
@@ -1203,13 +1219,11 @@ actor HistoryStore: HistoryStoring {
             first_seen_ts,
             last_seen_ts
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(state_key) DO UPDATE SET
-            last_seen_ts = excluded.last_seen_ts
         """
 
         try SQLiteStatement.executePrepared(sql, using: db) { statement in
             sqlite3_bind_int64(statement, 1, batteryID)
-            SQLiteStatement.bind(stateKey, to: statement, index: 2)
+            SQLiteStatement.bind(UUID().uuidString, to: statement, index: 2)
             SQLiteStatement.bind(snapshot.fullChargeCapacityMah, to: statement, index: 3)
             SQLiteStatement.bind(snapshot.nominalCapacityMah, to: statement, index: 4)
             SQLiteStatement.bind(snapshot.cycleCount, to: statement, index: 5)
@@ -1219,14 +1233,7 @@ actor HistoryStore: HistoryStoring {
             sqlite3_bind_int64(statement, 9, timestamp)
         }
 
-        return try SQLiteStatement.querySingleInt64(
-            """
-            SELECT battery_state_id FROM battery_states WHERE state_key = ?
-            """,
-            using: db
-        ) { statement in
-            SQLiteStatement.bind(stateKey, to: statement, index: 1)
-        }
+        return sqlite3_last_insert_rowid(db)
     }
 
     private func upsertAdapter(snapshot: TelemetrySnapshot, timestamp: Int64, using db: OpaquePointer) throws -> Int64? {
