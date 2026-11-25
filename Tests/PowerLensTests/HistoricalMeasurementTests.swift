@@ -4,6 +4,32 @@ import Testing
 @testable import PowerLens
 
 struct HistoricalMeasurementTests {
+    @Test
+    func newObservationRecordsAReturnMissingFromLegacyHistory() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("history.sqlite3")
+        let store = HistoryStore(databaseURL: url)
+        let start = Date(timeIntervalSince1970: 1_728_000_000)
+        for (offset, capacity) in [(0, 5100), (60, 5050)] {
+            try await store.append(makeTelemetrySnapshot(timestamp: start.addingTimeInterval(Double(offset)),
+                                                         fullChargeCapacityMah: capacity))
+        }
+        // v5 reused the first row when the capacity returned to 5100.
+        try sql(url, """
+            UPDATE battery_states SET state_key = battery_id || '|' || full_charge_capacity_mah || '|5791|75|Normal|_';
+            UPDATE battery_states SET last_seen_ts = first_seen_ts + 120 WHERE full_charge_capacity_mah = 5100;
+            """)
+        for (offset, capacity) in [(180, 5100), (240, 5050)] {
+            try await store.append(makeTelemetrySnapshot(timestamp: start.addingTimeInterval(Double(offset)),
+                                                         fullChargeCapacityMah: capacity))
+        }
+        let trend = try await store.batteryHealthTrend(since: start)
+        #expect(trend.map(\.fullChargeCapacityMah) == [5100, 5050, 5100, 5050])
+        #expect(trend.map { $0.date.timeIntervalSince(start) } == [0, 60, 180, 240])
+        #expect(try version(url) == 5)
+    }
+
     @Test(arguments: [0.3504, -0.3504, -9.093])
     func realDatabasePreservesFlowProvenanceAndThresholdPrecision(power: Double) async throws {
         let directory = try temporaryDirectory()

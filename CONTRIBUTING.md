@@ -24,13 +24,15 @@ PowerLens uses `feature -> develop -> main -> tag` as its normal promotion path.
 
 - Open ordinary feature, bug-fix, documentation, and dependency pull requests
   against `develop`.
-- Merging a reviewed pull request into `develop` automatically builds, signs,
-  notarizes, and publishes a numbered alpha release for integration testing.
-  If multiple merges arrive while one automatic alpha is running, pending runs
-  are intentionally coalesced to the newest `develop` commit.
-- Stable, explicit-tag, and manually dispatched releases wait for a maintainer
-  to approve the `release-approval` environment. Automatic `develop` alphas
-  skip that approval gate.
+- Merging a pull request into `develop` does not publish anything. A
+  maintainer publishes a numbered alpha release for integration testing by
+  running the release workflow from `develop` on the alpha channel without a
+  version, so one alpha can cover several merged pull requests. If more
+  requests arrive while one numbered alpha is running, pending runs are
+  intentionally coalesced to the newest one.
+- Stable, explicit-tag, and versioned manual releases wait for a maintainer to
+  approve the `release-approval` environment. Numbered `develop` alphas skip
+  that approval gate.
 - Treat `main` as the stable branch. Do not send ordinary feature work directly
   to `main`.
 - A maintainer promotes `develop` to `main` through a reviewed pull request.

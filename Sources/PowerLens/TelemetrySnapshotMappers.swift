@@ -63,7 +63,7 @@ struct CompatibleTelemetrySnapshotMapper {
                 adapterDetails[adapterKey(.voltage)]
             ),
             adapterCurrentA: positiveElectricalValue(
-                adapterDetails[adapterKey(.current)]
+                adapterDetails[adapterKey(.current)], dividedBy: 1000
             ),
             systemLoadW: nil,
             lowPowerModeEnabled: environment.lowPowerModeEnabled,
@@ -178,8 +178,6 @@ struct LivePrecisionTelemetrySnapshotMapper {
             batteryPowerSource: powerMeasurements.batteryPowerSource,
             adapterDescription: TelemetryValueParser.nonEmptyString(
                 adapterDetails[adapterKey(.description)]
-            ) ?? TelemetryValueParser.nonEmptyString(
-                batteryRegistry[batteryKey(.deviceName)]
             ),
             adapterMaxPowerW: TelemetryValueParser.doubleValue(
                 adapterDetails[adapterKey(.watts)]

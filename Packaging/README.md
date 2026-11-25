@@ -137,11 +137,13 @@ PowerLens has two workflow layers:
   - performs an ad-hoc package smoke build without notarization and verifies
     that the PowerLens executable is exactly arm64
 - `.github/workflows/release.yml`
-  - runs on pushes to `develop`, `v*` tags, or an explicit manual dispatch
-  - waits for approval on the protected `release` environment, then builds on
-    an Apple silicon runner
-  - atomically reserves run-owned tags for automatic alphas before building
-    and for manual dispatches immediately before publication
+  - runs on `v*` tag pushes or a manual dispatch; a branch push never
+    publishes
+  - waits for approval on the `release-approval` environment unless the
+    dispatch asks for a numbered `develop` alpha, then builds on an Apple
+    silicon runner
+  - atomically reserves run-owned tags for numbered alphas before building
+    and for versioned dispatches immediately before publication
   - verifies that explicit tag-triggered releases use the exact tagged commit
   - builds an arm64 executable explicitly with SwiftPM's native build system,
     then signs, notarizes, and packages the app
@@ -153,21 +155,23 @@ PowerLens has two workflow layers:
     channel
   - deploys the complete appcast site through GitHub Pages Actions
 
-Merging a reviewed change into `develop` automatically schedules a numbered
-alpha release. A running automatic alpha is allowed to finish; if two or more
-new `develop` pushes arrive while it is running or awaiting approval, GitHub
-Actions intentionally keeps only the newest pending commit. Intermediate
-pending commits therefore do not each produce an alpha. Explicit tag and
-manual-dispatch releases use independent request groups and are not coalesced.
+Merging into `develop` does not publish a release. A maintainer requests a
+numbered alpha by dispatching the workflow from `develop` on the alpha channel
+with the version left empty, for example with
+`gh workflow run release.yml --ref develop`. The same request from any other
+branch is rejected. A running numbered alpha is allowed to finish; if two or
+more requests arrive while it is running, GitHub Actions intentionally keeps
+only the newest pending one. Explicit tag and versioned dispatch releases use
+independent request groups and are not coalesced.
 
-After approval, an automatic alpha reserves its annotated remote tag before
+A numbered alpha skips approval and reserves its annotated remote tag before
 building because that tag determines the generated version. An explicit tag
-release verifies the existing tag and tagged commit. A manual dispatch already
-has an explicit version, so it validates the release notes and builds without
-reserving a tag. Inside the durable publication queue, it first preserves the
-live feeds and validates appcast progression, then reserves its annotated tag
-immediately before creating the GitHub Release. This avoids leaving a tag
-behind when a manual version cannot advance the current feed.
+release verifies the existing tag and tagged commit. A versioned dispatch
+already has an explicit version, so it validates the release notes and builds
+without reserving a tag. Inside the durable publication queue, it first
+preserves the live feeds and validates appcast progression, then reserves its
+annotated tag immediately before creating the GitHub Release. This avoids
+leaving a tag behind when a chosen version cannot advance the current feed.
 
 Each reservation records the GitHub Actions run ID. If a later publication
 stage fails, a rerun of that workflow recovers the same reservation, while a
@@ -185,7 +189,7 @@ moved behind a newer alpha series that already exists.
 Stable releases should normally be published by pushing a version tag such as
 `v0.9.3`. Maintainers can also publish an explicit alpha tag such as
 `v0.9.3-alpha.1`, or manually dispatch the workflow with a matching version and
-channel. Branch pushes other than `develop` do not publish a release. If a
+channel. Branch pushes do not publish a release. If a
 release fails after reserving a tag, rerun the original workflow so its run ID
 can safely resume that reservation. A manual version that would move its
 appcast display version or Sparkle build number backward fails before reserving
@@ -194,9 +198,9 @@ its tag.
 Release notes are generated from the matching version section in
 `CHANGELOG.md`. Stable versions require an exact, non-empty version section.
 Alpha versions fall back to the base-version section and then to `[Unreleased]`;
-an automatic `develop` alpha uses a short generic preview note when all three
-sections are empty. Explicit tag and manual-dispatch releases remain strict and
-fail instead of publishing an empty note.
+a numbered `develop` alpha uses a short generic preview note when all three
+sections are empty. Explicit tag and versioned dispatch releases remain strict
+and fail instead of publishing an empty note.
 
 Set the repository's GitHub Pages source to `GitHub Actions`. The release
 workflow publishes the `docs/` site as a Pages artifact after preserving both

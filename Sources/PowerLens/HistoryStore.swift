@@ -2,6 +2,8 @@ import Foundation
 import SQLite3
 
 actor HistoryStore: HistoryStoring {
+    // Three nominal one-minute saves. Longer gaps give no evidence of awake time.
+    private static let maximumAwakeGapSeconds = 180
     private let databaseURL: URL
 
     init(databaseURL: URL? = nil) {
@@ -327,14 +329,19 @@ actor HistoryStore: HistoryStoring {
         // Each bucket counts its own rising charging edges, including an
         // already-charging first observation. Stored boundary states let the
         // summary join these segments without double-counting one session.
-        // Duration estimates retain the nominal one-minute sampling interval.
+        // The final archived sample may lead into the retained tail. Read just
+        // that next timestamp so the interval is counted once, before deletion.
         let sql = """
         WITH bucketed AS (
-            SELECT *, (ts / ?1) * ?1 AS bucket
+            SELECT *, (ts / ?1) * ?1 AS bucket,
+                   LEAD(ts, 1, (SELECT MIN(ts) FROM telemetry_samples WHERE ts >= ?2))
+                       OVER (ORDER BY ts, sample_id) - ts AS gap
             FROM telemetry_samples
             WHERE ts < ?2
         ), ordered AS (
             SELECT *,
+                CASE WHEN gap BETWEEN 1 AND \(Self.maximumAwakeGapSeconds)
+                     THEN gap ELSE 0 END AS awake_seconds,
                 LAG(is_charging) OVER (
                     PARTITION BY bucket ORDER BY ts, sample_id
                 ) AS previous_charging,
@@ -385,8 +392,8 @@ actor HistoryStore: HistoryStoring {
             CAST(ROUND(AVG(battery_power_mw)) AS INTEGER),
             CAST(ROUND(AVG(battery_temperature_c_x100)) AS INTEGER),
             MAX(battery_temperature_c_x100),
-            SUM(CASE WHEN external_connected = 0 THEN 60 ELSE 0 END),
-            SUM(CASE WHEN external_connected = 1 THEN 60 ELSE 0 END),
+            SUM(CASE WHEN external_connected = 0 THEN awake_seconds ELSE 0 END),
+            SUM(CASE WHEN external_connected = 1 THEN awake_seconds ELSE 0 END),
             SUM(CASE WHEN is_charging = 1
                      AND COALESCE(previous_charging, 0) = 0 THEN 1 ELSE 0 END),
             SUM(system_load_mw),
@@ -664,10 +671,6 @@ actor HistoryStore: HistoryStoring {
         sqlite3_bind_int64(statement, 1, Int64(range.start.timeIntervalSince1970.rounded()))
         sqlite3_bind_int64(statement, 2, Int64(range.end.timeIntervalSince1970.rounded()))
 
-        // Cap inter-sample gaps so sleep/quit periods do not inflate the on-battery
-        // and on-external totals. The persistence cadence is roughly one sample a
-        // minute, so a 10-minute cap tolerates brief stalls without overcounting.
-        let maxGap: TimeInterval = 600
         var sampleCount = 0
         var loadSum = 0.0
         var loadSamples = 0
@@ -726,8 +729,8 @@ actor HistoryStore: HistoryStoring {
             }
 
             if let previousTimestamp {
-                let gap = Swift.min(timestamp - previousTimestamp, maxGap)
-                if gap > 0 {
+                let gap = timestamp - previousTimestamp
+                if gap > 0 && gap <= TimeInterval(Self.maximumAwakeGapSeconds) {
                     if previousExternal {
                         timeOnExternal += gap
                     } else {
@@ -1179,14 +1182,30 @@ actor HistoryStore: HistoryStoring {
             return nil
         }
 
-        let stateKey = [
-            String(batteryID),
-            HistoryValueCoding.stringComponent(snapshot.fullChargeCapacityMah),
-            HistoryValueCoding.stringComponent(snapshot.nominalCapacityMah),
-            HistoryValueCoding.stringComponent(snapshot.cycleCount),
-            HistoryValueCoding.stringComponent(snapshot.batteryHealthText),
-            HistoryValueCoding.stringComponent(snapshot.batteryHealthCondition),
-        ].joined(separator: "|")
+        // Continue the last row appended for this battery. A legacy row's
+        // last_seen_ts can span several distinct states in the chart.
+        let continuedID = try SQLiteStatement.querySingleInt64(
+            """
+            UPDATE battery_states SET last_seen_ts = MAX(last_seen_ts, ?1)
+            WHERE battery_state_id = (
+                SELECT battery_state_id FROM battery_states WHERE battery_id = ?2
+                ORDER BY battery_state_id DESC LIMIT 1
+            ) AND first_seen_ts <= ?1
+              AND full_charge_capacity_mah IS ?3 AND nominal_capacity_mah IS ?4
+              AND cycle_count IS ?5 AND battery_health_text IS ?6 AND battery_health_condition IS ?7
+            RETURNING battery_state_id
+            """,
+            using: db, operation: "extend battery state run"
+        ) { statement in
+            sqlite3_bind_int64(statement, 1, timestamp)
+            sqlite3_bind_int64(statement, 2, batteryID)
+            SQLiteStatement.bind(snapshot.fullChargeCapacityMah, to: statement, index: 3)
+            SQLiteStatement.bind(snapshot.nominalCapacityMah, to: statement, index: 4)
+            SQLiteStatement.bind(snapshot.cycleCount, to: statement, index: 5)
+            SQLiteStatement.bind(snapshot.batteryHealthText, to: statement, index: 6)
+            SQLiteStatement.bind(snapshot.batteryHealthCondition, to: statement, index: 7)
+        }
+        if let continuedID { return continuedID }
 
         let sql = """
         INSERT INTO battery_states (
@@ -1200,13 +1219,11 @@ actor HistoryStore: HistoryStoring {
             first_seen_ts,
             last_seen_ts
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(state_key) DO UPDATE SET
-            last_seen_ts = excluded.last_seen_ts
         """
 
         try SQLiteStatement.executePrepared(sql, using: db) { statement in
             sqlite3_bind_int64(statement, 1, batteryID)
-            SQLiteStatement.bind(stateKey, to: statement, index: 2)
+            SQLiteStatement.bind(UUID().uuidString, to: statement, index: 2)
             SQLiteStatement.bind(snapshot.fullChargeCapacityMah, to: statement, index: 3)
             SQLiteStatement.bind(snapshot.nominalCapacityMah, to: statement, index: 4)
             SQLiteStatement.bind(snapshot.cycleCount, to: statement, index: 5)
@@ -1216,14 +1233,7 @@ actor HistoryStore: HistoryStoring {
             sqlite3_bind_int64(statement, 9, timestamp)
         }
 
-        return try SQLiteStatement.querySingleInt64(
-            """
-            SELECT battery_state_id FROM battery_states WHERE state_key = ?
-            """,
-            using: db
-        ) { statement in
-            SQLiteStatement.bind(stateKey, to: statement, index: 1)
-        }
+        return sqlite3_last_insert_rowid(db)
     }
 
     private func upsertAdapter(snapshot: TelemetrySnapshot, timestamp: Int64, using db: OpaquePointer) throws -> Int64? {
