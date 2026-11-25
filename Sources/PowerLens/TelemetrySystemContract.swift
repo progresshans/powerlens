@@ -37,7 +37,7 @@ enum TelemetrySystemContract {
     enum ExternalPowerAdapterKey: String, CaseIterable, Sendable {
         case description = "Description"
         case watts = "Watts"
-        case voltage = "Voltage"
+        case voltage = "AdapterVoltage"
         case current = "Current"
     }
 
