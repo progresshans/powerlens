@@ -5,6 +5,16 @@ import Testing
 
 struct TelemetrySnapshotMapperTests {
     @Test
+    func batteryDeviceNameIsNeverUsedAsAChargerDescription() throws {
+        let snapshot = try LivePrecisionTelemetrySnapshotMapper(
+            powerSourceInfo: [kIOPSPowerSourceStateKey: kIOPMBatteryPowerKey],
+            batteryRegistry: ["ExternalConnected": false, "DeviceName": "Battery Controller"],
+            adapterDetails: [:], smcPower: nil, environment: makeEnvironment()
+        ).snapshot()
+        #expect(snapshot.adapterDescription == nil)
+    }
+
+    @Test
     func compatibleMapperBuildsSnapshotFromIOPowerSourceData() throws {
         let snapshot = try CompatibleTelemetrySnapshotMapper(
             powerSourceInfo: [
@@ -20,7 +30,7 @@ struct TelemetrySnapshotMapperTests {
                 "Description": "USB-C",
                 "Watts": 67,
                 "Voltage": 20.0,
-                "Current": 3.35
+                "Current": 3350
             ],
             environment: makeEnvironment()
         ).snapshot()
