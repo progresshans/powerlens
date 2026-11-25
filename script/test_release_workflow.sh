@@ -25,22 +25,37 @@ abort "release workflow: missing on trigger" unless triggers.is_a?(Hash)
 
 push = triggers["push"]
 abort "release workflow: missing push trigger" unless push.is_a?(Hash)
-abort "release workflow: expected develop push trigger" unless Array(push["branches"]) == ["develop"]
+abort "release workflow: a branch push must not publish a release" unless push.keys == ["tags"]
 abort "release workflow: expected explicit v* tag releases" unless Array(push["tags"]) == ["v*"]
+
+dispatch_inputs = triggers.dig("workflow_dispatch", "inputs")
+abort "release workflow: missing dispatch inputs" unless dispatch_inputs.is_a?(Hash)
+version_input = dispatch_inputs["version"]
+unless version_input.is_a?(Hash) && version_input["required"] == false &&
+    version_input["default"] == ""
+  abort "release workflow: a numbered develop alpha must be requestable without a version"
+end
+channel_input = dispatch_inputs["channel"]
+unless channel_input.is_a?(Hash) && channel_input["default"] == "alpha" &&
+    Array(channel_input["options"]).sort == ["alpha", "stable"]
+  abort "release workflow: dispatches must default to the alpha channel"
+end
 
 request_concurrency = workflow["concurrency"]
 abort "release workflow: missing request concurrency" unless request_concurrency.is_a?(Hash)
+numbered_alpha_request =
+  "github.event_name == 'workflow_dispatch' && github.ref == " \
+  "'refs/heads/develop' && inputs.version == '' && inputs.channel == 'alpha'"
 expected_request_group =
-  "release-request-${{ github.event_name == 'push' && github.ref == " \
-  "'refs/heads/develop' && 'develop' || github.run_id }}"
+  "release-request-${{ #{numbered_alpha_request} && 'develop' || github.run_id }}"
 unless request_concurrency["group"] == expected_request_group
-  abort "release workflow: automatic develop requests must coalesce independently"
+  abort "release workflow: numbered develop alpha requests must coalesce independently"
 end
 unless request_concurrency["cancel-in-progress"] == false
-  abort "release workflow: a running automatic alpha must not be canceled"
+  abort "release workflow: a running numbered alpha must not be canceled"
 end
 if request_concurrency.key?("queue")
-  abort "release workflow: automatic request concurrency must retain latest-pending semantics"
+  abort "release workflow: numbered alpha concurrency must retain latest-pending semantics"
 end
 
 jobs = workflow["jobs"]
@@ -51,10 +66,9 @@ abort "release workflow: missing explicit release approval job" unless release_a
 abort "release workflow: missing build job" unless build.is_a?(Hash)
 abort "release workflow: missing publish job" unless publish.is_a?(Hash)
 
-expected_approval_condition =
-  "${{ github.event_name != 'push' || github.ref != 'refs/heads/develop' }}"
+expected_approval_condition = "${{ !(#{numbered_alpha_request}) }}"
 unless release_approval["if"] == expected_approval_condition
-  abort "release workflow: only automatic develop alphas may skip approval"
+  abort "release workflow: only numbered develop alphas may skip approval"
 end
 unless release_approval["environment"] == "release-approval"
   abort "release workflow: explicit releases must use the approval-only environment"
@@ -79,8 +93,8 @@ expected_publish_condition =
   "${{ always() && !cancelled() && needs.build.result == 'success' }}"
 unless publish["if"] == expected_publish_condition
   abort(
-    "release workflow: publication must continue past skipped automatic " \
-    "approval only after a successful build"
+    "release workflow: publication must continue past skipped numbered " \
+    "alpha approval only after a successful build"
   )
 end
 
@@ -111,8 +125,9 @@ unless manual_notes_index && metadata_index && manual_notes_index < metadata_ind
   abort "release workflow: manual notes must be validated before metadata resolution"
 end
 manual_notes_step = build_steps.fetch(manual_notes_index)
-unless manual_notes_step["if"] == "github.event_name == 'workflow_dispatch'"
-  abort "release workflow: manual note preflight must only run for dispatches"
+unless manual_notes_step["if"] ==
+    "github.event_name == 'workflow_dispatch' && inputs.version != ''"
+  abort "release workflow: manual note preflight must only run for versioned dispatches"
 end
 unless manual_notes_step["run"].include?("require-notes") &&
     manual_notes_step["run"].include?("validated=true")
@@ -128,9 +143,13 @@ unless metadata_step.dig("env", "MANUAL_NOTES_VALIDATED") ==
   abort "release workflow: resolver must require the manual note preflight output"
 end
 
-release_notes_step = build_steps.find { |step| step["name"] == "Create release notes" }
-unless release_notes_step &&
-    release_notes_step["if"] == "github.event_name != 'workflow_dispatch'"
+release_notes_index =
+  build_steps.index { |step| step["name"] == "Create release notes" }
+unless release_notes_index && metadata_index < release_notes_index
+  abort "release workflow: release notes must follow metadata resolution"
+end
+release_notes_step = build_steps.fetch(release_notes_index)
+unless release_notes_step["if"] == "steps.meta.outputs.release_kind != 'manual'"
   abort "release workflow: manual notes must not be regenerated after preflight"
 end
 
@@ -505,15 +524,73 @@ assert_output() {
   done
 }
 
+alpha_tags_before_rejections="$(git ls-remote --tags "$REMOTE_REPOSITORY")"
+
+if run_resolver \
+  develop-push \
+  push \
+  branch \
+  develop \
+  "$automatic_source" \
+  901 \
+  "" \
+  "" \
+  ""; then
+  echo "release workflow test: a develop push published a release" >&2
+  exit 1
+fi
+grep -Fq \
+  "unsupported release event: push on branch develop" \
+  "$TEST_DIR/develop-push.log"
+
+if run_resolver \
+  numbered-alpha-from-main \
+  workflow_dispatch \
+  branch \
+  main \
+  "$automatic_source" \
+  902 \
+  "" \
+  alpha \
+  ""; then
+  echo "release workflow test: a numbered alpha was accepted outside develop" >&2
+  exit 1
+fi
+grep -Fq \
+  "the next numbered alpha is published from develop only, not branch main" \
+  "$TEST_DIR/numbered-alpha-from-main.log"
+
+if run_resolver \
+  stable-without-version \
+  workflow_dispatch \
+  branch \
+  develop \
+  "$automatic_source" \
+  903 \
+  "" \
+  stable \
+  ""; then
+  echo "release workflow test: a stable dispatch was accepted without a version" >&2
+  exit 1
+fi
+grep -Fq \
+  "a stable release requires an explicit version" \
+  "$TEST_DIR/stable-without-version.log"
+
+if [[ "$(git ls-remote --tags "$REMOTE_REPOSITORY")" != "$alpha_tags_before_rejections" ]]; then
+  echo "release workflow test: a rejected request still reserved a tag" >&2
+  exit 1
+fi
+
 run_resolver \
   automatic-first \
-  push \
+  workflow_dispatch \
   branch \
   develop \
   "$automatic_source" \
   1001 \
   "" \
-  "" \
+  alpha \
   ""
 assert_output \
   "$TEST_DIR/automatic-first.output" \
@@ -531,13 +608,13 @@ grep -Fqx \
 
 run_resolver \
   automatic-rerun \
-  push \
+  workflow_dispatch \
   branch \
   develop \
   "$automatic_source" \
   1001 \
   "" \
-  "" \
+  alpha \
   ""
 assert_output \
   "$TEST_DIR/automatic-rerun.output" \
@@ -566,7 +643,7 @@ run_concurrent_resolver() {
 
   (
     cd "$repository"
-    GITHUB_EVENT_NAME=push \
+    GITHUB_EVENT_NAME=workflow_dispatch \
       GITHUB_REF_TYPE=branch \
       GITHUB_REF_NAME=develop \
       GITHUB_SHA="$automatic_source" \
@@ -574,7 +651,7 @@ run_concurrent_resolver() {
       GITHUB_REPOSITORY="progresshans/powerlens" \
       GITHUB_OUTPUT="$output_path" \
       DISPATCH_VERSION="" \
-      DISPATCH_CHANNEL="" \
+      DISPATCH_CHANNEL=alpha \
       ALPHA_BASE_VERSION="" \
       "$RESOLVER"
   ) >"$log_path" 2>&1
@@ -638,13 +715,13 @@ git -C "$WORK_REPOSITORY" push -q origin develop
 
 run_resolver \
   automatic-new-base \
-  push \
+  workflow_dispatch \
   branch \
   develop \
   "$new_base_source" \
   1002 \
   "" \
-  "" \
+  alpha \
   0.10.0
 assert_output \
   "$TEST_DIR/automatic-new-base.output" \
@@ -653,13 +730,13 @@ assert_output \
 
 if run_resolver \
   regressed-alpha-base \
-  push \
+  workflow_dispatch \
   branch \
   develop \
   "$new_base_source" \
   1004 \
   "" \
-  "" \
+  alpha \
   0.9.3; then
   echo "release workflow test: accepted an alpha base older than the latest alpha" >&2
   exit 1
@@ -670,13 +747,13 @@ grep -Fq \
 
 if run_resolver \
   stale-alpha-base \
-  push \
+  workflow_dispatch \
   branch \
   develop \
   "$new_base_source" \
   1003 \
   "" \
-  "" \
+  alpha \
   0.9.2; then
   echo "release workflow test: accepted an alpha base at the latest stable version" >&2
   exit 1
