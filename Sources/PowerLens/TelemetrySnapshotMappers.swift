@@ -60,7 +60,7 @@ struct CompatibleTelemetrySnapshotMapper {
             ),
             adapterInputPowerW: nil,
             adapterVoltageV: positiveElectricalValue(
-                adapterDetails[adapterKey(.voltage)]
+                adapterDetails[adapterKey(.voltage)], dividedBy: 1000
             ),
             adapterCurrentA: positiveElectricalValue(
                 adapterDetails[adapterKey(.current)], dividedBy: 1000
@@ -310,7 +310,7 @@ private func telemetryKey(
 
 private func positiveElectricalValue(
     _ value: Any?,
-    dividedBy divisor: Double = 1
+    dividedBy divisor: Double
 ) -> Double? {
     guard let value = TelemetryValueParser.doubleValue(value),
           value.isFinite,

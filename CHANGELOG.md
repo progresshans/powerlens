@@ -12,6 +12,7 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ### Fixed
 
+- Reliable mode now shows the charger voltage when macOS reports it.
 - Reliable mode now displays charger current in amperes. More Precise mode leaves the charger name empty when macOS supplies only a battery device name.
 - The Battery Health chart now shows a capacity that returns to an earlier value. Returns from before this update cannot be recovered.
 - Closing Settings stops its form from recalculating the window layout on each power reading.
@@ -19,7 +20,7 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ### Contributors
 
-- @fordpiggy1 made their first contribution with the charger, time total, and battery health changes (#60, #63, #64).
+- @fordpiggy1 made their first contributions with the charger, time total, battery health, and chart changes (#60, #63, #64, #68, #69).
 
 ## [0.9.6] - 2026-11-05
 
