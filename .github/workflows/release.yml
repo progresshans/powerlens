@@ -112,6 +112,13 @@ jobs:
             "$GITHUB_WORKSPACE/CHANGELOG.md" \
             "$RELEASE_NOTES_MODE"
 
+      - name: Create update window notes
+        run: |
+          python3 script/generate_update_notes.py \
+            "$RUNNER_TEMP/powerlens-release-notes.md" \
+            "$RUNNER_TEMP/powerlens-update-notes.md" \
+            "$GITHUB_REPOSITORY"
+
       - name: Record release provenance
         env:
           RELEASE_RUN_ID: ${{ github.run_id }}
@@ -233,6 +240,7 @@ jobs:
           POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH: ${{ github.workspace }}/${{ steps.meta.outputs.appcast_path }}
           POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
           POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
+          POWERLENS_SPARKLE_RELEASE_NOTES_PATH: ${{ runner.temp }}/powerlens-update-notes.md
         run: ./script/package_release.sh
 
       - name: Verify arm64 distribution bundle

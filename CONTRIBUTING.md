@@ -79,6 +79,7 @@ If physical compatibility checks are automated later, do not attach a self-hoste
 - Keep telemetry local. Discuss any new network request or newly stored identifier explicitly in the pull request and update `PRIVACY.md`.
 - Never commit certificates, notarization credentials, `.env` files, Sparkle private keys, exported user history, or battery identifiers.
 - Write each Markdown paragraph and list item on one line. Do not wrap prose at a fixed width: `CHANGELOG.md` is copied into release notes, where GitHub shows every line break.
+- In `CHANGELOG.md`, write a pull request as `#123` and a person as `@name`, and put code in backticks. The update window shows these entries too: it links the first two to GitHub and leaves code as written.
 
 ## Telemetry and Presentation Contracts
 

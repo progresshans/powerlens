@@ -37,7 +37,7 @@ Use this checklist for stable and alpha releases. Merging into `develop` does no
 - [ ] Validate app and DMG signatures, hardened runtime, notarization tickets, and Gatekeeper assessment.
 - [ ] Install the DMG in a clean macOS user account and verify first launch.
 - [ ] Run `./script/test_sparkle_update.sh` on a maintainer Mac.
-- [ ] Confirm the generated appcast has the expected channel, display version, Sparkle build number greater than the highest build in either published channel, download URL, length, EdDSA signature, and `26.0` minimum system version.
+- [ ] Confirm the generated appcast has the expected channel, display version, Sparkle build number greater than the highest build in either published channel, download URL, length, EdDSA signature, `26.0` minimum system version, and that version's release notes.
 - [ ] Verify DMG, ZIP, and checksum filenames match the release version.
 
 ## Publication
@@ -51,4 +51,4 @@ Use this checklist for stable and alpha releases. Merging into `develop` does no
 - [ ] Verify the GitHub Release body contains the intended CHANGELOG section or, for a numbered alpha with no entries, the expected generic preview note.
 - [ ] Download the published assets and verify their checksums.
 - [ ] Confirm the stable or alpha appcast serves the new item while the other channel remains intact.
-- [ ] Perform an installed-app update check against the published feed.
+- [ ] Perform an installed-app update check against the published feed, and confirm the update window shows that version's release notes and that their links open.

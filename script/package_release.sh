@@ -41,6 +41,7 @@ SPARKLE_APPCAST_DIR="${POWERLENS_SPARKLE_APPCAST_DIR:-}"
 SPARKLE_APPCAST_OUTPUT_PATH="${POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH:-}"
 SPARKLE_DOWNLOAD_URL_PREFIX="${POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX:-}"
 SPARKLE_RELEASE_NOTES_URL_PREFIX="${POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX:-}"
+SPARKLE_RELEASE_NOTES_PATH="${POWERLENS_SPARKLE_RELEASE_NOTES_PATH:-}"
 SPARKLE_KEY_ACCOUNT="${POWERLENS_SPARKLE_KEY_ACCOUNT:-powerlens}"
 SPARKLE_PRIVATE_ED_KEY="${POWERLENS_SPARKLE_PRIVATE_ED_KEY:-}"
 SPARKLE_ED_KEY_FILE="${POWERLENS_SPARKLE_ED_KEY_FILE:-}"
@@ -196,6 +197,42 @@ if has_missing_signature:
 PY
 }
 
+validate_generated_appcast_release_notes() {
+  local appcast="$1"
+  local expected_archive="$2"
+  local release_notes="$3"
+
+  python3 - "$appcast" "$expected_archive" "$release_notes" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+appcast_path, expected_archive, release_notes_path = sys.argv[1:]
+format_key = "{http://www.andymatuschak.org/xml-namespaces/sparkle}format"
+expected_notes = Path(release_notes_path).read_text(encoding="utf-8").strip()
+
+for item in ET.parse(appcast_path).findall(".//item"):
+    enclosure = item.find("enclosure")
+    if enclosure is None or not enclosure.attrib.get("url", "").endswith(expected_archive):
+        continue
+
+    description = item.find("description")
+    if description is None or (description.text or "").strip() != expected_notes:
+        raise SystemExit(
+            f"sparkle: generated appcast item for {expected_archive} does not embed "
+            f"the release notes from {release_notes_path}"
+        )
+    if description.attrib.get(format_key) != "markdown":
+        raise SystemExit(
+            f"sparkle: generated appcast item for {expected_archive} does not mark "
+            "its release notes as Markdown"
+        )
+    break
+else:
+    raise SystemExit(f"sparkle: generated appcast has no item for {expected_archive}")
+PY
+}
+
 prepare_release_dir() {
   rm -rf "$STAGE_DIR" "$DMG_STAGE_DIR" "$APP_ZIP" "$DMG_PATH" "$CHECKSUMS_PATH"
   mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS" "$DMG_STAGE_DIR"
@@ -284,6 +321,20 @@ generate_appcast_if_configured() {
   mkdir -p "$SPARKLE_APPCAST_DIR"
   cp "$APP_ZIP" "$SPARKLE_APPCAST_DIR/"
 
+  # generate_appcast takes an archive's release notes from the file that has
+  # the archive's name with another extension: PowerLens-1.0.app.zip uses
+  # PowerLens-1.0.app.md. Sparkle shows them in the update window.
+  local release_notes_copy
+  release_notes_copy="$SPARKLE_APPCAST_DIR/$(basename "$APP_ZIP" .zip).md"
+  rm -f "$release_notes_copy"
+  if [[ -n "$SPARKLE_RELEASE_NOTES_PATH" ]]; then
+    if [[ ! -s "$SPARKLE_RELEASE_NOTES_PATH" ]]; then
+      echo "sparkle: missing or empty release notes: $SPARKLE_RELEASE_NOTES_PATH" >&2
+      exit 2
+    fi
+    cp "$SPARKLE_RELEASE_NOTES_PATH" "$release_notes_copy"
+  fi
+
   local args=("$SPARKLE_GENERATE_APPCAST_TOOL" --account "$SPARKLE_KEY_ACCOUNT")
   if [[ -n "$SPARKLE_PRIVATE_ED_KEY" ]]; then
     args+=(--ed-key-file -)
@@ -297,6 +348,11 @@ generate_appcast_if_configured() {
   if [[ -n "$SPARKLE_RELEASE_NOTES_URL_PREFIX" ]]; then
     args+=(--release-notes-url-prefix "$SPARKLE_RELEASE_NOTES_URL_PREFIX")
   fi
+  if [[ -n "$SPARKLE_RELEASE_NOTES_PATH" ]]; then
+    # Without this flag generate_appcast links to the Markdown file under the
+    # release notes URL prefix instead, and that file is never published.
+    args+=(--embed-release-notes)
+  fi
 
   args+=("$SPARKLE_APPCAST_DIR")
   echo "sparkle: generating appcast in $SPARKLE_APPCAST_DIR"
@@ -309,6 +365,12 @@ generate_appcast_if_configured() {
   local generated_appcast="$SPARKLE_APPCAST_DIR/appcast.xml"
   powerlens_require_file "$generated_appcast"
   validate_generated_appcast_signature "$generated_appcast" "$(basename "$APP_ZIP")"
+  if [[ -n "$SPARKLE_RELEASE_NOTES_PATH" ]]; then
+    validate_generated_appcast_release_notes \
+      "$generated_appcast" \
+      "$(basename "$APP_ZIP")" \
+      "$SPARKLE_RELEASE_NOTES_PATH"
+  fi
 
   if [[ -n "$SPARKLE_APPCAST_OUTPUT_PATH" ]]; then
     mkdir -p "$(dirname "$SPARKLE_APPCAST_OUTPUT_PATH")"
