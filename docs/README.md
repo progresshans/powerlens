@@ -48,6 +48,8 @@ POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX="https://github.com/progresshans/powerlens
 ./script/package_release.sh
 ```
 
+The release workflow also puts that version's release notes into the feed, and the update window shows them. For a manual package, set `POWERLENS_SPARKLE_RELEASE_NOTES_PATH` to a Markdown file to do the same. `script/generate_update_notes.py` makes that file from the output of `script/generate_release_notes.sh`, turning `#123` and `@name` into links.
+
 ## GitHub Pages Settings
 
 In GitHub:

@@ -6,6 +6,10 @@ PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
 ## [Unreleased]
 
+### Added
+
+- The update window now lists what changed in the new version. Pull request numbers and contributor names link to GitHub.
+
 ### Changed
 
 - The History charts draw fewer points for long battery histories while preserving daily health extremes and changes in charge cycles.

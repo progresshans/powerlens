@@ -153,6 +153,34 @@ unless release_notes_step["if"] == "steps.meta.outputs.release_kind != 'manual'"
   abort "release workflow: manual notes must not be regenerated after preflight"
 end
 
+update_notes_index =
+  build_steps.index { |step| step["name"] == "Create update window notes" }
+provenance_index =
+  build_steps.index { |step| step["name"] == "Record release provenance" }
+package_index =
+  build_steps.index { |step| step["name"] == "Build signed notarized release" }
+unless update_notes_index && provenance_index && package_index &&
+    release_notes_index < update_notes_index &&
+    update_notes_index < provenance_index &&
+    update_notes_index < package_index
+  abort "release workflow: update window notes must be made from the release notes " \
+    "before provenance is recorded and the release is packaged"
+end
+update_notes_step = build_steps.fetch(update_notes_index)
+if update_notes_step.key?("if")
+  abort "release workflow: every release kind must create update window notes"
+end
+unless update_notes_step["run"].include?("script/generate_update_notes.py") &&
+    update_notes_step["run"].include?('"$RUNNER_TEMP/powerlens-release-notes.md"') &&
+    update_notes_step["run"].include?('"$RUNNER_TEMP/powerlens-update-notes.md"') &&
+    update_notes_step["run"].include?('"$GITHUB_REPOSITORY"')
+  abort "release workflow: update window notes must link the release notes to this repository"
+end
+unless build_steps.fetch(package_index).dig("env", "POWERLENS_SPARKLE_RELEASE_NOTES_PATH") ==
+    "${{ runner.temp }}/powerlens-update-notes.md"
+  abort "release workflow: the appcast must embed the update window notes"
+end
+
 tag_verification_step =
   build_steps.find { |step| step["name"] == "Verify reserved release tag" }
 unless tag_verification_step &&
