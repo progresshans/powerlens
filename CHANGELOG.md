@@ -4,7 +4,7 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
-## [Unreleased]
+## [0.9.7] - 2026-11-26
 
 ### Added
 
