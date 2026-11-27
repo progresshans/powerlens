@@ -147,13 +147,57 @@ struct BatteryHealthPoint: Identifiable, Equatable, Sendable {
     }
 }
 
+/// The observed points drawn by each chart, computed once per history load.
+struct BatteryHealthChartSeries: Equatable, Sendable {
+    let health: [BatteryHealthPoint]
+    let cycles: [BatteryHealthPoint]
+
+    /// The history store returns observations in chronological order.
+    init(trend: [BatteryHealthPoint], calendar: Calendar = .current) {
+        var healthPoints: [BatteryHealthPoint] = []
+        var start = trend.startIndex
+        while start < trend.endIndex {
+            var end = start + 1
+            if let day = calendar.dateInterval(of: .day, for: trend[start].date) {
+                while end < trend.endIndex && trend[end].date < day.end {
+                    end += 1
+                }
+            }
+            let readings = (start..<end).compactMap { index in
+                trend[index].healthPercent.map { (index: index, percent: $0) }
+            }
+            if let first = readings.first, let last = readings.last,
+               let low = readings.min(by: { $0.percent < $1.percent }),
+               let high = readings.max(by: { $0.percent < $1.percent }) {
+                let indices = Set([first.index, low.index, high.index, last.index])
+                healthPoints.append(contentsOf: indices.sorted().map { trend[$0] })
+            }
+            start = end
+        }
+        health = healthPoints
+
+        var cyclePoints: [BatteryHealthPoint] = []
+        var newest: BatteryHealthPoint?
+        for point in trend where point.cycleCount != nil {
+            if point.cycleCount != newest?.cycleCount {
+                cyclePoints.append(point)
+            }
+            newest = point
+        }
+        if let newest, newest != cyclePoints.last {
+            cyclePoints.append(newest)
+        }
+        cycles = cyclePoints
+    }
+}
+
 /// The full set of data the Insights view renders for a selected range.
 struct InsightsData: Equatable, Sendable {
     let range: HistoryRange
     let interval: DateInterval
     let series: [AggregatedTelemetryPoint]
     let summary: HistorySummary
-    let healthTrend: [BatteryHealthPoint]
+    let batteryHealthCharts: BatteryHealthChartSeries
 
     var hasSeries: Bool {
         series.contains { $0.sampleCount > 0 }
@@ -166,7 +210,7 @@ struct InsightsData: Equatable, Sendable {
             interval: interval,
             series: [],
             summary: .empty(range: interval),
-            healthTrend: []
+            batteryHealthCharts: BatteryHealthChartSeries(trend: [])
         )
     }
 }

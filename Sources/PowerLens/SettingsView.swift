@@ -1,42 +1,31 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var store: PowerLensStore
-    @ObservedObject var softwareUpdateController: SoftwareUpdateController
-    @ObservedObject var launchAtLoginController: LaunchAtLoginController
-    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
+    let store: PowerLensStore
+    let softwareUpdateController: SoftwareUpdateController
+    let launchAtLoginController: LaunchAtLoginController
     @AppStorage(TelemetryEnginePreference.storageKey) private var telemetryEnginePreference = TelemetryEnginePreference.auto.rawValue
-    @AppStorage(DockIconPreference.storageKey) private var showDockIcon = DockIconPreference.defaultValue
-    @AppStorage(MenuBarDisplayStylePreference.storageKey) private var menuBarDisplayStyle = MenuBarDisplayStylePreference.defaultValue
-    @AppStorage(NotificationPreference.storageKey) private var notificationsEnabled = NotificationPreference.defaultValue
     @AppStorage(UpdateChannelPreference.storageKey) private var updateChannel = UpdateChannelPreference.defaultValue
     @AppStorage(RawHistoryWindow.storageKey) private var rawHistoryWindow = RawHistoryWindow.defaultValue
     @AppStorage(LongTermResolution.storageKey) private var longTermResolution = LongTermResolution.defaultValue
     @SceneStorage("settings.selectedPane") private var selectedPaneRaw = SettingsPane.general.rawValue
     @State private var isConfirmingLongTermHistoryDiscard = false
 
-    private var selectedPane: SettingsPane {
-        SettingsPane(storedRawValue: selectedPaneRaw)
-    }
-
-    private var paneSelection: Binding<String?> {
-        Binding(
-            get: { selectedPane.rawValue },
-            set: { selectedPaneRaw = $0 ?? SettingsPane.general.rawValue }
-        )
-    }
-
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            detail
+        // Keep preference changes and pending confirmation alive when the form is off screen.
+        VisibleWindowContent {
+            SettingsForm(
+                store: store,
+                softwareUpdateController: softwareUpdateController,
+                launchAtLoginController: launchAtLoginController,
+                selectedPaneRaw: $selectedPaneRaw,
+                telemetryEnginePreference: $telemetryEnginePreference,
+                updateChannel: $updateChannel,
+                rawHistoryWindow: $rawHistoryWindow,
+                longTermResolution: longTermResolutionBinding
+            )
         }
-        .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 720, minHeight: 480)
-        .onAppear {
-            launchAtLoginController.refresh()
-        }
         .onChange(of: telemetryEnginePreference) {
             store.refreshNow()
         }
@@ -63,6 +52,69 @@ struct SettingsView: View {
         } message: {
             Text(longTermHistoryDiscardMessage)
         }
+    }
+
+    private var longTermResolutionBinding: Binding<String> {
+        Binding(
+            get: { longTermResolution },
+            set: { proposedRawValue in
+                guard let proposed = LongTermResolution(rawValue: proposedRawValue) else {
+                    return
+                }
+                let current = LongTermResolution(rawValue: longTermResolution) ?? .daily
+
+                if LongTermResolution.requiresDestructiveConfirmation(
+                    from: current,
+                    to: proposed
+                ) {
+                    isConfirmingLongTermHistoryDiscard = true
+                    return
+                }
+
+                longTermResolution = proposed.rawValue
+            }
+        )
+    }
+
+    private var longTermHistoryDiscardMessage: String {
+        let window = RawHistoryWindow(rawValue: rawHistoryWindow) ?? .days90
+        return L10n.tr("history.longTerm.off.confirm.message", window.title)
+    }
+}
+
+private struct SettingsForm: View {
+    @ObservedObject var store: PowerLensStore
+    @ObservedObject var softwareUpdateController: SoftwareUpdateController
+    @ObservedObject var launchAtLoginController: LaunchAtLoginController
+    @Binding var selectedPaneRaw: String
+    @Binding var telemetryEnginePreference: String
+    @Binding var updateChannel: String
+    @Binding var rawHistoryWindow: String
+    @Binding var longTermResolution: String
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
+    @AppStorage(DockIconPreference.storageKey) private var showDockIcon = DockIconPreference.defaultValue
+    @AppStorage(MenuBarDisplayStylePreference.storageKey) private var menuBarDisplayStyle = MenuBarDisplayStylePreference.defaultValue
+    @AppStorage(NotificationPreference.storageKey) private var notificationsEnabled = NotificationPreference.defaultValue
+
+    private var selectedPane: SettingsPane {
+        SettingsPane(storedRawValue: selectedPaneRaw)
+    }
+
+    private var paneSelection: Binding<String?> {
+        Binding(
+            get: { selectedPane.rawValue },
+            set: { selectedPaneRaw = $0 ?? SettingsPane.general.rawValue }
+        )
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detail
+        }
+        .navigationSplitViewStyle(.balanced)
+        .onAppear { launchAtLoginController.refresh() }
     }
 
     private var sidebar: some View {
@@ -203,7 +255,7 @@ struct SettingsView: View {
             }
 
             LabeledContent {
-                Picker(L10n.text("history.longTerm.title"), selection: longTermResolutionBinding) {
+                Picker(L10n.text("history.longTerm.title"), selection: $longTermResolution) {
                     ForEach(LongTermResolution.allCases) { resolution in
                         Text(resolution.title).tag(resolution.rawValue)
                     }
@@ -286,28 +338,6 @@ struct SettingsView: View {
         )
     }
 
-    private var longTermResolutionBinding: Binding<String> {
-        Binding(
-            get: { longTermResolution },
-            set: { proposedRawValue in
-                guard let proposed = LongTermResolution(rawValue: proposedRawValue) else {
-                    return
-                }
-                let current = LongTermResolution(rawValue: longTermResolution) ?? .daily
-
-                if LongTermResolution.requiresDestructiveConfirmation(
-                    from: current,
-                    to: proposed
-                ) {
-                    isConfirmingLongTermHistoryDiscard = true
-                    return
-                }
-
-                longTermResolution = proposed.rawValue
-            }
-        )
-    }
-
     private var telemetryStatusChipText: String {
         switch store.telemetryHealth {
         case .waiting:
@@ -372,11 +402,6 @@ struct SettingsView: View {
             return L10n.text("history.longTerm.off.detail")
         }
         return L10n.text("history.longTerm.detail")
-    }
-
-    private var longTermHistoryDiscardMessage: String {
-        let window = RawHistoryWindow(rawValue: rawHistoryWindow) ?? .days90
-        return L10n.tr("history.longTerm.off.confirm.message", window.title)
     }
 
     @ViewBuilder

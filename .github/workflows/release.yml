@@ -2,38 +2,38 @@ name: Publish Release
 
 on:
   push:
-    branches:
-      - develop
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without the leading v, for example 0.9.1 or 0.9.2-alpha.1"
-        required: true
+        description: "Release version without the leading v, for example 0.9.1 or 0.9.2-alpha.1. Leave empty on develop with the alpha channel to publish the next numbered alpha."
+        required: false
+        default: ""
         type: string
       channel:
         description: "Sparkle update channel to publish"
         required: true
-        default: stable
+        default: alpha
         type: choice
         options:
-          - stable
           - alpha
+          - stable
 
 permissions:
   contents: read
 
-# Keep a running automatic alpha, but coalesce multiple pending develop pushes
-# into the newest commit. Explicit tag and dispatch runs get unique groups.
+# A numbered develop alpha is a dispatch from develop on the alpha channel with
+# no version. Keep a running one, but coalesce pending requests into the
+# newest. Explicit tag and versioned dispatch runs get unique groups.
 concurrency:
-  group: release-request-${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'develop' || github.run_id }}
+  group: release-request-${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop' && inputs.version == '' && inputs.channel == 'alpha' && 'develop' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   release_approval:
     name: Approve Explicit Release
-    if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/develop' }}
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/develop' && inputs.version == '' && inputs.channel == 'alpha') }}
     runs-on: ubuntu-latest
     environment: release-approval
 
@@ -80,7 +80,7 @@ jobs:
 
       - name: Validate manually dispatched release notes
         id: manual_notes
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
         env:
           VERSION: ${{ inputs.version }}
         run: |
@@ -101,7 +101,7 @@ jobs:
         run: ./script/resolve_release_metadata.sh
 
       - name: Create release notes
-        if: github.event_name != 'workflow_dispatch'
+        if: steps.meta.outputs.release_kind != 'manual'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           RELEASE_NOTES_MODE: ${{ steps.meta.outputs.release_notes_mode }}
@@ -111,6 +111,13 @@ jobs:
             "$RUNNER_TEMP/powerlens-release-notes.md" \
             "$GITHUB_WORKSPACE/CHANGELOG.md" \
             "$RELEASE_NOTES_MODE"
+
+      - name: Create update window notes
+        run: |
+          python3 script/generate_update_notes.py \
+            "$RUNNER_TEMP/powerlens-release-notes.md" \
+            "$RUNNER_TEMP/powerlens-update-notes.md" \
+            "$GITHUB_REPOSITORY"
 
       - name: Record release provenance
         env:
@@ -233,6 +240,7 @@ jobs:
           POWERLENS_SPARKLE_APPCAST_OUTPUT_PATH: ${{ github.workspace }}/${{ steps.meta.outputs.appcast_path }}
           POWERLENS_SPARKLE_DOWNLOAD_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
           POWERLENS_SPARKLE_RELEASE_NOTES_URL_PREFIX: ${{ steps.meta.outputs.download_url_prefix }}
+          POWERLENS_SPARKLE_RELEASE_NOTES_PATH: ${{ runner.temp }}/powerlens-update-notes.md
         run: ./script/package_release.sh
 
       - name: Verify arm64 distribution bundle
@@ -304,7 +312,7 @@ jobs:
   publish:
     name: Publish Release and Sparkle Appcast
     needs: build
-    # Automatic develop alphas skip release_approval. Evaluate this job
+    # Numbered develop alphas skip release_approval. Evaluate this job
     # explicitly so that ancestor skip does not propagate past a successful build.
     if: ${{ always() && !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest

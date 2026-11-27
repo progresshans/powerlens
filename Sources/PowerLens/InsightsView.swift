@@ -57,7 +57,7 @@ struct InsightsView: View {
                     emptyState
                 }
 
-                BatteryHealthSection(trend: data.healthTrend)
+                BatteryHealthSection(series: data.batteryHealthCharts)
             } else if !model.hasReadFailure {
                 loadingState
             }
@@ -402,25 +402,17 @@ private struct PowerFlowChartCard: View {
 // MARK: - Battery health + cycles
 
 private struct BatteryHealthSection: View {
-    let trend: [BatteryHealthPoint]
-
-    private var healthPoints: [BatteryHealthPoint] {
-        trend.filter { $0.healthPercent != nil }
-    }
-
-    private var cyclePoints: [BatteryHealthPoint] {
-        trend.filter { $0.cycleCount != nil }
-    }
+    let series: BatteryHealthChartSeries
 
     var body: some View {
-        if healthPoints.count >= 2 || cyclePoints.count >= 2 {
+        if series.health.count >= 2 || series.cycles.count >= 2 {
             VStack(alignment: .leading, spacing: 16) {
-                if healthPoints.count >= 2 {
-                    BatteryHealthChartCard(points: healthPoints)
+                if series.health.count >= 2 {
+                    BatteryHealthChartCard(points: series.health)
                 }
 
-                if cyclePoints.count >= 2 {
-                    ChargeCyclesChartCard(points: cyclePoints)
+                if series.cycles.count >= 2 {
+                    ChargeCyclesChartCard(points: series.cycles)
                 }
             }
         } else {
@@ -456,7 +448,8 @@ private struct BatteryHealthChartCard: View {
             subtitle: L10n.text("insights.chart.health.subtitle")
         ) {
             Chart {
-                ForEach(points) { point in
+                ForEach(points.indices, id: \.self) { index in
+                    let point = points[index]
                     if let health = point.healthPercent {
                         LineMark(x: .value(timeLabel, point.date), y: .value(capacityLabel, health))
                             .foregroundStyle(.green)
@@ -501,9 +494,11 @@ private struct ChargeCyclesChartCard: View {
             subtitle: L10n.text("insights.chart.cycles.subtitle")
         ) {
             Chart {
-                ForEach(points) { point in
+                ForEach(points.indices, id: \.self) { index in
+                    let point = points[index]
                     if let cycles = point.cycleCount {
                         LineMark(x: .value(timeLabel, point.date), y: .value(cyclesLabel, cycles))
+                            .interpolationMethod(.stepEnd)
                             .foregroundStyle(.teal)
                         PointMark(x: .value(timeLabel, point.date), y: .value(cyclesLabel, cycles))
                             .foregroundStyle(.teal)

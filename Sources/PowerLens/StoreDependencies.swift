@@ -54,7 +54,7 @@ extension HistoryStoring {
             interval: interval,
             series: (rollups + rawSeries).sorted { $0.bucketStart < $1.bucketStart },
             summary: summary,
-            healthTrend: healthTrend
+            batteryHealthCharts: BatteryHealthChartSeries(trend: healthTrend)
         )
     }
 }

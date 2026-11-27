@@ -60,10 +60,10 @@ struct CompatibleTelemetrySnapshotMapper {
             ),
             adapterInputPowerW: nil,
             adapterVoltageV: positiveElectricalValue(
-                adapterDetails[adapterKey(.voltage)]
+                adapterDetails[adapterKey(.voltage)], dividedBy: 1000
             ),
             adapterCurrentA: positiveElectricalValue(
-                adapterDetails[adapterKey(.current)]
+                adapterDetails[adapterKey(.current)], dividedBy: 1000
             ),
             systemLoadW: nil,
             lowPowerModeEnabled: environment.lowPowerModeEnabled,
@@ -178,8 +178,6 @@ struct LivePrecisionTelemetrySnapshotMapper {
             batteryPowerSource: powerMeasurements.batteryPowerSource,
             adapterDescription: TelemetryValueParser.nonEmptyString(
                 adapterDetails[adapterKey(.description)]
-            ) ?? TelemetryValueParser.nonEmptyString(
-                batteryRegistry[batteryKey(.deviceName)]
             ),
             adapterMaxPowerW: TelemetryValueParser.doubleValue(
                 adapterDetails[adapterKey(.watts)]
@@ -312,7 +310,7 @@ private func telemetryKey(
 
 private func positiveElectricalValue(
     _ value: Any?,
-    dividedBy divisor: Double = 1
+    dividedBy divisor: Double
 ) -> Double? {
     guard let value = TelemetryValueParser.doubleValue(value),
           value.isFinite,

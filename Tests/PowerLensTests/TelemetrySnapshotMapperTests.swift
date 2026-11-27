@@ -5,6 +5,16 @@ import Testing
 
 struct TelemetrySnapshotMapperTests {
     @Test
+    func batteryDeviceNameIsNeverUsedAsAChargerDescription() throws {
+        let snapshot = try LivePrecisionTelemetrySnapshotMapper(
+            powerSourceInfo: [kIOPSPowerSourceStateKey: kIOPMBatteryPowerKey],
+            batteryRegistry: ["ExternalConnected": false, "DeviceName": "Battery Controller"],
+            adapterDetails: [:], smcPower: nil, environment: makeEnvironment()
+        ).snapshot()
+        #expect(snapshot.adapterDescription == nil)
+    }
+
+    @Test
     func compatibleMapperBuildsSnapshotFromIOPowerSourceData() throws {
         let snapshot = try CompatibleTelemetrySnapshotMapper(
             powerSourceInfo: [
@@ -19,8 +29,8 @@ struct TelemetrySnapshotMapperTests {
             adapterDetails: [
                 "Description": "USB-C",
                 "Watts": 67,
-                "Voltage": 20.0,
-                "Current": 3.35
+                "AdapterVoltage": 20_000,
+                "Current": 3350
             ],
             environment: makeEnvironment()
         ).snapshot()
@@ -34,6 +44,18 @@ struct TelemetrySnapshotMapperTests {
         #expect(snapshot.adapterVoltageV == 20)
         #expect(snapshot.adapterCurrentA == 3.35)
         #expect(snapshot.frontmostAppName == "Codex")
+    }
+
+    @Test(arguments: [nil, 0, -1, Double.infinity])
+    func compatibleMapperOmitsUnavailableAdapterVoltage(_ millivolts: Double?) throws {
+        var details: [String: Any] = ["Voltage": 20]
+        details["AdapterVoltage"] = millivolts
+        let snapshot = try CompatibleTelemetrySnapshotMapper(
+            powerSourceInfo: [kIOPSPowerSourceStateKey: kIOPMACPowerKey],
+            adapterDetails: details,
+            environment: makeEnvironment()
+        ).snapshot()
+        #expect(snapshot.adapterVoltageV == nil)
     }
 
     @Test

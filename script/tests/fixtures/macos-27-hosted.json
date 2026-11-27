@@ -148,7 +148,7 @@
         "state": "notAttempted"
       },
       {
-        "path": "Voltage",
+        "path": "AdapterVoltage",
         "state": "notAttempted"
       },
       {

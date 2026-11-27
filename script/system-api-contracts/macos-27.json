@@ -184,7 +184,7 @@
           "presence": "optional"
         },
         {
-          "path": "Voltage",
+          "path": "AdapterVoltage",
           "allowedTypes": [
             "number"
           ],

@@ -300,6 +300,35 @@ struct HistoryStoreTests {
         #expect(loaded.first?.timestamp == recent)
     }
 
+    @Test(arguments: [3_600, 86_400])
+    func awakeTimeSurvivesRepeatedPurges(bucket: Int) async throws {
+        let store = HistoryStore(databaseURL: makeTemporaryDatabaseURL(name: "awake-gaps"))
+        let day = Date(timeIntervalSince1970: 1_728_000_000)
+        let boundary = TimeInterval(bucket)
+        let observations: [(TimeInterval, Bool)] = [
+            (boundary - 10, true), (boundary - 5, true), (boundary, false),
+            (boundary, true), (boundary + 180, false), (boundary + 361, true),
+            (boundary + 1_441, false), (boundary + 1_461, true),
+        ]
+        for (offset, external) in observations {
+            try await store.append(makeSnapshot(timestamp: day.addingTimeInterval(offset),
+                                                externalConnected: external))
+        }
+        let range = DateInterval(start: day, duration: 3 * boundary)
+        // 5 + 5 seconds across the boundary, then exactly 180 on AC.
+        // The duplicate, the 181-second gap, the sleep gap and the tail add zero.
+        for pass in 0...2 {
+            if pass > 0 {
+                try await store.purge(olderThan: day.addingTimeInterval(Double(pass) * boundary),
+                                      rollupBucketSeconds: bucket)
+            }
+            let summary = try await store.summary(for: range)
+            #expect(summary.sampleCount == observations.count)
+            #expect(summary.timeOnExternal == 190)
+            #expect(summary.timeOnBattery == 20)
+        }
+    }
+
     @Test
     func summaryIncludesRolledUpData() async throws {
         let dbURL = makeTemporaryDatabaseURL(name: "summary-rollup")
@@ -654,6 +683,41 @@ struct HistoryStoreTests {
         #expect(summary.chargeSessions == 1)
         #expect(abs(summary.timeOnBattery - 120) < 0.001)
         #expect(abs(summary.timeOnExternal - 60) < 0.001)
+    }
+
+    @Test
+    func recurringCapacityStartsANewRunAndSurvivesRollup() async throws {
+        let dbURL = makeTemporaryDatabaseURL(name: "recurring-capacity")
+        let store = HistoryStore(databaseURL: dbURL)
+        let start = Date(timeIntervalSince1970: 1_728_000_000)
+        for (offset, capacity) in [(0, 5100), (5, 5100), (10, 5050), (10, 5100), (15, 5100)] {
+            try await store.append(makeSnapshot(timestamp: start.addingTimeInterval(Double(offset)),
+                                                fullChargeCapacityMah: capacity))
+        }
+        let expected = [5100, 5050, 5100]
+        #expect(try await store.batteryHealthTrend(since: start).map(\.fullChargeCapacityMah) == expected)
+        try await store.purge(olderThan: start.addingTimeInterval(3_600), rollupBucketSeconds: 3_600)
+        #expect(try tableCount("telemetry_samples", dbURL: dbURL) == 0)
+        #expect(try await store.batteryHealthTrend(since: start).map(\.fullChargeCapacityMah) == expected)
+        try await store.purge(olderThan: start.addingTimeInterval(3_600), rollupBucketSeconds: nil)
+        #expect(try await store.batteryHealthTrend(since: start).isEmpty)
+    }
+
+    @Test
+    func insightsReducesChartPointsAndKeepsEveryObservedState() async throws {
+        let store = HistoryStore(databaseURL: makeTemporaryDatabaseURL(name: "health-chart-series"))
+        let start = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_728_000_000))
+            .addingTimeInterval(3600)
+        let capacities = [5000, 5050, 5010, 4950, 5000]
+        for (index, capacity) in capacities.enumerated() {
+            try await store.append(makeSnapshot(timestamp: start.addingTimeInterval(Double(index * 60)),
+                                                fullChargeCapacityMah: capacity))
+        }
+        let trend = try await store.batteryHealthTrend(since: start)
+        try #require(trend.map(\.fullChargeCapacityMah) == capacities)
+        let insights = try await store.loadInsights(for: .last24Hours, now: start.addingTimeInterval(300))
+        #expect(insights.batteryHealthCharts.health == [trend[0], trend[1], trend[3], trend[4]])
+        #expect(insights.batteryHealthCharts.cycles == [trend[0], trend[4]])
     }
 
     @Test

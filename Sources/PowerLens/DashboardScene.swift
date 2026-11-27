@@ -66,9 +66,9 @@ struct DashboardSceneRootView: View {
 }
 
 struct SettingsSceneRootView: View {
-    @ObservedObject var store: PowerLensStore
-    @ObservedObject var softwareUpdateController: SoftwareUpdateController
-    @ObservedObject var launchAtLoginController: LaunchAtLoginController
+    let store: PowerLensStore
+    let softwareUpdateController: SoftwareUpdateController
+    let launchAtLoginController: LaunchAtLoginController
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
 
     var body: some View {

@@ -339,10 +339,10 @@ struct PowerFlowQualityTests {
         #expect(snapshot.menuBarTitle == "80% · 19.5W")
 
         let headline = "Current power source status"
-        #expect(PowerFlowTooltip.menuBar(snapshot: snapshot, statusHeadline: headline) == "\(headline)\n\n\(tooltip)")
-        #expect(PowerFlowTooltip.menuBar(snapshot: nil, statusHeadline: headline) == headline)
-        #expect(PowerFlowTooltip.menuBar(snapshot: nil, statusHeadline: nil) == "PowerLens")
-        #expect(PowerFlowTooltip.menuBar(snapshot: snapshot, statusHeadline: nil) == "PowerLens\n\n\(tooltip)")
+        #expect(PowerFlowTooltip.menuBar(statusHeadline: headline, body: tooltip) == "\(headline)\n\n\(tooltip)")
+        #expect(PowerFlowTooltip.menuBar(statusHeadline: headline, body: nil) == headline)
+        #expect(PowerFlowTooltip.menuBar(statusHeadline: nil, body: nil) == "PowerLens")
+        #expect(PowerFlowTooltip.menuBar(statusHeadline: nil, body: tooltip) == "PowerLens\n\n\(tooltip)")
     }
 
     @Test
