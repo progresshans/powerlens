@@ -10,12 +10,17 @@ enum ManagedChargingState: Equatable, Sendable {
     case optimizedCharging
     case optimizedHold
     case optimizedActive
+    /// Optimized Battery Charging is engaged below a set charge limit, and
+    /// macOS runs the Mac from the battery while the adapter stays connected
+    /// and nearly idle.
+    case optimizedDischarging(limitPercent: Int)
 
     var targetPercent: Int? {
         switch self {
         case let .chargingToLimit(target), let .chargingBeyondLimit(target),
              let .aboveConfiguredLimit(target), let .reducingToLimit(target),
-             let .holdingAtLimit(target), let .limitConfigured(target): target
+             let .holdingAtLimit(target), let .limitConfigured(target),
+             let .optimizedDischarging(target): target
         case .optimizedCharging, .optimizedHold, .optimizedActive: nil
         }
     }
@@ -23,7 +28,7 @@ enum ManagedChargingState: Equatable, Sendable {
     var suppressesPowerDeliveryWarnings: Bool {
         switch self {
         case .reducingToLimit, .holdingAtLimit, .optimizedHold,
-             .optimizedActive:
+             .optimizedActive, .optimizedDischarging:
             true
         case .chargingToLimit, .chargingBeyondLimit,
              .aboveConfiguredLimit, .limitConfigured, .optimizedCharging:
@@ -37,7 +42,7 @@ enum ManagedChargingState: Equatable, Sendable {
             true
         case .chargingToLimit, .chargingBeyondLimit,
              .aboveConfiguredLimit, .reducingToLimit, .limitConfigured,
-             .optimizedCharging, .optimizedActive:
+             .optimizedCharging, .optimizedActive, .optimizedDischarging:
             false
         }
     }
@@ -48,7 +53,20 @@ enum ManagedChargingState: Equatable, Sendable {
             true
         case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
              .limitConfigured, .optimizedCharging, .optimizedHold,
-             .optimizedActive:
+             .optimizedActive, .optimizedDischarging:
+            false
+        }
+    }
+
+    /// macOS lowers the battery on purpose in these states, so the battery
+    /// supplying the Mac is not evidence of a delivery problem.
+    var isManagedDischarge: Bool {
+        switch self {
+        case .reducingToLimit, .optimizedDischarging:
+            true
+        case .chargingToLimit, .chargingBeyondLimit,
+             .aboveConfiguredLimit, .holdingAtLimit, .limitConfigured,
+             .optimizedCharging, .optimizedHold, .optimizedActive:
             false
         }
     }
@@ -368,6 +386,22 @@ extension TelemetrySnapshot {
         return deficit > 5
     }
 
+    /// The physical signature of macOS lowering the battery on purpose: the
+    /// adapter is connected but nearly idle, and the battery carries the Mac.
+    /// A charger that cannot keep up still delivers what it can, so its input
+    /// stays well above this. The input must be measured: an unknown input
+    /// cannot show that the adapter is idle.
+    var isRunningFromBatteryWithIdleAdapter: Bool {
+        guard externalConnected,
+              let adapterInputPowerW,
+              adapterInputPowerW <= PowerStateThresholds.idleAdapterInputW,
+              let measuredBatteryDischargeW else {
+            return false
+        }
+
+        return measuredBatteryDischargeW > adapterInputPowerW
+    }
+
     /// Evidence that a real delivery problem may coexist with a managed
     /// discharge. The adapter must be close to its rated capacity so the
     /// evidence is independent of the battery discharge that the policy may
@@ -427,7 +461,7 @@ extension TelemetrySnapshot {
         }
 
         switch chargingPolicyStatus {
-        case let .manualLimit(targetPercent):
+        case let .manualLimit(targetPercent, optimizedChargingEngaged):
             guard (1...100).contains(targetPercent) else {
                 return nil
             }
@@ -467,6 +501,15 @@ extension TelemetrySnapshot {
                let batteryLevel,
                batteryLevel > Double(targetPercent) {
                 return .reducingToLimit(targetPercent: targetPercent)
+            }
+
+            // Optimized Battery Charging can engage below the limit. macOS
+            // then stops drawing from the adapter until its own schedule
+            // resumes charging, which the limit alone does not explain.
+            if optimizedChargingEngaged,
+               isAtOrBelowSelectedLimit,
+               isRunningFromBatteryWithIdleAdapter {
+                return .optimizedDischarging(limitPercent: targetPercent)
             }
 
             let isNearSelectedLimit = batteryLevel.map {
@@ -517,6 +560,7 @@ private enum PowerStateThresholds {
     static let manualLimitLowerHoldTolerancePercent = 5.0
     static let manualLimitUpperHoldTolerancePercent = 1.0
     static let adapterSaturationRatio = 0.8
+    static let idleAdapterInputW = 1.0
     static let clearPowerDeficitW = 5.0
     static let lowInputDeficitW = 2.5
     static let holdBatteryPowerToleranceW = 4.0

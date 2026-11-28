@@ -115,6 +115,7 @@
 "status.manualLimit.active" = "충전 한도 %@";
 "status.optimizedCharging.active" = "최적화된 충전을 쓰고 있어요";
 "status.optimizedCharging.holding" = "배터리를 아끼려고 충전을 잠시 미뤘어요";
+"status.optimizedCharging.discharging" = "충전을 미루고 배터리를 쓰고 있어요";
 
 "status.subheadline.deficit" = "Mac이 들어오는 전력보다 %@ 더 쓰고 있어요";
 "status.subheadline.powerLimited" = "지금은 Mac이 쓰는 만큼 전력이 들어오지 않아요";
@@ -137,6 +138,7 @@
 "status.subheadline.optimizedCharging.active" = "macOS가 충전 일정을 알아서 맞추고 있어요";
 "status.subheadline.optimizedCharging.holding" = "평소 쓰는 시간에 맞춰 macOS가 마저 채워요";
 "status.subheadline.optimizedCharging.activeFlowUnknown" = "최적화된 충전이 켜져 있어요. 전력 흐름은 PowerLens가 따로 보고 있어요";
+"status.subheadline.optimizedCharging.discharging" = "최적화된 충전이 일부러 하는 일이에요. 평소 쓰는 시간에 맞춰 %@까지 다시 채워요";
 "status.subheadline.manualLimit.transientAssist" = "충전 한도가 켜진 동안 배터리가 잠깐 힘을 보태고 있어요";
 "status.subheadline.optimizedCharging.transientAssist" = "최적화된 충전 중에 배터리가 잠깐 힘을 보태고 있어요";
 

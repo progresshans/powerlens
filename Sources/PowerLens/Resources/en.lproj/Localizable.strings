@@ -115,6 +115,7 @@
 "status.manualLimit.active" = "%@ Charge Limit Set";
 "status.optimizedCharging.active" = "Optimized Battery Charging Active";
 "status.optimizedCharging.holding" = "Charging Paused by Optimized Battery Charging";
+"status.optimizedCharging.discharging" = "Charging Delayed, Running on Battery";
 
 "status.subheadline.deficit" = "System load is about %@ higher than incoming power.";
 "status.subheadline.powerLimited" = "The Mac appears to be power-limited.";
@@ -137,6 +138,7 @@
 "status.subheadline.optimizedCharging.active" = "macOS is managing the charging schedule while the battery continues to charge.";
 "status.subheadline.optimizedCharging.holding" = "macOS is temporarily holding charging to reduce time spent fully charged.";
 "status.subheadline.optimizedCharging.activeFlowUnknown" = "Optimized Battery Charging is active. PowerLens evaluates the current power flow separately.";
+"status.subheadline.optimizedCharging.discharging" = "Optimized Battery Charging does this on purpose. macOS charges to %@ again around when you usually need it.";
 "status.subheadline.manualLimit.transientAssist" = "The battery is briefly helping while the charge limit remains active.";
 "status.subheadline.optimizedCharging.transientAssist" = "The battery is briefly helping while Optimized Battery Charging remains active.";
 

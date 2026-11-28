@@ -4,6 +4,12 @@ All notable changes to PowerLens will be documented in this file.
 
 PowerLens uses `0.x` versioning until the first stable `1.0` release.
 
+## [Unreleased]
+
+### Fixed
+
+- With a charge limit set, PowerLens no longer shows "Not enough power coming in" while Optimized Battery Charging runs the Mac from the battery with the charger connected. It now says that charging is delayed and that macOS will charge to the limit again.
+
 ## [0.9.7] - 2026-11-26
 
 ### Added

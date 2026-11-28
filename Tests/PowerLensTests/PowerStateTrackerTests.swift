@@ -429,6 +429,132 @@ struct PowerStateTrackerTests {
     }
 
     @Test
+    func optimizedDischargeBelowLimitNeverBecomesAShortfall() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let policy = ObservedChargingPolicyStatus.manualLimit(
+            targetPercent: 90,
+            optimizedChargingEngaged: true
+        )
+
+        var snapshot = optimizedDischargeSnapshot(at: 0, policy: policy)
+        var resolved = tracker.resolve(snapshot)
+        #expect(resolved.powerDeliveryState == .normal)
+        #expect(
+            resolved.managedChargingState
+                == .limitConfigured(targetPercent: 90)
+        )
+
+        for seconds in stride(from: 10.0, through: 90.0, by: 10.0) {
+            snapshot = optimizedDischargeSnapshot(at: seconds, policy: policy)
+            resolved = tracker.resolve(snapshot)
+            #expect(resolved.powerDeliveryState == .normal)
+            #expect(resolved.confirmedShortfall == nil)
+        }
+
+        #expect(
+            resolved.managedChargingState
+                == .optimizedDischarging(limitPercent: 90)
+        )
+        #expect(resolved.externalPowerState == .connected)
+
+        let status = PowerStatusPresentation(
+            snapshot: snapshot,
+            resolvedState: resolved
+        )
+        #expect(status.tone == .charger)
+        #expect(status.capsuleTitle == L10n.text("capsule.connected"))
+        #expect(
+            status.title
+                == L10n.text("status.optimizedCharging.discharging")
+        )
+        #expect(
+            status.subtitle
+                == L10n.tr(
+                    "status.subheadline.optimizedCharging.discharging",
+                    Formatters.percent(90)
+                )
+        )
+
+        let diagnostics = snapshot.diagnostics(resolvedState: resolved)
+        #expect(
+            !diagnostics.contains { $0.kind == .powerDeliveryShortfall }
+        )
+        #expect(
+            PowerNotice.current(
+                snapshot: snapshot,
+                resolvedState: resolved,
+                diagnostics: snapshot.diagnosticsExcludingPrimaryStatus(
+                    diagnostics,
+                    resolvedState: resolved
+                )
+            ) == nil
+        )
+    }
+
+    @Test
+    func idleAdapterDischargeWithoutOptimizedChargingStillWarns() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let policy = ObservedChargingPolicyStatus.manualLimit(
+            targetPercent: 90
+        )
+
+        var resolved = tracker.resolve(
+            optimizedDischargeSnapshot(at: 0, policy: policy)
+        )
+        for seconds in stride(from: 10.0, through: 30.0, by: 10.0) {
+            resolved = tracker.resolve(
+                optimizedDischargeSnapshot(at: seconds, policy: policy)
+            )
+        }
+
+        #expect(resolved.powerDeliveryState == .sustainedShortfall)
+        #expect(
+            resolved.managedChargingState
+                == .limitConfigured(targetPercent: 90)
+        )
+    }
+
+    @Test
+    func warningClearsOnceOptimizedChargingIsObservedUnderTheLimit() {
+        var tracker = PowerStateTracker(configuration: configuration)
+        let limitOnly = ObservedChargingPolicyStatus.manualLimit(
+            targetPercent: 90
+        )
+        let engaged = ObservedChargingPolicyStatus.manualLimit(
+            targetPercent: 90,
+            optimizedChargingEngaged: true
+        )
+
+        var resolved = tracker.resolve(
+            optimizedDischargeSnapshot(at: 0, policy: limitOnly)
+        )
+        for seconds in stride(from: 10.0, through: 30.0, by: 10.0) {
+            resolved = tracker.resolve(
+                optimizedDischargeSnapshot(at: seconds, policy: limitOnly)
+            )
+        }
+        #expect(resolved.powerDeliveryState == .sustainedShortfall)
+
+        // The warning leaves through the usual recovery confirmation.
+        resolved = tracker.resolve(
+            optimizedDischargeSnapshot(at: 40, policy: engaged)
+        )
+        #expect(resolved.powerDeliveryState == .sustainedShortfall)
+        resolved = tracker.resolve(
+            optimizedDischargeSnapshot(at: 50, policy: engaged)
+        )
+        #expect(resolved.powerDeliveryState == .normal)
+        resolved = tracker.resolve(
+            optimizedDischargeSnapshot(at: 60, policy: engaged)
+        )
+        #expect(resolved.powerDeliveryState == .normal)
+        #expect(
+            resolved.managedChargingState
+                == .optimizedDischarging(limitPercent: 90)
+        )
+    }
+
+    @Test
     func optimizedManagementWinsAtItsConfirmationBoundary() {
         var tracker = PowerStateTracker(configuration: configuration)
         let policy = ObservedChargingPolicyStatus.optimizedCharging
@@ -1042,6 +1168,25 @@ struct PowerStateTrackerTests {
             systemLoadW: 20,
             adapterMaxPowerW: 96,
             chargingPolicyStatus: .manualLimit(targetPercent: 80)
+        )
+    }
+
+    /// Readings from a MacBook Pro on macOS 27.2.1 with a 90% limit, shortly
+    /// after a 100 W charger was reconnected at 88%.
+    private func optimizedDischargeSnapshot(
+        at seconds: TimeInterval,
+        policy: ObservedChargingPolicyStatus
+    ) -> TelemetrySnapshot {
+        makeTelemetrySnapshot(
+            timestamp: date(seconds),
+            batteryLevel: 86,
+            batteryVoltageV: 12.41,
+            batteryCurrentA: -0.656,
+            batteryPowerW: 8.14,
+            adapterInputPowerW: 0.13,
+            systemLoadW: 8.27,
+            adapterMaxPowerW: 100,
+            chargingPolicyStatus: policy
         )
     }
 

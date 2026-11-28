@@ -666,6 +666,154 @@ struct ChargingPolicyAwarenessTests {
     }
 
     @Test
+    func optimizedChargingBelowLimitExplainsRunningFromBattery() {
+        let snapshot = optimizedDischargeSnapshot(
+            policy: .manualLimit(
+                targetPercent: 90,
+                optimizedChargingEngaged: true
+            )
+        )
+
+        #expect(snapshot.isRunningFromBatteryWithIdleAdapter)
+        #expect(snapshot.hasCorroboratedPowerDeliveryShortfall)
+        #expect(
+            snapshot.managedChargingState
+                == .optimizedDischarging(limitPercent: 90)
+        )
+        #expect(snapshot.managedChargingState?.targetPercent == 90)
+        #expect(snapshot.shouldSuppressPowerDeliveryWarnings)
+        #expect(
+            snapshot.statusHeadline
+                == L10n.text("status.optimizedCharging.discharging")
+        )
+        #expect(
+            snapshot.statusSubheadline
+                == L10n.tr(
+                    "status.subheadline.optimizedCharging.discharging",
+                    Formatters.percent(90)
+                )
+        )
+        #expect(
+            !snapshot.diagnostics.contains {
+                $0.kind == .powerDeliveryShortfall
+            }
+        )
+
+        // The explanation never changes the measured flow.
+        let flow = PowerFlowPresentationModel(snapshot: snapshot)
+        let physicalFlow = PowerFlowPresentationModel(
+            snapshot: optimizedDischargeSnapshot(policy: nil)
+        )
+        #expect(flow.state == physicalFlow.state)
+        #expect(flow.routes == physicalFlow.routes)
+    }
+
+    @Test
+    func limitAloneDoesNotExplainRunningFromBatteryBelowIt() {
+        let snapshot = optimizedDischargeSnapshot(
+            policy: .manualLimit(targetPercent: 90)
+        )
+
+        #expect(
+            snapshot.managedChargingState
+                == .limitConfigured(targetPercent: 90)
+        )
+        #expect(!snapshot.shouldSuppressPowerDeliveryWarnings)
+        #expect(
+            snapshot.statusHeadline
+                == L10n.text("status.adapterBatteryAssist")
+        )
+    }
+
+    @Test
+    func optimizedChargingDoesNotExcuseAChargerThatCannotKeepUp() {
+        // The charger delivers what it can, so macOS is drawing from it.
+        let snapshot = makeTelemetrySnapshot(
+            batteryLevel: 86,
+            batteryVoltageV: 12.4,
+            batteryCurrentA: -1.6,
+            batteryPowerW: 20,
+            adapterInputPowerW: 20,
+            systemLoadW: 40,
+            adapterMaxPowerW: 100,
+            chargingPolicyStatus: .manualLimit(
+                targetPercent: 90,
+                optimizedChargingEngaged: true
+            )
+        )
+
+        #expect(!snapshot.isRunningFromBatteryWithIdleAdapter)
+        #expect(
+            snapshot.managedChargingState
+                == .limitConfigured(targetPercent: 90)
+        )
+        #expect(!snapshot.shouldSuppressPowerDeliveryWarnings)
+        #expect(
+            snapshot.statusHeadline
+                == L10n.text("status.adapterBatteryAssist")
+        )
+    }
+
+    @Test
+    func unmeasuredAdapterInputCannotShowAnIdleAdapter() {
+        let snapshot = optimizedDischargeSnapshot(
+            adapterInputPowerW: nil,
+            policy: .manualLimit(
+                targetPercent: 90,
+                optimizedChargingEngaged: true
+            )
+        )
+
+        #expect(!snapshot.isRunningFromBatteryWithIdleAdapter)
+        #expect(
+            snapshot.managedChargingState
+                == .limitConfigured(targetPercent: 90)
+        )
+    }
+
+    @Test
+    func optimizedChargingKeepsExistingLimitStatesAwayFromIdleDischarge() {
+        let engaged = ObservedChargingPolicyStatus.manualLimit(
+            targetPercent: 90,
+            optimizedChargingEngaged: true
+        )
+
+        // Above the limit, the limit itself explains the discharge.
+        #expect(
+            optimizedDischargeSnapshot(batteryLevel: 93, policy: engaged)
+                .managedChargingState
+                == .reducingToLimit(targetPercent: 90)
+        )
+        // A resting battery at the limit is a hold.
+        #expect(
+            makeTelemetrySnapshot(
+                batteryLevel: 90,
+                batteryCurrentA: 0,
+                batteryPowerW: 0,
+                adapterInputPowerW: 0.8,
+                systemLoadW: 0.8,
+                adapterMaxPowerW: 100,
+                chargingPolicyStatus: engaged
+            ).managedChargingState
+                == .holdingAtLimit(targetPercent: 90)
+        )
+        // Charging toward the limit stays a charging state.
+        #expect(
+            makeTelemetrySnapshot(
+                batteryLevel: 84,
+                isCharging: true,
+                batteryCurrentA: 2.6,
+                batteryPowerW: -32.8,
+                adapterInputPowerW: 39.2,
+                systemLoadW: 6.3,
+                adapterMaxPowerW: 100,
+                chargingPolicyStatus: engaged
+            ).managedChargingState
+                == .chargingToLimit(targetPercent: 90)
+        )
+    }
+
+    @Test
     func invalidRuntimeManualLimitsAreIgnored() {
         let zero = calmSnapshot(batteryLevel: 80, targetPercent: 0)
         let overHundred = calmSnapshot(
@@ -688,6 +836,26 @@ struct ChargingPolicyAwarenessTests {
             batteryPowerW: 14.8,
             adapterInputPowerW: 0.2,
             systemLoadW: 15,
+            chargingPolicyStatus: policy
+        )
+    }
+
+    /// Readings from a MacBook Pro on macOS 27.2.1 with a 90% limit, shortly
+    /// after a 100 W charger was reconnected at 88%: the charger held a 20 V
+    /// contract while the Mac drew about 0.1 W from it.
+    private func optimizedDischargeSnapshot(
+        batteryLevel: Double = 86,
+        adapterInputPowerW: Double? = 0.13,
+        policy: ObservedChargingPolicyStatus?
+    ) -> TelemetrySnapshot {
+        makeTelemetrySnapshot(
+            batteryLevel: batteryLevel,
+            batteryVoltageV: 12.41,
+            batteryCurrentA: -0.656,
+            batteryPowerW: 8.14,
+            adapterInputPowerW: adapterInputPowerW,
+            systemLoadW: 8.27,
+            adapterMaxPowerW: 100,
             chargingPolicyStatus: policy
         )
     }

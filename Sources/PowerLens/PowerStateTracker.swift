@@ -267,7 +267,10 @@ struct PowerStateTracker: Sendable {
         for policy: ObservedChargingPolicyStatus?
     ) -> PolicyIdentity? {
         switch policy {
-        case let .manualLimit(targetPercent):
+        case let .manualLimit(targetPercent, _):
+            // Optimized charging engaging under the same limit is a new
+            // explanation, not a new policy: the managed-state hysteresis
+            // handles it without discarding delivery evidence.
             guard (1...100).contains(targetPercent) else {
                 return nil
             }
@@ -412,19 +415,10 @@ struct PowerStateTracker: Sendable {
         snapshot: TelemetrySnapshot,
         instantaneousState: ManagedChargingState?
     ) -> Bool {
-        let instantaneousReduction: Bool
-        if case .reducingToLimit = instantaneousState {
-            instantaneousReduction = true
-        } else {
-            instantaneousReduction = false
-        }
-
-        let stabilizedReduction: Bool
-        if case .reducingToLimit = stableManagedState {
-            stabilizedReduction = true
-        } else {
-            stabilizedReduction = false
-        }
+        let instantaneousReduction =
+            instantaneousState?.isManagedDischarge == true
+        let stabilizedReduction =
+            stableManagedState?.isManagedDischarge == true
 
         let stabilizedOptimizedManagement: Bool
         if case .optimizedActive = stableManagedState {
@@ -482,12 +476,7 @@ struct PowerStateTracker: Sendable {
         previousStableState: ManagedChargingState?
     ) -> TimeInterval {
         let whileHolding = previousStableState?.isHolding == true
-        let whileReducing: Bool
-        if case .reducingToLimit = previousStableState {
-            whileReducing = true
-        } else {
-            whileReducing = false
-        }
+        let whileReducing = previousStableState?.isManagedDischarge == true
         let whileAboveSelectedLimit =
             previousStableState?.isAboveSelectedLimit == true
         let whileChargingBeyondLimit: Bool
@@ -500,7 +489,7 @@ struct PowerStateTracker: Sendable {
         switch candidate {
         case .holdingAtLimit, .optimizedHold:
             return configuration.holdConfirmation
-        case .reducingToLimit:
+        case .reducingToLimit, .optimizedDischarging:
             return configuration.reductionConfirmation
         case .chargingBeyondLimit:
             return whileHolding || whileReducing
@@ -532,7 +521,7 @@ struct PowerStateTracker: Sendable {
         for policy: ObservedChargingPolicyStatus?
     ) -> ManagedChargingState? {
         switch policy {
-        case let .manualLimit(targetPercent):
+        case let .manualLimit(targetPercent, _):
             guard (1...100).contains(targetPercent) else {
                 return nil
             }
