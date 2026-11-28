@@ -16,7 +16,11 @@ enum ObservedChargingPolicyStatus: Codable, Equatable, Sendable {
     /// restricted to the set of values offered by the current Settings UI.
     /// Physical battery telemetry determines whether charging is currently
     /// following, holding at, or temporarily exceeding this limit.
-    case manualLimit(targetPercent: Int)
+    ///
+    /// macOS can engage Optimized Battery Charging while a limit is set. It
+    /// then delays charging below the limit, and can run the Mac from the
+    /// battery while the adapter stays connected.
+    case manualLimit(targetPercent: Int, optimizedChargingEngaged: Bool = false)
 
     /// Optimized Battery Charging is currently engaged.
     case optimizedCharging
@@ -25,7 +29,7 @@ enum ObservedChargingPolicyStatus: Codable, Equatable, Sendable {
     case unavailable
 
     var targetPercent: Int? {
-        guard case .manualLimit(let targetPercent) = self else {
+        guard case .manualLimit(let targetPercent, _) = self else {
             return nil
         }
         return targetPercent

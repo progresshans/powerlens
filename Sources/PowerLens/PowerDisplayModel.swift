@@ -94,7 +94,7 @@ extension TelemetrySnapshot {
             case .chargingToLimit, .chargingBeyondLimit,
                  .aboveConfiguredLimit, .reducingToLimit,
                  .limitConfigured, .optimizedCharging, .optimizedActive,
-                 nil:
+                 .optimizedDischarging, nil:
                 break
             }
         }
@@ -229,6 +229,8 @@ extension TelemetrySnapshot {
             return L10n.text("status.optimizedCharging.holding")
         case .optimizedActive:
             return L10n.text("status.optimizedCharging.active")
+        case .optimizedDischarging:
+            return L10n.text("status.optimizedCharging.discharging")
         case .limitConfigured:
             return nil
         }
@@ -266,6 +268,11 @@ extension TelemetrySnapshot {
             return L10n.text(
                 "status.subheadline.optimizedCharging.activeFlowUnknown"
             )
+        case let .optimizedDischarging(limitPercent):
+            return L10n.tr(
+                "status.subheadline.optimizedCharging.discharging",
+                Formatters.percent(Double(limitPercent))
+            )
         case .limitConfigured:
             return nil
         }
@@ -292,7 +299,7 @@ extension TelemetrySnapshot {
             return L10n.text("status.optimizedCharging.active")
         case .chargingToLimit, .chargingBeyondLimit,
              .aboveConfiguredLimit, .reducingToLimit, .holdingAtLimit,
-             .optimizedCharging, .optimizedHold:
+             .optimizedCharging, .optimizedHold, .optimizedDischarging:
             return managedChargingHeadline(for: managedChargingState)
         }
     }
@@ -322,7 +329,7 @@ extension TelemetrySnapshot {
                 "status.subheadline.optimizedCharging.activeFlowUnknown"
             )
         case .chargingToLimit, .reducingToLimit, .holdingAtLimit,
-             .optimizedCharging, .optimizedHold:
+             .optimizedCharging, .optimizedHold, .optimizedDischarging:
             return managedChargingSubheadline(for: managedChargingState)
         }
     }

@@ -95,7 +95,7 @@ struct ChargingMethodPresentation: Equatable {
             value = L10n.text("battery.charging.default")
             caption = L10n.text("battery.charging.defaultCaption")
             fraction = 1
-        case let .manualLimit(target) where (1...100).contains(target):
+        case let .manualLimit(target, _) where (1...100).contains(target):
             value = Formatters.percent(Double(target))
             caption = L10n.tr("battery.charging.limitCaption", Formatters.percent(Double(target)))
             fraction = Double(target) / 100

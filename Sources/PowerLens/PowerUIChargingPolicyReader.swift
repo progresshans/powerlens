@@ -94,9 +94,9 @@ enum ChargingPolicyStatusResolver {
                         )
                     )
                 }
-                return ChargingPolicyObservation(
-                    status: .manualLimit(targetPercent: targetPercent),
-                    diagnostic: .compatiblePowerUI
+                return manualLimitObservation(
+                    targetPercent: targetPercent,
+                    using: client
                 )
             } catch let error as PowerUIQueryError {
                 return unavailableObservation(for: error)
@@ -109,6 +109,32 @@ enum ChargingPolicyStatusResolver {
         }
 
         return resolveOptimizedCharging(using: client)
+    }
+
+    /// A limit does not switch Optimized Battery Charging off: macOS can
+    /// engage it below the limit. When that second query fails, the policy
+    /// is unavailable: assuming optimized charging is off would be a guess.
+    private static func manualLimitObservation(
+        targetPercent: Int,
+        using client: any PowerUISmartChargeQuerying
+    ) -> ChargingPolicyObservation {
+        do {
+            return ChargingPolicyObservation(
+                status: .manualLimit(
+                    targetPercent: targetPercent,
+                    optimizedChargingEngaged:
+                        try client.isOptimizedChargingEngaged()
+                ),
+                diagnostic: .compatiblePowerUI
+            )
+        } catch let error as PowerUIQueryError {
+            return unavailableObservation(for: error)
+        } catch {
+            return unavailableObservation(
+                for: error,
+                component: PowerUIRuntime.optimizedChargingContract.selectorName
+            )
+        }
     }
 
     private static func resolveOptimizedCharging(

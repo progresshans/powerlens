@@ -29,7 +29,7 @@ struct ChargingPolicyReaderTests {
         let client = SmartChargeQueryStub(
             manualLimitEnabled: .success(true),
             manualLimits: [.success(targetPercent)],
-            optimizedChargingEngaged: .success(true)
+            optimizedChargingEngaged: .success(false)
         )
 
         let status = ChargingPolicyStatusResolver.resolve(using: client).status
@@ -37,29 +37,74 @@ struct ChargingPolicyReaderTests {
             using: SmartChargeQueryStub(
                 manualLimitEnabled: .success(true),
                 manualLimits: [.success(targetPercent)],
-                optimizedChargingEngaged: .success(true)
+                optimizedChargingEngaged: .success(false)
             )
         )
 
         #expect(status == .manualLimit(targetPercent: targetPercent))
         #expect(observation.diagnostic == .compatiblePowerUI)
-        #expect(client.calls == [.manualLimitEnabled, .manualLimit])
+        #expect(client.calls == [
+            .manualLimitEnabled,
+            .manualLimit,
+            .optimizedChargingEngaged,
+        ])
     }
 
     @Test
-    func manualLimitTakesPrecedenceWithoutQueryingOptimizedCharging() {
+    func manualLimitAlsoReportsEngagedOptimizedCharging() {
+        // macOS can engage Optimized Battery Charging below a set limit. On
+        // macOS 27.2.1 it then ran a MacBook Pro from the battery at 88%
+        // under a 90% limit, with a 100 W charger connected.
         let client = SmartChargeQueryStub(
             manualLimitEnabled: .success(true),
-            manualLimits: [.success(80)],
+            manualLimits: [.success(90)],
             optimizedChargingEngaged: .success(true)
         )
 
+        let observation = ChargingPolicyStatusResolver.resolve(using: client)
+
         #expect(
-            ChargingPolicyStatusResolver.resolve(using: client)
-                .status
-                == .manualLimit(targetPercent: 80)
+            observation.status
+                == .manualLimit(
+                    targetPercent: 90,
+                    optimizedChargingEngaged: true
+                )
         )
-        #expect(client.calls == [.manualLimitEnabled, .manualLimit])
+        #expect(observation.status.targetPercent == 90)
+        #expect(observation.diagnostic == .compatiblePowerUI)
+        #expect(client.calls == [
+            .manualLimitEnabled,
+            .manualLimit,
+            .optimizedChargingEngaged,
+        ])
+    }
+
+    @Test
+    func failedOptimizedChargingQueryUnderALimitDoesNotGuessThePolicy() {
+        let failures: [StubError] = [
+            .unsupported,
+            .incompatibleSignature,
+            .operationFailed,
+        ]
+
+        for failure in failures {
+            let client = SmartChargeQueryStub(
+                manualLimitEnabled: .success(true),
+                manualLimits: [.success(90)],
+                optimizedChargingEngaged: .failure(failure)
+            )
+
+            let observation = ChargingPolicyStatusResolver.resolve(
+                using: client
+            )
+
+            #expect(observation.status == .unavailable)
+            #expect(observation.diagnostic != .compatiblePowerUI)
+            #expect(
+                observation.diagnostic.component
+                    == PowerUIRuntime.optimizedChargingContract.selectorName
+            )
+        }
     }
 
     @Test
@@ -222,8 +267,10 @@ struct ChargingPolicyReaderTests {
         #expect(client.calls == [
             .manualLimitEnabled,
             .manualLimit,
+            .optimizedChargingEngaged,
             .manualLimitEnabled,
             .manualLimit,
+            .optimizedChargingEngaged,
         ])
     }
 
@@ -328,6 +375,7 @@ struct ChargingPolicyReaderTests {
         let statuses: [ObservedChargingPolicyStatus] = [
             .inactive,
             .manualLimit(targetPercent: 93),
+            .manualLimit(targetPercent: 90, optimizedChargingEngaged: true),
             .optimizedCharging,
             .unavailable,
         ]
